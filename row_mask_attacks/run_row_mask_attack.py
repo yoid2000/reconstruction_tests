@@ -519,7 +519,7 @@ def main():
 #SBATCH --array=0-{num_jobs}
 arrayNum="${{SLURM_ARRAY_TASK_ID}}"
 source /INS/syndiffix/work/paul/github/reconstruction_tests/.venv/bin/activate
-python /INS/syndiffix/work/paul/github/reconstruction_tests/reconstruction_tests/row_mask_attacks/run_row_mask_attack.py $arrayNum
+python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run_row_mask_attack.py $arrayNum
 """
         
         slurm_file = Path(__file__).parent / 'run.slurm'
