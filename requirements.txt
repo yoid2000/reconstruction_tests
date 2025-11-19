@@ -1,0 +1,6 @@
+pandas
+numpy
+ortools
+pytest
+PrettyPrinter
+gurobipy

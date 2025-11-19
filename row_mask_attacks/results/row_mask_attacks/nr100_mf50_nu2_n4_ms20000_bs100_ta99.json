@@ -1,0 +1,23 @@
+{
+  "nrows": 100,
+  "mask_fraction": 0.5,
+  "nunique": 2,
+  "noise": 4,
+  "max_samples": 20000,
+  "batch_size": 100,
+  "target_accuracy": 0.99,
+  "elapsed_time": 1.0643622875213623,
+  "attack_results": [
+    {
+      "num_samples": 101,
+      "measure": 1.0,
+      "mixing": {
+        "min": 9,
+        "max": 42,
+        "avg": 25.747474747474747,
+        "stddev": 4.940828528940527,
+        "median": 26.0
+      }
+    }
+  ]
+}

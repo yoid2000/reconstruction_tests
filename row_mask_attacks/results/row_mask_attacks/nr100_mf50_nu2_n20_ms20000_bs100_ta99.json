@@ -1,0 +1,67 @@
+{
+  "nrows": 100,
+  "mask_fraction": 0.5,
+  "nunique": 2,
+  "noise": 20,
+  "max_samples": 20000,
+  "batch_size": 100,
+  "target_accuracy": 0.99,
+  "elapsed_time": 83.8583755493164,
+  "attack_results": [
+    {
+      "num_samples": 101,
+      "measure": 0.64,
+      "mixing": {
+        "min": 11,
+        "max": 42,
+        "avg": 25.747474747474747,
+        "stddev": 4.23235119684115,
+        "median": 26.0
+      }
+    },
+    {
+      "num_samples": 201,
+      "measure": 0.62,
+      "mixing": {
+        "min": 31,
+        "max": 71,
+        "avg": 50.494949494949495,
+        "stddev": 6.012434484615419,
+        "median": 50.0
+      }
+    },
+    {
+      "num_samples": 301,
+      "measure": 0.74,
+      "mixing": {
+        "min": 52,
+        "max": 100,
+        "avg": 75.24242424242425,
+        "stddev": 6.887979441731467,
+        "median": 75.0
+      }
+    },
+    {
+      "num_samples": 401,
+      "measure": 0.86,
+      "mixing": {
+        "min": 73,
+        "max": 125,
+        "avg": 99.98989898989899,
+        "stddev": 7.556407341388425,
+        "median": 100.0
+      }
+    },
+    {
+      "num_samples": 501,
+      "measure": 1.0,
+      "mixing": {
+        "min": 93,
+        "max": 156,
+        "avg": 124.73737373737374,
+        "stddev": 8.751179843786788,
+        "median": 125.0
+      }
+    }
+  ]
+}
