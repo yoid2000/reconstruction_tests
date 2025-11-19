@@ -23,6 +23,24 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from df_builds.build_row_masks import build_row_masks
 
+def check_gurobi_available() -> bool:
+    """Check if Gurobi is available and can actually be used.
+    
+    Returns:
+        True if Gurobi can be used, False otherwise
+    """
+    if not GUROBI_AVAILABLE:
+        return False
+    
+    try:
+        # Try to create a simple model to verify license
+        test_model = gp.Model("test")
+        test_model.dispose()
+        return True
+    except Exception as e:
+        print(f"Gurobi import succeeded but cannot create model: {e}")
+        return False
+
 def reconstruct(samples: List[Dict], noise: int) -> List[Dict]:
     """ Reconstructs the value associated with each ID from noisy count samples.
     
@@ -46,7 +64,7 @@ def reconstruct(samples: List[Dict], noise: int) -> List[Dict]:
     all_ids = sorted(all_ids)
     all_vals = sorted(all_vals)
     
-    if GUROBI_AVAILABLE:
+    if check_gurobi_available():
         # Use Gurobi solver
         print("Using Gurobi solver")
         model = gp.Model("reconstruct")
@@ -485,7 +503,7 @@ def main():
         num_jobs = len(test_params) - 1  # Array range is 0 to num_jobs-1
         slurm_content = f"""#!/bin/bash
 #SBATCH --job-name=recon_test
-#SBATCH --output=/INS/syndiffix/work/paul/github/reconstruction_tests/slurm_out/out.%a.out
+#SBATCH --output=/INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/slurm_out/out.%a.out
 #SBATCH --time=12:00:00
 #SBATCH --mem=10G
 #SBATCH --cpus-per-task=8
