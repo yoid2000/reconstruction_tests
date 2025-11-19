@@ -319,8 +319,10 @@ def main():
     # Create directories
     results_dir = Path('./results')
     attack_results_dir = results_dir / 'row_mask_attacks'
+    slurm_out_dir = Path('./slurm_out')
     results_dir.mkdir(exist_ok=True)
     attack_results_dir.mkdir(exist_ok=True)
+    slurm_out_dir.mkdir(exist_ok=True)
     
     # Define parameter ranges
     nrows_values = [100, 200, 400]
