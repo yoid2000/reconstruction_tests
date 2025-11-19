@@ -4,3 +4,6 @@ ortools
 pytest
 PrettyPrinter
 gurobipy
+fastparquet
+pyarrow
+scipy

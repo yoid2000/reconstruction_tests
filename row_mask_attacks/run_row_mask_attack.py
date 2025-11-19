@@ -233,9 +233,10 @@ def attack_loop(nrows: int,
                 mask_fraction: float, 
                 noise: int,
                 max_samples: int = 20000,
-                batch_size: int = 100,
+                batch_size: int = 50,
                 target_accuracy: float = 0.99,
-                min_num_rows: int = 5) -> List[Dict]:
+                min_num_rows: int = 5,
+                output_file: Path = None) -> List[Dict]:
     """ Runs an iterative attack loop to reconstruct values from noisy samples.
     
     Args:
@@ -247,10 +248,14 @@ def attack_loop(nrows: int,
         batch_size: Number of samples to generate per iteration (default: 100)
         target_accuracy: Target accuracy to stop early (default: 0.99)
         min_num_rows: Minimum number of rows to mask in each sample (default: 10)
+        output_file: Path to JSON file to save results incrementally (default: None)
     
     Returns:
         List of dicts with 'num_samples' and 'measure' for each loop iteration
     """
+    # Start timing
+    start_time = time.time()
+    
     # Build the ground truth dataframe
     df = build_row_masks(nrows=nrows, nunique=nunique)
     
@@ -311,6 +316,26 @@ def attack_loop(nrows: int,
         })
         pp.pprint(results)
         
+        # Calculate elapsed time
+        elapsed_time = time.time() - start_time
+        
+        # Save results incrementally if output file is provided
+        if output_file is not None:
+            save_dict = {
+                'nrows': nrows,
+                'mask_fraction': mask_fraction,
+                'nunique': nunique,
+                'noise': noise,
+                'max_samples': max_samples,
+                'batch_size': batch_size,
+                'target_accuracy': target_accuracy,
+                'min_num_rows': min_num_rows,
+                'elapsed_time': elapsed_time,
+                'attack_results': results,
+            }
+            with open(output_file, 'w') as f:
+                json.dump(save_dict, f, indent=2)
+        
         # Check stopping condition
         if accuracy >= target_accuracy:
             break
@@ -343,14 +368,14 @@ def main():
     slurm_out_dir.mkdir(exist_ok=True)
     
     # Define parameter ranges
-    nrows_values = [100, 200, 400]
-    mask_fraction_values = [0.5, 0.1, 0.02]
+    nrows_values = [100]
+    mask_fraction_values = [0.5, 0.1, 0.05]
     nunique_values = [2, 4, 8]
-    noise_values = [2, 5, 10]
+    noise_values = [2, 4, 6, 8, 10, 12, 14, 16]
     
     # Fixed parameters
     max_samples = 20000
-    batch_size = 100
+    batch_size = 50
     target_accuracy = 0.99
     min_num_rows = 5
     
@@ -393,7 +418,6 @@ def main():
         
         # Run attack_loop
         print(f"Running with parameters: {params}")
-        start_time = time.time()
         
         attack_results = attack_loop(
             nrows=params['nrows'],
@@ -404,30 +428,15 @@ def main():
             batch_size=batch_size,
             target_accuracy=target_accuracy,
             min_num_rows=min_num_rows,
+            output_file=file_path,
         )
         
-        elapsed_time = time.time() - start_time
-        
-        # Create results dict
-        results = {
-            'nrows': params['nrows'],
-            'mask_fraction': params['mask_fraction'],
-            'nunique': params['nunique'],
-            'noise': params['noise'],
-            'max_samples': max_samples,
-            'batch_size': batch_size,
-            'target_accuracy': target_accuracy,
-            'min_num_rows': min_num_rows,
-            'elapsed_time': elapsed_time,
-            'attack_results': attack_results,
-        }
-        
-        # Save to JSON
-        with open(file_path, 'w') as f:
-            json.dump(results, f, indent=2)
+        # Read back the saved file to get the final elapsed time
+        with open(file_path, 'r') as f:
+            final_results = json.load(f)
         
         print(f"Results saved to {file_path}")
-        print(f"Elapsed time: {elapsed_time:.2f} seconds")
+        print(f"Elapsed time: {final_results['elapsed_time']:.2f} seconds")
         print(f"Final accuracy: {attack_results[-1]['measure']:.4f}")
         print(f"Samples used: {attack_results[-1]['num_samples']}")
         
@@ -543,7 +552,6 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/reconstruction_tests
     
     # Run attack_loop
     print(f"Running job {args.job_num}: {params}")
-    start_time = time.time()
     
     attack_results = attack_loop(
         nrows=params['nrows'],
@@ -552,30 +560,17 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/reconstruction_tests
         noise=params['noise'],
         max_samples=max_samples,
         batch_size=batch_size,
-        target_accuracy=target_accuracy
+        target_accuracy=target_accuracy,
+        min_num_rows=min_num_rows,
+        output_file=file_path,
     )
     
-    elapsed_time = time.time() - start_time
-    
-    # Create results dict
-    results = {
-        'nrows': params['nrows'],
-        'mask_fraction': params['mask_fraction'],
-        'nunique': params['nunique'],
-        'noise': params['noise'],
-        'max_samples': max_samples,
-        'batch_size': batch_size,
-        'target_accuracy': target_accuracy,
-        'elapsed_time': elapsed_time,
-        'attack_results': attack_results
-    }
-    
-    # Save to JSON
-    with open(file_path, 'w') as f:
-        json.dump(results, f, indent=2)
+    # Read back the saved file to get the final elapsed time
+    with open(file_path, 'r') as f:
+        final_results = json.load(f)
     
     print(f"Results saved to {file_path}")
-    print(f"Elapsed time: {elapsed_time:.2f} seconds")
+    print(f"Elapsed time: {final_results['elapsed_time']:.2f} seconds")
     print(f"Final accuracy: {attack_results[-1]['measure']:.4f}")
     print(f"Samples used: {attack_results[-1]['num_samples']}")
 
