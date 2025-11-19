@@ -6,16 +6,16 @@
   "max_samples": 20000,
   "batch_size": 100,
   "target_accuracy": 0.99,
-  "elapsed_time": 0.21386146545410156,
+  "elapsed_time": 0.2217113971710205,
   "attack_results": [
     {
       "num_samples": 101,
       "measure": 1.0,
       "mixing": {
-        "min": 9,
-        "max": 44,
+        "min": 14,
+        "max": 42,
         "avg": 25.747474747474747,
-        "stddev": 4.558538296524168,
+        "stddev": 4.114874310692449,
         "median": 26.0
       }
     }
