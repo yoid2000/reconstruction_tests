@@ -216,7 +216,8 @@ def attack_loop(nrows: int,
                 noise: int,
                 max_samples: int = 20000,
                 batch_size: int = 100,
-                target_accuracy: float = 0.99) -> List[Dict]:
+                target_accuracy: float = 0.99,
+                min_num_rows: int = 5) -> List[Dict]:
     """ Runs an iterative attack loop to reconstruct values from noisy samples.
     
     Args:
@@ -227,6 +228,7 @@ def attack_loop(nrows: int,
         max_samples: Maximum number of samples to generate (default: 10000)
         batch_size: Number of samples to generate per iteration (default: 100)
         target_accuracy: Target accuracy to stop early (default: 0.99)
+        min_num_rows: Minimum number of rows to mask in each sample (default: 10)
     
     Returns:
         List of dicts with 'num_samples' and 'measure' for each loop iteration
@@ -251,12 +253,12 @@ def attack_loop(nrows: int,
     }]
     
     results = []
+    num_masked = max(min_num_rows, int(nrows * mask_fraction))
     
     while len(samples) < max_samples:
         # Generate a batch of samples
         for _ in range(batch_size):
             # Select random subset of IDs
-            num_masked = int(nrows * mask_fraction)
             masked_ids = set(np.random.choice(df['id'].values, size=num_masked, replace=False))
             
             # Get exact counts for each value in the masked subset
@@ -286,7 +288,8 @@ def attack_loop(nrows: int,
         results.append({
             'num_samples': len(samples),
             'measure': accuracy,
-            'mixing': mixing
+            'mixing': mixing,
+            'actual_num_rows': num_masked,
         })
         pp.pprint(results)
         
@@ -329,6 +332,7 @@ def main():
     max_samples = 20000
     batch_size = 100
     target_accuracy = 0.99
+    min_num_rows = 5
     
     # Defaults
     defaults = {
@@ -378,7 +382,8 @@ def main():
             noise=params['noise'],
             max_samples=max_samples,
             batch_size=batch_size,
-            target_accuracy=target_accuracy
+            target_accuracy=target_accuracy,
+            min_num_rows=min_num_rows,
         )
         
         elapsed_time = time.time() - start_time
@@ -392,8 +397,9 @@ def main():
             'max_samples': max_samples,
             'batch_size': batch_size,
             'target_accuracy': target_accuracy,
+            'min_num_rows': min_num_rows,
             'elapsed_time': elapsed_time,
-            'attack_results': attack_results
+            'attack_results': attack_results,
         }
         
         # Save to JSON
@@ -472,6 +478,27 @@ def main():
     if args.job_num is None:
         for i, params in enumerate(test_params):
             print(f"Job {i}: {params}")
+        
+        # Create run.slurm file
+        num_jobs = len(test_params) - 1  # Array range is 0 to num_jobs-1
+        slurm_content = f"""#!/bin/bash
+#SBATCH --job-name=recon_test
+#SBATCH --output=/INS/syndiffix/work/paul/github/reconstruction_tests/slurm_out/out.%a.out
+#SBATCH --time=12:00:00
+#SBATCH --mem=10G
+#SBATCH --cpus-per-task=8
+#SBATCH --array=0-{num_jobs}
+arrayNum="${{SLURM_ARRAY_TASK_ID}}"
+source /INS/syndiffix/work/paul/github/reconstruction_tests/.venv/bin/activate
+python /INS/syndiffix/work/paul/github/reconstruction_tests/reconstruction_tests/row_mask_attacks/run_row_mask_attack.py $arrayNum
+"""
+        
+        slurm_file = Path(__file__).parent / 'run.slurm'
+        with open(slurm_file, 'w') as f:
+            f.write(slurm_content)
+        
+        print(f"\nSLURM file created: {slurm_file}")
+        print(f"Total jobs: {len(test_params)} (array: 0-{num_jobs})")
         return
     
     # Check if job_num is valid
