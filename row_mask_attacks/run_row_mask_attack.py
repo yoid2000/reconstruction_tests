@@ -233,7 +233,6 @@ def attack_loop(nrows: int,
                 mask_fraction: float, 
                 noise: int,
                 max_samples: int = 20000,
-                batch_size: int = 50,
                 target_accuracy: float = 0.99,
                 min_num_rows: int = 5,
                 output_file: Path = None) -> List[Dict]:
@@ -244,10 +243,9 @@ def attack_loop(nrows: int,
         nunique: Number of unique values
         mask_fraction: Fraction of rows to sample (between 0 and 1)
         noise: Noise bound for counts (±noise)
-        max_samples: Maximum number of samples to generate (default: 10000)
-        batch_size: Number of samples to generate per iteration (default: 100)
+        max_samples: Maximum number of samples to generate (default: 20000)
         target_accuracy: Target accuracy to stop early (default: 0.99)
-        min_num_rows: Minimum number of rows to mask in each sample (default: 10)
+        min_num_rows: Minimum number of rows to mask in each sample (default: 5)
         output_file: Path to JSON file to save results incrementally (default: None)
     
     Returns:
@@ -278,9 +276,14 @@ def attack_loop(nrows: int,
     results = []
     num_masked = max(min_num_rows, int(nrows * mask_fraction))
     
-    while len(samples) < max_samples:
-        # Generate a batch of samples
-        for _ in range(batch_size):
+    # Start with 10 samples, then double each iteration
+    current_num_samples = 10
+    
+    while True:
+        # Generate new set of samples (replace existing samples, keep the all-IDs sample)
+        samples = [samples[0]]  # Keep the first sample with all IDs
+        
+        for _ in range(current_num_samples):
             # Select random subset of IDs
             masked_ids = set(np.random.choice(df['id'].values, size=num_masked, replace=False))
             
@@ -327,7 +330,6 @@ def attack_loop(nrows: int,
                 'nunique': nunique,
                 'noise': noise,
                 'max_samples': max_samples,
-                'batch_size': batch_size,
                 'target_accuracy': target_accuracy,
                 'min_num_rows': min_num_rows,
                 'elapsed_time': elapsed_time,
@@ -336,8 +338,15 @@ def attack_loop(nrows: int,
             with open(output_file, 'w') as f:
                 json.dump(save_dict, f, indent=2)
         
-        # Check stopping condition
+        # Check stopping conditions
         if accuracy >= target_accuracy:
+            break
+        
+        # Double the number of samples for next iteration
+        current_num_samples *= 2
+        
+        # Check if we would exceed max_samples
+        if current_num_samples + 1 > max_samples:  # +1 for the all-IDs sample
             break
     
     return results
@@ -368,14 +377,13 @@ def main():
     slurm_out_dir.mkdir(exist_ok=True)
     
     # Define parameter ranges
-    nrows_values = [100]
+    nrows_values = [100, 150]
     mask_fraction_values = [0.5, 0.1, 0.05]
     nunique_values = [2, 4, 8]
     noise_values = [2, 4, 6, 8, 10, 12, 14, 16]
     
     # Fixed parameters
     max_samples = 20000
-    batch_size = 50
     target_accuracy = 0.99
     min_num_rows = 5
     
@@ -407,7 +415,7 @@ def main():
         # Generate filename
         file_name = (f"nr{params['nrows']}_mf{int(params['mask_fraction']*100)}_"
                      f"nu{params['nunique']}_n{params['noise']}_"
-                     f"ms{max_samples}_bs{batch_size}_ta{int(target_accuracy*100)}")
+                     f"ms{max_samples}_ta{int(target_accuracy*100)}")
         
         file_path = attack_results_dir / f"{file_name}.json"
         
@@ -425,7 +433,6 @@ def main():
             mask_fraction=params['mask_fraction'],
             noise=params['noise'],
             max_samples=max_samples,
-            batch_size=batch_size,
             target_accuracy=target_accuracy,
             min_num_rows=min_num_rows,
             output_file=file_path,
@@ -541,7 +548,7 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
     # Generate filename
     file_name = (f"nr{params['nrows']}_mf{int(params['mask_fraction']*100)}_"
                  f"nu{params['nunique']}_n{params['noise']}_"
-                 f"ms{max_samples}_bs{batch_size}_ta{int(target_accuracy*100)}")
+                 f"ms{max_samples}_ta{int(target_accuracy*100)}")
     
     file_path = attack_results_dir / f"{file_name}.json"
     
@@ -559,7 +566,6 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
         mask_fraction=params['mask_fraction'],
         noise=params['noise'],
         max_samples=max_samples,
-        batch_size=batch_size,
         target_accuracy=target_accuracy,
         min_num_rows=min_num_rows,
         output_file=file_path,
