@@ -228,6 +228,26 @@ def mixing_stats(samples: List[Dict]) -> Dict:
         'median': float(np.median(counts))
     }
 
+def prior_job_results(file_path: Path) -> List[Dict]:
+    """Load prior job results from file if it exists.
+    
+    Args:
+        file_path: Path to JSON file with previous results
+    
+    Returns:
+        List of attack results if file exists, None otherwise
+    """
+    if not file_path.exists():
+        return None
+    
+    try:
+        with open(file_path, 'r') as f:
+            data = json.load(f)
+        return data.get('attack_results')
+    except Exception as e:
+        print(f"Error reading prior results from {file_path}: {e}")
+        return None
+
 def attack_loop(nrows: int, 
                 nunique: int, 
                 mask_fraction: float, 
@@ -235,7 +255,8 @@ def attack_loop(nrows: int,
                 max_samples: int = 20000,
                 target_accuracy: float = 0.99,
                 min_num_rows: int = 5,
-                output_file: Path = None) -> List[Dict]:
+                output_file: Path = None,
+                cur_attack_results: List[Dict] = None) -> None:
     """ Runs an iterative attack loop to reconstruct values from noisy samples.
     
     Args:
@@ -247,10 +268,29 @@ def attack_loop(nrows: int,
         target_accuracy: Target accuracy to stop early (default: 0.99)
         min_num_rows: Minimum number of rows to mask in each sample (default: 5)
         output_file: Path to JSON file to save results incrementally (default: None)
+        cur_attack_results: Previous attack results to resume from (default: None)
     
     Returns:
-        List of dicts with 'num_samples' and 'measure' for each loop iteration
+        None
     """
+    # Check if we're resuming from prior results
+    if cur_attack_results is not None and len(cur_attack_results) > 0:
+        last_result = cur_attack_results[-1]
+        
+        # If already achieved target accuracy, do nothing
+        if last_result['measure'] >= target_accuracy:
+            print(f"Prior results already achieved target accuracy: {last_result['measure']:.4f}")
+            return
+        
+        # Resume from prior results
+        print(f"Resuming from prior results with {last_result['num_samples']} samples, accuracy: {last_result['measure']:.4f}")
+        results = cur_attack_results
+        current_num_samples = last_result['num_samples'] - 1  # -1 for the all-IDs sample
+    else:
+        # Starting fresh
+        results = []
+        current_num_samples = 10
+    
     # Start timing
     start_time = time.time()
     
@@ -273,11 +313,7 @@ def attack_loop(nrows: int,
         'noisy_counts': noisy_counts
     }]
     
-    results = []
     num_masked = max(min_num_rows, int(nrows * mask_fraction))
-    
-    # Start with 10 samples, then double each iteration
-    current_num_samples = 10
     
     while True:
         # Generate new set of samples (replace existing samples, keep the all-IDs sample)
@@ -348,8 +384,6 @@ def attack_loop(nrows: int,
         # Check if we would exceed max_samples
         if current_num_samples + 1 > max_samples:  # +1 for the all-IDs sample
             break
-    
-    return results
 
 def main():
     """Main function to run parameter sweep experiments."""
@@ -419,15 +453,13 @@ def main():
         
         file_path = attack_results_dir / f"{file_name}.json"
         
-        # Check if file already exists
-        if file_path.exists():
-            print(f"File {file_path} already exists. Exiting.")
-            sys.exit(0)
+        # Load prior results if they exist
+        cur_attack_results = prior_job_results(file_path)
         
         # Run attack_loop
         print(f"Running with parameters: {params}")
         
-        attack_results = attack_loop(
+        attack_loop(
             nrows=params['nrows'],
             nunique=params['nunique'],
             mask_fraction=params['mask_fraction'],
@@ -436,6 +468,7 @@ def main():
             target_accuracy=target_accuracy,
             min_num_rows=min_num_rows,
             output_file=file_path,
+            cur_attack_results=cur_attack_results,
         )
         
         # Read back the saved file to get the final elapsed time
@@ -444,8 +477,8 @@ def main():
         
         print(f"Results saved to {file_path}")
         print(f"Elapsed time: {final_results['elapsed_time']:.2f} seconds")
-        print(f"Final accuracy: {attack_results[-1]['measure']:.4f}")
-        print(f"Samples used: {attack_results[-1]['num_samples']}")
+        print(f"Final accuracy: {final_results['attack_results'][-1]['measure']:.4f}")
+        print(f"Samples used: {final_results['attack_results'][-1]['num_samples']}")
         
         return
     
@@ -552,15 +585,13 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
     
     file_path = attack_results_dir / f"{file_name}.json"
     
-    # Check if file already exists
-    if file_path.exists():
-        print(f"File {file_path} already exists. Exiting.")
-        sys.exit(0)
+    # Load prior results if they exist
+    cur_attack_results = prior_job_results(file_path)
     
     # Run attack_loop
     print(f"Running job {args.job_num}: {params}")
     
-    attack_results = attack_loop(
+    attack_loop(
         nrows=params['nrows'],
         nunique=params['nunique'],
         mask_fraction=params['mask_fraction'],
@@ -569,6 +600,7 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
         target_accuracy=target_accuracy,
         min_num_rows=min_num_rows,
         output_file=file_path,
+        cur_attack_results=cur_attack_results,
     )
     
     # Read back the saved file to get the final elapsed time
@@ -577,8 +609,8 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
     
     print(f"Results saved to {file_path}")
     print(f"Elapsed time: {final_results['elapsed_time']:.2f} seconds")
-    print(f"Final accuracy: {attack_results[-1]['measure']:.4f}")
-    print(f"Samples used: {attack_results[-1]['num_samples']}")
+    print(f"Final accuracy: {final_results['attack_results'][-1]['measure']:.4f}")
+    print(f"Samples used: {final_results['attack_results'][-1]['num_samples']}")
 
 if __name__ == '__main__':
     main()
