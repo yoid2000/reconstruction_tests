@@ -564,7 +564,7 @@ def main():
     mask_size_values = [20, 25, 30]
     nunique_values = [2]
     noise_values = [2, 6, 10, 14]
-    nqi_values = [0, 3, 7]
+    nqi_values = [0]
     
     # Fixed parameters
     max_samples = 20000
