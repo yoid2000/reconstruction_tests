@@ -2,6 +2,275 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from scipy import stats
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def plot_mixing_vs_samples(df: pd.DataFrame, output_dir: Path):
+    """Create scatterplot of mixing_avg vs num_samples.
+    
+    Args:
+        df: DataFrame with complete jobs (measure >= target_accuracy)
+        output_dir: Directory to save plot
+    """
+    plt.figure(figsize=(10, 6))
+    
+    # Create scatter plot with colors based on noise
+    scatter = plt.scatter(df['num_samples'], df['mixing_avg'], 
+                         c=df['noise'], cmap='viridis', 
+                         alpha=0.6, s=50)
+    
+    # Add colorbar
+    cbar = plt.colorbar(scatter)
+    cbar.set_label('Noise')
+    
+    plt.xlabel('Number of Samples')
+    plt.ylabel('Mixing Average')
+    plt.title('Mixing Average vs Number of Samples (colored by Noise)')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_dir / 'mixing_avg_vs_num_samples.png', dpi=300)
+    plt.close()
+    print(f"Saved: {output_dir / 'mixing_avg_vs_num_samples.png'}")
+
+def plot_boxplots_by_parameters(df: pd.DataFrame, output_dir: Path):
+    """Create 4 subplots with boxplots of num_samples grouped by each parameter.
+    
+    Args:
+        df: DataFrame with complete jobs (measure >= target_accuracy)
+        output_dir: Directory to save plot
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    
+    # Subplot 1: Boxplot by noise
+    ax = axes[0, 0]
+    noise_sorted = sorted(df['noise'].unique())
+    df_sorted = df.copy()
+    df_sorted['noise'] = pd.Categorical(df_sorted['noise'], categories=noise_sorted, ordered=True)
+    df_sorted.boxplot(column='num_samples', by='noise', ax=ax)
+    ax.set_title('Number of Samples by Noise')
+    ax.set_xlabel('Noise')
+    ax.set_ylabel('Number of Samples')
+    ax.get_figure().suptitle('')  # Remove default title
+    
+    # Subplot 2: Boxplot by nunique
+    ax = axes[0, 1]
+    nunique_sorted = sorted(df['nunique'].unique())
+    df_sorted = df.copy()
+    df_sorted['nunique'] = pd.Categorical(df_sorted['nunique'], categories=nunique_sorted, ordered=True)
+    df_sorted.boxplot(column='num_samples', by='nunique', ax=ax)
+    ax.set_title('Number of Samples by Number of Unique Values')
+    ax.set_xlabel('Number of Unique Values')
+    ax.set_ylabel('Number of Samples')
+    ax.get_figure().suptitle('')
+    
+    # Subplot 3: Boxplot by nrows
+    ax = axes[1, 0]
+    nrows_sorted = sorted(df['nrows'].unique())
+    df_sorted = df.copy()
+    df_sorted['nrows'] = pd.Categorical(df_sorted['nrows'], categories=nrows_sorted, ordered=True)
+    df_sorted.boxplot(column='num_samples', by='nrows', ax=ax)
+    ax.set_title('Number of Samples by Number of Rows')
+    ax.set_xlabel('Number of Rows')
+    ax.set_ylabel('Number of Samples')
+    ax.get_figure().suptitle('')
+    
+    # Subplot 4: Boxplot by mask_fraction
+    ax = axes[1, 1]
+    mask_fraction_sorted = sorted(df['mask_fraction'].unique())
+    df_sorted = df.copy()
+    df_sorted['mask_fraction'] = pd.Categorical(df_sorted['mask_fraction'], categories=mask_fraction_sorted, ordered=True)
+    df_sorted.boxplot(column='num_samples', by='mask_fraction', ax=ax)
+    ax.set_title('Number of Samples by Mask Fraction')
+    ax.set_xlabel('Mask Fraction')
+    ax.set_ylabel('Number of Samples')
+    ax.get_figure().suptitle('')
+    
+    plt.tight_layout()
+    plt.savefig(output_dir / 'num_samples_boxplots_by_parameters.png', dpi=300)
+    plt.close()
+    print(f"Saved: {output_dir / 'num_samples_boxplots_by_parameters.png'}")
+
+def plot_mixing_boxplots_by_parameters(df: pd.DataFrame, output_dir: Path):
+    """Create 4 subplots with boxplots of mixing_avg grouped by each parameter.
+    
+    Args:
+        df: DataFrame with complete jobs (measure >= target_accuracy)
+        output_dir: Directory to save plot
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    
+    # Subplot 1: Boxplot by noise
+    ax = axes[0, 0]
+    noise_sorted = sorted(df['noise'].unique())
+    df_sorted = df.copy()
+    df_sorted['noise'] = pd.Categorical(df_sorted['noise'], categories=noise_sorted, ordered=True)
+    df_sorted.boxplot(column='mixing_avg', by='noise', ax=ax)
+    ax.set_title('Mixing Average by Noise')
+    ax.set_xlabel('Noise')
+    ax.set_ylabel('Mixing Average')
+    ax.set_yscale('log')
+    ax.get_figure().suptitle('')  # Remove default title
+    
+    # Subplot 2: Boxplot by nunique
+    ax = axes[0, 1]
+    nunique_sorted = sorted(df['nunique'].unique())
+    df_sorted = df.copy()
+    df_sorted['nunique'] = pd.Categorical(df_sorted['nunique'], categories=nunique_sorted, ordered=True)
+    df_sorted.boxplot(column='mixing_avg', by='nunique', ax=ax)
+    ax.set_title('Mixing Average by Number of Unique Values')
+    ax.set_xlabel('Number of Unique Values')
+    ax.set_ylabel('Mixing Average')
+    ax.set_yscale('log')
+    ax.get_figure().suptitle('')
+    
+    # Subplot 3: Boxplot by nrows
+    ax = axes[1, 0]
+    nrows_sorted = sorted(df['nrows'].unique())
+    df_sorted = df.copy()
+    df_sorted['nrows'] = pd.Categorical(df_sorted['nrows'], categories=nrows_sorted, ordered=True)
+    df_sorted.boxplot(column='mixing_avg', by='nrows', ax=ax)
+    ax.set_title('Mixing Average by Number of Rows')
+    ax.set_xlabel('Number of Rows')
+    ax.set_ylabel('Mixing Average')
+    ax.set_yscale('log')
+    ax.get_figure().suptitle('')
+    
+    # Subplot 4: Boxplot by mask_fraction
+    ax = axes[1, 1]
+    mask_fraction_sorted = sorted(df['mask_fraction'].unique())
+    df_sorted = df.copy()
+    df_sorted['mask_fraction'] = pd.Categorical(df_sorted['mask_fraction'], categories=mask_fraction_sorted, ordered=True)
+    df_sorted.boxplot(column='mixing_avg', by='mask_fraction', ax=ax)
+    ax.set_title('Mixing Average by Mask Fraction')
+    ax.set_xlabel('Mask Fraction')
+    ax.set_ylabel('Mixing Average')
+    ax.set_yscale('log')
+    ax.get_figure().suptitle('')
+    
+    plt.tight_layout()
+    plt.savefig(output_dir / 'mixing_avg_boxplots_by_parameters.png', dpi=300)
+    plt.close()
+    print(f"Saved: {output_dir / 'mixing_avg_boxplots_by_parameters.png'}")
+
+def plot_mixing_vs_noise_by_mask_fraction(df: pd.DataFrame, output_dir: Path):
+    """Create line plot of mixing_avg vs noise, with lines for each mask_fraction.
+    
+    Args:
+        df: DataFrame with complete jobs (measure >= target_accuracy)
+        output_dir: Directory to save plot
+    """
+    plt.figure(figsize=(10, 6))
+    
+    # Get unique mask fractions and sort them
+    mask_fractions = sorted(df['mask_fraction'].unique())
+    
+    # For each mask fraction, compute average mixing_avg for each noise level
+    for mf in mask_fractions:
+        df_mf = df[df['mask_fraction'] == mf]
+        
+        # Group by noise and compute mean, min, max mixing_avg
+        grouped = df_mf.groupby('noise')['mixing_avg'].agg(['mean', 'min', 'max']).sort_index()
+        
+        # Calculate error bars (distance from mean to min/max)
+        yerr_lower = grouped['mean'] - grouped['min']
+        yerr_upper = grouped['max'] - grouped['mean']
+        yerr = [yerr_lower.values, yerr_upper.values]
+        
+        # Plot line with error bars
+        plt.errorbar(grouped.index, grouped['mean'].values, yerr=yerr,
+                    marker='o', label=f'mask_fraction={mf}', linewidth=2,
+                    capsize=5, capthick=2)
+    
+    plt.xlabel('Noise')
+    plt.ylabel('Mixing Average')
+    plt.yscale('log')
+    plt.title('Average Mixing vs Noise by Mask Fraction')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_dir / 'mixing_vs_noise_by_mask_fraction.png', dpi=300)
+    plt.close()
+    print(f"Saved: {output_dir / 'mixing_vs_noise_by_mask_fraction.png'}")
+
+def plot_num_samples_vs_noise_by_mask_fraction(df: pd.DataFrame, output_dir: Path):
+    """Create line plot of num_samples vs noise, with lines for each mask_fraction.
+    
+    Args:
+        df: DataFrame with complete jobs (measure >= target_accuracy)
+        output_dir: Directory to save plot
+    """
+    plt.figure(figsize=(10, 6))
+    
+    # Get unique mask fractions and sort them
+    mask_fractions = sorted(df['mask_fraction'].unique())
+    
+    # For each mask fraction, compute average num_samples for each noise level
+    for mf in mask_fractions:
+        df_mf = df[df['mask_fraction'] == mf]
+        
+        # Group by noise and compute mean, min, max num_samples
+        grouped = df_mf.groupby('noise')['num_samples'].agg(['mean', 'min', 'max']).sort_index()
+        
+        # Calculate error bars (distance from mean to min/max)
+        yerr_lower = grouped['mean'] - grouped['min']
+        yerr_upper = grouped['max'] - grouped['mean']
+        yerr = [yerr_lower.values, yerr_upper.values]
+        
+        # Plot line with error bars
+        plt.errorbar(grouped.index, grouped['mean'].values, yerr=yerr,
+                    marker='o', label=f'mask_fraction={mf}', linewidth=2,
+                    capsize=5, capthick=2)
+    
+    plt.xlabel('Noise')
+    plt.ylabel('Number of Samples')
+    plt.yscale('log')
+    plt.title('Average Number of Samples vs Noise by Mask Fraction')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_dir / 'num_samples_vs_noise_by_mask_fraction.png', dpi=300)
+    plt.close()
+    print(f"Saved: {output_dir / 'num_samples_vs_noise_by_mask_fraction.png'}")
+
+def plot_elapsed_time_vs_noise_by_mask_fraction(df: pd.DataFrame, output_dir: Path):
+    """Create line plot of elapsed_time vs noise, with lines for each mask_fraction.
+    
+    Args:
+        df: DataFrame with complete jobs (measure >= target_accuracy)
+        output_dir: Directory to save plot
+    """
+    plt.figure(figsize=(10, 6))
+    
+    # Get unique mask fractions and sort them
+    mask_fractions = sorted(df['mask_fraction'].unique())
+    
+    # For each mask fraction, compute average elapsed_time for each noise level
+    for mf in mask_fractions:
+        df_mf = df[df['mask_fraction'] == mf]
+        
+        # Group by noise and compute mean, min, max elapsed_time
+        grouped = df_mf.groupby('noise')['elapsed_time'].agg(['mean', 'min', 'max']).sort_index()
+        
+        # Calculate error bars (distance from mean to min/max)
+        yerr_lower = grouped['mean'] - grouped['min']
+        yerr_upper = grouped['max'] - grouped['mean']
+        yerr = [yerr_lower.values, yerr_upper.values]
+        
+        # Plot line with error bars
+        plt.errorbar(grouped.index, grouped['mean'].values, yerr=yerr,
+                    marker='o', label=f'mask_fraction={mf}', linewidth=2,
+                    capsize=5, capthick=2)
+    
+    plt.xlabel('Noise')
+    plt.ylabel('Elapsed Time (seconds)')
+    plt.yscale('log')
+    plt.title('Average Elapsed Time vs Noise by Mask Fraction')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_dir / 'elapsed_time_vs_noise_by_mask_fraction.png', dpi=300)
+    plt.close()
+    print(f"Saved: {output_dir / 'elapsed_time_vs_noise_by_mask_fraction.png'}")
 
 def analyze_correlations():
     """Read result.parquet and analyze correlations with num_samples."""
@@ -24,6 +293,51 @@ def analyze_correlations():
     if 'num_samples' not in df.columns:
         print("\nError: num_samples column not found")
         return
+    
+    # Check for incomplete jobs (measure < target_accuracy)
+    if 'measure' in df.columns and 'target_accuracy' in df.columns:
+        incomplete = df[df['measure'] < df['target_accuracy']]
+        print(f"\n\nINCOMPLETE JOBS (measure < target_accuracy):")
+        print("=" * 80)
+        print(f"Number of incomplete jobs: {len(incomplete)}")
+        
+        if len(incomplete) > 0:
+            print("\nDetails of incomplete jobs:")
+            pd.set_option('display.max_columns', None)
+            pd.set_option('display.width', None)
+            pd.set_option('display.max_colwidth', None)
+            for idx, row in incomplete.iterrows():
+                print("\n" + "-" * 80)
+                print(f"Row {idx}:")
+                for col in df.columns:
+                    print(f"  {col:20s}: {row[col]}")
+            print("-" * 80)
+        print("\n")
+        
+        # Create dataframe with only complete jobs
+        df_complete = df[df['measure'] >= df['target_accuracy']].copy()
+        print(f"Complete jobs (measure >= target_accuracy): {len(df_complete)}")
+    else:
+        df_complete = df.copy()
+        print("Warning: measure or target_accuracy column not found, using all data")
+    
+    # Create plots directory
+    plots_dir = Path('./results/row_mask_attacks/plots')
+    plots_dir.mkdir(exist_ok=True)
+    print(f"\nPlots directory: {plots_dir}")
+    
+    # Generate plots using complete jobs only
+    if len(df_complete) > 0:
+        print("\nGenerating plots...")
+        plot_mixing_vs_samples(df_complete, plots_dir)
+        plot_boxplots_by_parameters(df_complete, plots_dir)
+        plot_mixing_boxplots_by_parameters(df_complete, plots_dir)
+        plot_mixing_vs_noise_by_mask_fraction(df_complete, plots_dir)
+        plot_num_samples_vs_noise_by_mask_fraction(df_complete, plots_dir)
+        plot_elapsed_time_vs_noise_by_mask_fraction(df_complete, plots_dir)
+        print("Plots generated successfully\n")
+    else:
+        print("Warning: No complete jobs to plot\n")
     
     # Get numeric columns (exclude filename and num_samples itself)
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()

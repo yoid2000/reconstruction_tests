@@ -21,7 +21,7 @@ except ImportError:
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from df_builds.build_row_masks import build_row_masks
+from df_builds.build_row_masks import build_row_masks, build_row_masks_qi
 
 def check_gurobi_available() -> bool:
     """Check if Gurobi is available and can actually be used.
@@ -228,6 +228,86 @@ def mixing_stats(samples: List[Dict]) -> Dict:
         'median': float(np.median(counts))
     }
 
+def get_qi_subset_list(df: pd.DataFrame, min_num_rows: int) -> List[Dict]:
+    """ Generates list of QI column subsets with their values and matching row counts.
+    
+    Args:
+        df: DataFrame with QI columns (qi0, qi1, ..., qiN)
+        min_num_rows: Minimum number of rows in any aggregate (default: 5)
+    
+    Returns:
+        List of dicts with 'qi_cols', 'qi_vals', and 'num_rows', sorted by num_rows descending
+    """
+    import itertools
+    
+    # Find all QI columns
+    all_qi_cols = sorted([col for col in df.columns if col.startswith('qi')])
+    
+    if len(all_qi_cols) == 0:
+        return []
+    
+    qi_subsets = []
+    
+    # Iterate through subset sizes from 1 to nqi-1
+    # (nqi columns would only have 1 row per combination since all combos are unique)
+    for subset_size in range(1, len(all_qi_cols)):
+        # Get all combinations of qi columns of this size
+        for qi_cols in itertools.combinations(all_qi_cols, subset_size):
+            qi_cols = list(qi_cols)
+            
+            # Get all unique combinations of values for these columns
+            qi_combinations = df[qi_cols].drop_duplicates()
+            
+            # For each combination of values, count matching rows
+            for _, combo_row in qi_combinations.iterrows():
+                qi_vals = [combo_row[col] for col in qi_cols]
+                
+                # Create boolean mask for rows matching this combination
+                mask = pd.Series([True] * len(df))
+                for col, val in zip(qi_cols, qi_vals):
+                    mask &= (df[col] == val)
+                
+                num_rows = mask.sum()
+                
+                # Only include if meets minimum threshold
+                if num_rows >= min_num_rows:
+                    qi_subsets.append({
+                        'qi_cols': qi_cols,
+                        'qi_vals': [int(val) for val in qi_vals],
+                        'num_rows': int(num_rows)
+                    })
+    
+    # Sort by num_rows descending
+    qi_subsets.sort(key=lambda x: x['num_rows'], reverse=True)
+    
+    return qi_subsets
+
+def get_qi_subsets_mask(df: pd.DataFrame, qi_subsets: List[Dict], index: int) -> Set[int]:
+    """ Returns set of IDs matching the QI subset at the specified index.
+    
+    Args:
+        df: DataFrame with 'id' column and QI columns
+        qi_subsets: List of QI subsets from get_qi_subset_list()
+        index: Index into qi_subsets
+    
+    Returns:
+        Set of ID values matching the QI columns and values at the specified index
+    """
+    if index < 0 or index >= len(qi_subsets):
+        raise ValueError(f"Index {index} out of range [0, {len(qi_subsets)-1}]")
+    
+    subset = qi_subsets[index]
+    qi_cols = subset['qi_cols']
+    qi_vals = subset['qi_vals']
+    
+    # Create boolean mask for rows matching this combination
+    mask = pd.Series([True] * len(df))
+    for col, val in zip(qi_cols, qi_vals):
+        mask &= (df[col] == val)
+    
+    # Return set of matching IDs
+    return set(df[mask]['id'].values)
+
 def prior_job_results(file_path: Path) -> List[Dict]:
     """Load prior job results from file if it exists.
     
@@ -248,10 +328,54 @@ def prior_job_results(file_path: Path) -> List[Dict]:
         print(f"Error reading prior results from {file_path}: {e}")
         return None
 
+def initialize_samples(df, mask_size, nunique, noise):
+    # Create initial bins where each ID appears in exactly one bin
+    # This avoids the issue of some IDs never being sampled
+    all_ids = list(df['id'].values)
+    np.random.shuffle(all_ids)
+    
+    num_bins = len(all_ids) // mask_size
+    remainder = len(all_ids) % mask_size
+    
+    # First, create all bins with their IDs
+    bins = []
+    for i in range(num_bins):
+        bin_ids = set(all_ids[i * mask_size:(i + 1) * mask_size])
+        bins.append(bin_ids)
+    
+    # Distribute remaining IDs among existing bins
+    if remainder > 0:
+        remaining_ids = all_ids[num_bins * mask_size:]
+        for i, remaining_id in enumerate(remaining_ids):
+            bin_idx = i % num_bins
+            bins[bin_idx].add(remaining_id)
+    
+    # Now loop through bins to add noise and create samples
+    initial_samples = []
+    for bin_ids in bins:
+        # Get exact counts for each value in this bin
+        bin_df = df[df['id'].isin(bin_ids)]
+        exact_counts = bin_df['val'].value_counts().to_dict()
+        
+        # Add noise to counts
+        noisy_counts = []
+        for val in range(nunique):
+            exact_count = exact_counts.get(val, 0)
+            noise_delta = np.random.randint(-noise, noise + 1)
+            noisy_count = max(0, exact_count + noise_delta)
+            noisy_counts.append({'val': val, 'count': noisy_count})
+        
+        initial_samples.append({
+            'ids': bin_ids,
+            'noisy_counts': noisy_counts
+        })
+    return initial_samples
+
 def attack_loop(nrows: int, 
                 nunique: int, 
-                mask_fraction: float, 
+                mask_size: int, 
                 noise: int,
+                nqi: int = 0,
                 max_samples: int = 20000,
                 target_accuracy: float = 0.99,
                 min_num_rows: int = 5,
@@ -262,11 +386,12 @@ def attack_loop(nrows: int,
     Args:
         nrows: Number of rows in the dataframe
         nunique: Number of unique values
-        mask_fraction: Fraction of rows to sample (between 0 and 1)
+        mask_size: Number of rows in each random sample
         noise: Noise bound for counts (±noise)
+        nqi: Number of quasi-identifier columns
         max_samples: Maximum number of samples to generate (default: 20000)
         target_accuracy: Target accuracy to stop early (default: 0.99)
-        min_num_rows: Minimum number of rows to mask in each sample (default: 5)
+        min_num_rows: Minimum number of rows in any aggregate (default: 5)
         output_file: Path to JSON file to save results incrementally (default: None)
         cur_attack_results: Previous attack results to resume from (default: None)
     
@@ -295,33 +420,39 @@ def attack_loop(nrows: int,
     start_time = time.time()
     
     # Build the ground truth dataframe
-    df = build_row_masks(nrows=nrows, nunique=nunique)
+    if nqi == 0:
+        df = build_row_masks(nrows=nrows, nunique=nunique)
+    else:
+        df = build_row_masks_qi(nrows=nrows, nunique=nunique, nqi=nqi)
     
-    # Initialize with a sample containing all IDs
-    all_ids = set(df['id'].values)
-    exact_counts = df['val'].value_counts().to_dict()
-    
-    noisy_counts = []
-    for val in range(nunique):
-        exact_count = exact_counts.get(val, 0)
-        noise_delta = np.random.randint(-noise, noise + 1)
-        noisy_count = max(0, exact_count + noise_delta)
-        noisy_counts.append({'val': val, 'count': noisy_count})
-    
-    samples = [{
-        'ids': all_ids,
-        'noisy_counts': noisy_counts
-    }]
-    
-    num_masked = max(min_num_rows, int(nrows * mask_fraction))
+    initial_samples = []
+    num_masked = None
+    qi_subsets = []
+    if nqi > 0:
+        qi_subsets = get_qi_subset_list(df, min_num_rows)
+        pp.pprint(qi_subsets)
+        print(f"Total QI subsets available: {len(qi_subsets)}")
+    else:
+        initial_samples = initialize_samples(df, mask_size, nunique, noise)
+        print(f"start with {len(initial_samples)} initial samples")
+        num_masked = mask_size
     
     while True:
-        # Generate new set of samples (replace existing samples, keep the all-IDs sample)
-        samples = [samples[0]]  # Keep the first sample with all IDs
+        # Start with initial binned samples, if any
+        samples = initial_samples.copy()
+        qi_index = 0
+        avg_num_masked = 0
         
         for _ in range(current_num_samples):
             # Select random subset of IDs
-            masked_ids = set(np.random.choice(df['id'].values, size=num_masked, replace=False))
+            if nqi == 0:
+                masked_ids = set(np.random.choice(df['id'].values, size=num_masked, replace=False))
+            else:
+                if qi_index >= len(qi_subsets):
+                    break
+                masked_ids = get_qi_subsets_mask(df, qi_subsets, qi_index)
+                avg_num_masked += len(masked_ids)
+                qi_index += 1
             
             # Get exact counts for each value in the masked subset
             masked_df = df[df['id'].isin(masked_ids)]
@@ -331,10 +462,16 @@ def attack_loop(nrows: int,
             noisy_counts = []
             for val in range(nunique):
                 exact_count = exact_counts.get(val, 0)
+                if exact_count < min_num_rows:
+                    continue
                 noise_delta = np.random.randint(-noise, noise + 1)
                 noisy_count = max(0, exact_count + noise_delta)
                 noisy_counts.append({'val': val, 'count': noisy_count})
             
+            if len(noisy_counts) == 0:
+                # No counts above min_num_rows, skip this sample
+                continue
+
             # Add sample
             samples.append({
                 'ids': masked_ids,
@@ -345,6 +482,9 @@ def attack_loop(nrows: int,
         reconstructed = reconstruct(samples, noise)
         accuracy = measure(df, reconstructed)
         mixing = mixing_stats(samples)
+
+        if nqi > 0:
+            num_masked = int(avg_num_masked / (len(samples) - len(initial_samples))) if (len(samples) - len(initial_samples)) > 0 else 0
         
         # Record results
         results.append({
@@ -353,7 +493,7 @@ def attack_loop(nrows: int,
             'mixing': mixing,
             'actual_num_rows': num_masked,
         })
-        pp.pprint(results)
+        pp.pprint(results[-1])
         
         # Calculate elapsed time
         elapsed_time = time.time() - start_time
@@ -362,9 +502,10 @@ def attack_loop(nrows: int,
         if output_file is not None:
             save_dict = {
                 'nrows': nrows,
-                'mask_fraction': mask_fraction,
+                'mask_size': mask_size,
                 'nunique': nunique,
                 'noise': noise,
+                'nqi': nqi,
                 'max_samples': max_samples,
                 'target_accuracy': target_accuracy,
                 'min_num_rows': min_num_rows,
@@ -376,13 +517,19 @@ def attack_loop(nrows: int,
         
         # Check stopping conditions
         if accuracy >= target_accuracy:
+            print(f"Exit loop: Target accuracy {target_accuracy} achieved: {accuracy:.4f}")
+            break
+
+        if nqi > 0 and current_num_samples >= len(qi_subsets):
+            print("Exit loop: No more QI subsets to use")
             break
         
         # Double the number of samples for next iteration
         current_num_samples *= 2
         
         # Check if we would exceed max_samples
-        if current_num_samples + 1 > max_samples:  # +1 for the all-IDs sample
+        if current_num_samples + len(initial_samples) > max_samples:
+            print(f"Exit loop: Reached max samples limit: {max_samples}")
             break
 
 def main():
@@ -393,12 +540,14 @@ def main():
                        help='Job number to run from parameter combinations')
     parser.add_argument('--nrows', type=int, default=None,
                        help='Number of rows')
-    parser.add_argument('--mask_fraction', type=float, default=None,
-                       help='Mask fraction (0-1)')
+    parser.add_argument('--mask_size', type=int, default=None,
+                       help='Number of rows in each random sample')
     parser.add_argument('--nunique', type=int, default=None,
                        help='Number of unique values')
     parser.add_argument('--noise', type=int, default=None,
                        help='Noise bound')
+    parser.add_argument('--nqi', type=int, default=None,
+                       help='Number of quasi-identifier columns')
     
     args = parser.parse_args()
     
@@ -411,10 +560,11 @@ def main():
     slurm_out_dir.mkdir(exist_ok=True)
     
     # Define parameter ranges
-    nrows_values = [100, 150]
-    mask_fraction_values = [0.5, 0.1, 0.05]
-    nunique_values = [2, 4, 8]
-    noise_values = [2, 4, 6, 8, 10, 12, 14, 16]
+    nrows_values = [200, 300]
+    mask_size_values = [20, 25, 30]
+    nunique_values = [2]
+    noise_values = [2, 6, 10, 14]
+    nqi_values = [0, 3, 7]
     
     # Fixed parameters
     max_samples = 20000
@@ -423,33 +573,36 @@ def main():
     
     # Defaults
     defaults = {
-        'nrows': 100,
-        'mask_fraction': 0.5,
+        'nrows': 200,
+        'mask_size': 20,
         'nunique': 2,
-        'noise': 2
+        'noise': 2,
+        'nqi': 0,
     }
     
     # Check if any individual parameters were provided
     individual_params_provided = any([
         args.nrows is not None,
-        args.mask_fraction is not None,
+        args.mask_size is not None,
         args.nunique is not None,
-        args.noise is not None
+        args.noise is not None,
+        args.nqi is not None
     ])
     
     if individual_params_provided:
         # Use command line parameters, falling back to defaults
         params = {
             'nrows': args.nrows if args.nrows is not None else defaults['nrows'],
-            'mask_fraction': args.mask_fraction if args.mask_fraction is not None else defaults['mask_fraction'],
+            'mask_size': args.mask_size if args.mask_size is not None else defaults['mask_size'],
             'nunique': args.nunique if args.nunique is not None else defaults['nunique'],
-            'noise': args.noise if args.noise is not None else defaults['noise']
+            'noise': args.noise if args.noise is not None else defaults['noise'],
+            'nqi': args.nqi if args.nqi is not None else defaults['nqi'],
         }
         
         # Generate filename
-        file_name = (f"nr{params['nrows']}_mf{int(params['mask_fraction']*100)}_"
-                     f"nu{params['nunique']}_n{params['noise']}_"
-                     f"ms{max_samples}_ta{int(target_accuracy*100)}")
+        file_name = (f"nr{params['nrows']}_mf{params['mask_size']}_"
+                    f"nu{params['nunique']}_qi{params['nqi']}_n{params['noise']}_"
+                    f"ms{max_samples}_ta{int(target_accuracy*100)}")
         
         file_path = attack_results_dir / f"{file_name}.json"
         
@@ -462,8 +615,9 @@ def main():
         attack_loop(
             nrows=params['nrows'],
             nunique=params['nunique'],
-            mask_fraction=params['mask_fraction'],
+            mask_size=params['mask_size'],
             noise=params['noise'],
+            nqi=params['nqi'],
             max_samples=max_samples,
             target_accuracy=target_accuracy,
             min_num_rows=min_num_rows,
@@ -489,33 +643,46 @@ def main():
     for nrows in nrows_values:
         test_params.append({
             'nrows': nrows,
-            'mask_fraction': defaults['mask_fraction'],
+            'mask_size': defaults['mask_size'],
             'nunique': defaults['nunique'],
-            'noise': defaults['noise']
+            'noise': defaults['noise'],
+            'nqi': defaults['nqi'],
         })
     
-    for mask_fraction in mask_fraction_values:
+    for mask_size in mask_size_values:
         test_params.append({
             'nrows': defaults['nrows'],
-            'mask_fraction': mask_fraction,
+            'mask_size': mask_size,
             'nunique': defaults['nunique'],
-            'noise': defaults['noise']
+            'noise': defaults['noise'],
+            'nqi': defaults['nqi'],
         })
     
     for nunique in nunique_values:
         test_params.append({
             'nrows': defaults['nrows'],
-            'mask_fraction': defaults['mask_fraction'],
+            'mask_size': defaults['mask_size'],
             'nunique': nunique,
-            'noise': defaults['noise']
+            'noise': defaults['noise'],
+            'nqi': defaults['nqi'],
         })
     
     for noise in noise_values:
         test_params.append({
             'nrows': defaults['nrows'],
-            'mask_fraction': defaults['mask_fraction'],
+            'mask_size': defaults['mask_size'],
             'nunique': defaults['nunique'],
-            'noise': noise
+            'noise': noise,
+            'nqi': defaults['nqi'],
+        })
+
+    for nqi in nqi_values:
+        test_params.append({
+            'nrows': defaults['nrows'],
+            'mask_size': defaults['mask_size'],
+            'nunique': defaults['nunique'],
+            'noise': defaults['noise'],
+            'nqi': nqi,
         })
     
     # Remove duplicates from first pass
@@ -529,12 +696,12 @@ def main():
     
     # Second pass: all combinations not in first pass
     for nrows in nrows_values:
-        for mask_fraction in mask_fraction_values:
+        for mask_size in mask_size_values:
             for nunique in nunique_values:
                 for noise in noise_values:
                     params = {
                         'nrows': nrows,
-                        'mask_fraction': mask_fraction,
+                        'mask_size': mask_size,
                         'nunique': nunique,
                         'noise': noise
                     }
@@ -553,7 +720,7 @@ def main():
         slurm_content = f"""#!/bin/bash
 #SBATCH --job-name=recon_test
 #SBATCH --output=/INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/slurm_out/out.%a.out
-#SBATCH --time=12:00:00
+#SBATCH --time=7-00:00:00
 #SBATCH --mem=10G
 #SBATCH --cpus-per-task=8
 #SBATCH --array=0-{num_jobs}
@@ -579,10 +746,10 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
     params = test_params[args.job_num]
     
     # Generate filename
-    file_name = (f"nr{params['nrows']}_mf{int(params['mask_fraction']*100)}_"
-                 f"nu{params['nunique']}_n{params['noise']}_"
-                 f"ms{max_samples}_ta{int(target_accuracy*100)}")
-    
+    file_name = (f"nr{params['nrows']}_mf{params['mask_size']}_"
+                    f"nu{params['nunique']}_qi{params['nqi']}_n{params['noise']}_"
+                    f"ms{max_samples}_ta{int(target_accuracy*100)}")
+        
     file_path = attack_results_dir / f"{file_name}.json"
     
     # Load prior results if they exist
@@ -594,8 +761,9 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
     attack_loop(
         nrows=params['nrows'],
         nunique=params['nunique'],
-        mask_fraction=params['mask_fraction'],
+        mask_size=params['mask_size'],
         noise=params['noise'],
+        nqi=params['nqi'],
         max_samples=max_samples,
         target_accuracy=target_accuracy,
         min_num_rows=min_num_rows,
