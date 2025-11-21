@@ -699,16 +699,18 @@ def main():
         for mask_size in mask_size_values:
             for nunique in nunique_values:
                 for noise in noise_values:
-                    params = {
-                        'nrows': nrows,
-                        'mask_size': mask_size,
-                        'nunique': nunique,
-                        'noise': noise
-                    }
-                    key = tuple(sorted(params.items()))
-                    if key not in seen:
-                        seen.add(key)
-                        test_params.append(params)
+                    for nqi in nqi_values:
+                        params = {
+                            'nrows': nrows,
+                            'mask_size': mask_size,
+                            'nunique': nunique,
+                            'noise': noise,
+                            'nqi': nqi,
+                        }
+                        key = tuple(sorted(params.items()))
+                        if key not in seen:
+                            seen.add(key)
+                            test_params.append(params)
     
     # If no job_num, just print all combinations
     if args.job_num is None:
