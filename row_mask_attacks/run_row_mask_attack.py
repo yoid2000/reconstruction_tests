@@ -228,7 +228,7 @@ def mixing_stats(samples: List[Dict]) -> Dict:
         'median': float(np.median(counts))
     }
 
-def get_qi_subset_list(df: pd.DataFrame, min_num_rows: int) -> List[Dict]:
+def get_qi_subset_list(df: pd.DataFrame, min_num_rows: int) -> tuple[List[Dict], List[Dict]]:
     """ Generates list of QI column subsets with their values and matching row counts.
     
     Args:
@@ -236,7 +236,9 @@ def get_qi_subset_list(df: pd.DataFrame, min_num_rows: int) -> List[Dict]:
         min_num_rows: Minimum number of rows in any aggregate (default: 5)
     
     Returns:
-        List of dicts with 'qi_cols', 'qi_vals', and 'num_rows', sorted by num_rows descending
+        Tuple of two lists:
+        - initial_subset_list: subsets with same qi_cols as first element
+        - remaining_subset_list: all other subsets
     """
     import itertools
     
@@ -244,13 +246,16 @@ def get_qi_subset_list(df: pd.DataFrame, min_num_rows: int) -> List[Dict]:
     all_qi_cols = sorted([col for col in df.columns if col.startswith('qi')])
     
     if len(all_qi_cols) == 0:
-        return []
+        return [], []
     
     qi_subsets = []
     
     # Iterate through subset sizes from 1 to nqi-1
     # (nqi columns would only have 1 row per combination since all combos are unique)
+    num_subsets = 0
     for subset_size in range(1, len(all_qi_cols)):
+        if num_subsets >= 20000:
+            break
         # Get all combinations of qi columns of this size
         for qi_cols in itertools.combinations(all_qi_cols, subset_size):
             qi_cols = list(qi_cols)
@@ -276,11 +281,37 @@ def get_qi_subset_list(df: pd.DataFrame, min_num_rows: int) -> List[Dict]:
                         'qi_vals': [int(val) for val in qi_vals],
                         'num_rows': int(num_rows)
                     })
+                    num_subsets += 1
     
-    # Sort by num_rows descending
-    qi_subsets.sort(key=lambda x: x['num_rows'], reverse=True)
+    # Split into two groups: num_rows >= 20 and num_rows < 20
+    large_subsets = [s for s in qi_subsets if s['num_rows'] >= 20]
+    small_subsets = [s for s in qi_subsets if s['num_rows'] < 20]
     
-    return qi_subsets
+    # Sort large subsets ascending, small subsets descending
+    large_subsets.sort(key=lambda x: x['num_rows'])
+    small_subsets.sort(key=lambda x: x['num_rows'], reverse=True)
+    
+    # Concatenate: large (ascending) followed by small (descending)
+    all_subsets = large_subsets + small_subsets
+    
+    # If no subsets, return empty lists
+    if len(all_subsets) == 0:
+        return [], []
+    
+    # Get qi_cols from first element
+    first_qi_cols = all_subsets[0]['qi_cols']
+    
+    # Separate into initial and remaining lists
+    initial_subset_list = []
+    remaining_subset_list = []
+    
+    for subset in all_subsets:
+        if subset['qi_cols'] == first_qi_cols:
+            initial_subset_list.append(subset)
+        else:
+            remaining_subset_list.append(subset)
+    
+    return initial_subset_list, remaining_subset_list
 
 def get_qi_subsets_mask(df: pd.DataFrame, qi_subsets: List[Dict], index: int) -> Set[int]:
     """ Returns set of IDs matching the QI subset at the specified index.
@@ -307,6 +338,38 @@ def get_qi_subsets_mask(df: pd.DataFrame, qi_subsets: List[Dict], index: int) ->
     
     # Return set of matching IDs
     return set(df[mask]['id'].values)
+
+def get_initial_samples(df, init_qi_subsets, nunique, noise, min_num_rows):
+    qi_index = 0
+    init_samples = []
+
+    for qi_index in range(len(init_qi_subsets)):
+        masked_ids = get_qi_subsets_mask(df, init_qi_subsets, qi_index)
+        
+        # Get exact counts for each value in the masked subset
+        masked_df = df[df['id'].isin(masked_ids)]
+        exact_counts = masked_df['val'].value_counts().to_dict()
+        
+        # Add noise to counts
+        noisy_counts = []
+        for val in range(nunique):
+            exact_count = exact_counts.get(val, 0)
+            if exact_count < min_num_rows:
+                continue
+            noise_delta = np.random.randint(-noise, noise + 1)
+            noisy_count = max(0, exact_count + noise_delta)
+            noisy_counts.append({'val': val, 'count': noisy_count})
+        
+        if len(noisy_counts) == 0:
+            # No counts above min_num_rows, skip this sample
+            continue
+
+        # Add sample
+        init_samples.append({
+            'ids': masked_ids,
+            'noisy_counts': noisy_counts
+        })
+    return init_samples
 
 def prior_job_results(file_path: Path) -> List[Dict]:
     """Load prior job results from file if it exists.
@@ -427,11 +490,14 @@ def attack_loop(nrows: int,
     
     initial_samples = []
     num_masked = None
-    qi_subsets = []
+    init_qi_subsets = []
+    remain_qi_subsets = []
     if nqi > 0:
-        qi_subsets = get_qi_subset_list(df, min_num_rows)
-        pp.pprint(qi_subsets)
-        print(f"Total QI subsets available: {len(qi_subsets)}")
+        init_qi_subsets, remain_qi_subsets = get_qi_subset_list(df, min_num_rows)
+        initial_samples = get_initial_samples(df, init_qi_subsets, nunique, noise, min_num_rows)
+        pp.pprint(init_qi_subsets)
+        pp.pprint(remain_qi_subsets)
+        print(f"Total QI subsets available: init: {len(init_qi_subsets)}, remaining: {len(remain_qi_subsets)}")
     else:
         initial_samples = initialize_samples(df, mask_size, nunique, noise)
         print(f"start with {len(initial_samples)} initial samples")
@@ -448,9 +514,9 @@ def attack_loop(nrows: int,
             if nqi == 0:
                 masked_ids = set(np.random.choice(df['id'].values, size=num_masked, replace=False))
             else:
-                if qi_index >= len(qi_subsets):
+                if qi_index >= len(remain_qi_subsets):
                     break
-                masked_ids = get_qi_subsets_mask(df, qi_subsets, qi_index)
+                masked_ids = get_qi_subsets_mask(df, remain_qi_subsets, qi_index)
                 avg_num_masked += len(masked_ids)
                 qi_index += 1
             
@@ -479,6 +545,7 @@ def attack_loop(nrows: int,
             })
         
         # Reconstruct and measure
+        print(f"Begin reconstruction with {len(samples)} samples")
         reconstructed = reconstruct(samples, noise)
         accuracy = measure(df, reconstructed)
         mixing = mixing_stats(samples)
@@ -520,7 +587,7 @@ def attack_loop(nrows: int,
             print(f"Exit loop: Target accuracy {target_accuracy} achieved: {accuracy:.4f}")
             break
 
-        if nqi > 0 and current_num_samples >= len(qi_subsets):
+        if nqi > 0 and current_num_samples >= len(remain_qi_subsets):
             print("Exit loop: No more QI subsets to use")
             break
         
@@ -561,7 +628,7 @@ def main():
     
     # Define parameter ranges
     nrows_values = [200, 300]
-    mask_size_values = [20, 25, 30]
+    mask_size_values = [20, 25, 30, 50, 100]
     nunique_values = [2]
     noise_values = [2, 6, 10, 14]
     nqi_values = [0]

@@ -36,7 +36,7 @@ def gather_results() -> pd.DataFrame:
             row = {
                 'filename': json_file.name,
                 'nrows': result.get('nrows'),
-                'mask_fraction': result.get('mask_fraction'),
+                'mask_size': result.get('mask_size'),
                 'nunique': result.get('nunique'),
                 'noise': result.get('noise'),
                 'max_samples': result.get('max_samples'),
