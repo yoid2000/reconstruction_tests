@@ -44,7 +44,8 @@ def check_masks_qi(df: pd.DataFrame) -> None:
 
 def build_row_masks_qi(nrows: int = 1024,
                        nunique: int = 2,
-                       nqi: int = 3) -> pd.DataFrame:
+                       nqi: int = 3,
+                       vals_per_qi = 0) -> pd.DataFrame:
     """ Builds a dataframe with nrows rows and 2+nqi columns.
     
     Args:
@@ -59,17 +60,38 @@ def build_row_masks_qi(nrows: int = 1024,
     # We need n_distinct^nqi >= nrows
     # So n_distinct = ceil(nrows^(1/nqi))
     n_distinct = math.ceil(nrows ** (1.0 / nqi))
+
+    if vals_per_qi >= n_distinct:
+        n_distinct = vals_per_qi
     
-    # Generate all possible combinations
-    possible_values = list(range(n_distinct))
-    all_combinations = list(itertools.product(possible_values, repeat=nqi))
+    # Calculate length of all possible combinations
+    len_all_combinations = n_distinct ** nqi
     
-    # Randomly select nrows combinations
-    if len(all_combinations) < nrows:
-        raise ValueError(f"Not enough combinations: {len(all_combinations)} < {nrows}")
-    
-    selected_indices = np.random.choice(len(all_combinations), size=nrows, replace=False)
-    selected_combinations = [all_combinations[i] for i in selected_indices]
+    # Check if we can afford to generate all combinations
+    if len_all_combinations < 10 * nrows:
+        # Generate all possible combinations
+        possible_values = list(range(n_distinct))
+        all_combinations = list(itertools.product(possible_values, repeat=nqi))
+        
+        # Randomly select nrows combinations
+        if len(all_combinations) < nrows:
+            raise ValueError(f"Not enough combinations: {len(all_combinations)} < {nrows}")
+        
+        selected_indices = np.random.choice(len(all_combinations), size=nrows, replace=False)
+        selected_combinations = [all_combinations[i] for i in selected_indices]
+    else:
+        # Too many combinations to enumerate, sample randomly
+        selected_combinations = []
+        seen_combinations = set()
+        
+        while len(selected_combinations) < nrows:
+            # Randomly generate a combination
+            combo = tuple(np.random.randint(0, n_distinct, size=nqi))
+            
+            # Check if we've already selected this combination
+            if combo not in seen_combinations:
+                seen_combinations.add(combo)
+                selected_combinations.append(combo)
     
     # Build the dataframe
     df = pd.DataFrame({
