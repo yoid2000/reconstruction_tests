@@ -687,6 +687,129 @@ def plot_measure_by_nqi(df: pd.DataFrame, output_dir: Path, target_accuracy: flo
     plt.close()
     print(f"Saved: {output_dir / 'measure_by_nqi.png'}")
 
+def analyze_single_parameter_variation(df: pd.DataFrame, experiments: list, exp_group: str):
+    """Analyze how results vary when only one parameter changes.
+    
+    Args:
+        df: DataFrame for this experiment group
+        experiments: List of all experiments
+        exp_group: Name of the experiment group
+    """
+    # Find the experiment definition for this group
+    exp_def = None
+    for exp in experiments:
+        if exp['experiment_group'] == exp_group:
+            exp_def = exp
+            break
+    
+    if exp_def is None:
+        return
+    
+    # Find parameters that vary (have more than one value)
+    varying_params = []
+    for param, values in exp_def.items():
+        if param in ['experiment_group', 'dont_run']:
+            continue
+        if isinstance(values, list) and len(values) > 1:
+            varying_params.append(param)
+    
+    # Only proceed if exactly one parameter varies
+    if len(varying_params) != 1:
+        return
+    
+    varying_param = varying_params[0]
+    param_values = sorted(exp_def[varying_param])
+    
+    print(f"\n{'='*80}")
+    print(f"SINGLE PARAMETER VARIATION ANALYSIS: {varying_param}")
+    print(f"{'='*80}")
+    print(f"\nParameter '{varying_param}' varies across values: {param_values}")
+    
+    # Result columns to analyze
+    result_cols = ['num_samples', 'num_equations', 'measure', 'mixing_avg', 
+                   'mixing_min', 'mixing_max', 'mixing_median', 'elapsed_time']
+    
+    # Filter to columns that exist in the dataframe
+    result_cols = [col for col in result_cols if col in df.columns]
+    
+    print(f"\nShowing how results vary with {varying_param}:")
+    
+    # Group by result column instead of parameter value
+    print(f"\n{'-'*80}")
+    for col in result_cols:
+        print(f"\n{col}:")
+        print(f"  {varying_param:15s}", end="")
+        for param_value in param_values:
+            print(f" | {str(param_value):15s}", end="")
+        print()
+        print("  " + "-" * (15 + len(param_values) * 18))
+        
+        # Collect statistics for this result column across all parameter values
+        stats_by_param = {}
+        for param_value in param_values:
+            df_subset = df[df[varying_param] == param_value]
+            values = df_subset[col].dropna()
+            
+            if len(values) == 0:
+                stats_by_param[param_value] = None
+            elif len(values) == 1:
+                stats_by_param[param_value] = {
+                    'value': values.iloc[0],
+                    'single': True
+                }
+            else:
+                stats_by_param[param_value] = {
+                    'mean': values.mean(),
+                    'std': values.std(),
+                    'min': values.min(),
+                    'max': values.max(),
+                    'single': False
+                }
+        
+        # Print mean values
+        print(f"  {'mean':15s}", end="")
+        for param_value in param_values:
+            stats = stats_by_param[param_value]
+            if stats is None:
+                print(f" | {'N/A':15s}", end="")
+            elif stats['single']:
+                print(f" | {stats['value']:15.4f}", end="")
+            else:
+                print(f" | {stats['mean']:15.4f}", end="")
+        print()
+        
+        # Print std values if any parameter has multiple rows
+        has_multiple = any(stats and not stats['single'] for stats in stats_by_param.values())
+        if has_multiple:
+            print(f"  {'std':15s}", end="")
+            for param_value in param_values:
+                stats = stats_by_param[param_value]
+                if stats is None or stats['single']:
+                    print(f" | {'--':15s}", end="")
+                else:
+                    print(f" | {stats['std']:15.4f}", end="")
+            print()
+            
+            print(f"  {'min':15s}", end="")
+            for param_value in param_values:
+                stats = stats_by_param[param_value]
+                if stats is None or stats['single']:
+                    print(f" | {'--':15s}", end="")
+                else:
+                    print(f" | {stats['min']:15.4f}", end="")
+            print()
+            
+            print(f"  {'max':15s}", end="")
+            for param_value in param_values:
+                stats = stats_by_param[param_value]
+                if stats is None or stats['single']:
+                    print(f" | {'--':15s}", end="")
+                else:
+                    print(f" | {stats['max']:15.4f}", end="")
+            print()
+    
+    print(f"\n{'-'*80}")
+
 def get_experiment_dataframes(experiments, df):
     """Group dataframe rows by experiment parameters.
     
@@ -760,14 +883,22 @@ def analyze():
         
         # Determine analysis type based on experiment group name
         if exp_group == 'pure_dinur_basics':
-            do_pure_dinur_basic_analysis(exp_df)
+            do_pure_dinur_basic_analysis(exp_df, experiments, exp_group)
         elif exp_group == 'agg_dinur_basics':
-            do_agg_dinur_basic_analysis(exp_df)
+            do_agg_dinur_basic_analysis(exp_df, experiments, exp_group)
         else:
-            print(f"\nWarning: Unknown experiment group type: {exp_group}")
+            # Generic analysis for other experiment groups
+            print(f"\n\n{'='*80}")
+            print(f"ANALYSIS FOR {exp_group} EXPERIMENT GROUP")
+            print(f"{'='*80}")
+            analyze_single_parameter_variation(exp_df, experiments, exp_group)
 
-def do_pure_dinur_basic_analysis(df):
+def do_pure_dinur_basic_analysis(df, experiments=None, exp_group=None):
     print("\n\nANALYSIS FOR pure_dinur_basics EXPERIMENT GROUP")
+    
+    # Check for single parameter variation
+    if experiments is not None and exp_group is not None:
+        analyze_single_parameter_variation(df, experiments, exp_group)
     
     # Check if num_samples exists
     if 'num_samples' not in df.columns:
@@ -930,182 +1061,12 @@ def do_pure_dinur_basic_analysis(df):
     print(f"  Median: {df['num_samples'].median():.2f}")
     print(f"  Std: {df['num_samples'].std():.2f}")
 
-def do_agg_dinur_basic_analysis(df):
+def do_agg_dinur_basic_analysis(df, experiments=None, exp_group=None):
     print("\n\nANALYSIS FOR aggregated_dinur_basics EXPERIMENT GROUP")
     
-    # Check if num_samples exists
-    if 'num_samples' not in df.columns:
-        print("\nError: num_samples column not found")
-        return
-    
-    # Check for incomplete jobs (measure < target_accuracy)
-    if 'measure' in df.columns and 'target_accuracy' in df.columns:
-        incomplete = df[df['measure'] < df['target_accuracy']]
-        print(f"\n\nINCOMPLETE JOBS (measure < target_accuracy):")
-        print("=" * 80)
-        print(f"Number of incomplete jobs: {len(incomplete)}")
-        
-        if len(incomplete) > 0:
-            print("\nDetails of incomplete jobs:")
-            pd.set_option('display.max_columns', None)
-            pd.set_option('display.width', None)
-            pd.set_option('display.max_colwidth', None)
-            for idx, row in incomplete.iterrows():
-                print("\n" + "-" * 80)
-                print(f"Row {idx}:")
-                for col in df.columns:
-                    print(f"  {col:20s}: {row[col]}")
-            print("-" * 80)
-        print("\n")
-        
-        # Create dataframe with only complete jobs
-        df_complete = df[df['measure'] >= df['target_accuracy']].copy()
-        print(f"Complete jobs (measure >= target_accuracy): {len(df_complete)}")
-        
-        # Get target accuracy for plotting
-        target_accuracy = df['target_accuracy'].iloc[0] if len(df) > 0 else 0.99
-    else:
-        df_complete = df.copy()
-        target_accuracy = 0.99
-        print("Warning: measure or target_accuracy column not found, using all data")
-    
-    # Create plots directory
-    plots_dir = Path('./results/row_mask_attacks/plots_agg')
-    plots_dir.mkdir(exist_ok=True)
-    print(f"\nPlots directory: {plots_dir}")
-    
-    # Generate plots
-    print("\nGenerating plots...")
-    
-    # Plot measure by nqi (uses all data, not just complete)
-    if 'measure' in df.columns and 'nqi' in df.columns:
-        plot_measure_by_nqi(df, plots_dir, target_accuracy)
-    
-    # Generate other plots using complete jobs only
-    if len(df_complete) > 0:
-        plot_mixing_vs_samples(df_complete, plots_dir)
-        plot_boxplots_by_parameters_nqi(df_complete, plots_dir)
-        plot_mixing_boxplots_by_parameters_nqi(df_complete, plots_dir)
-        plot_elapsed_boxplots_by_parameters_nqi(df_complete, plots_dir)
-        plot_mixing_vs_noise_by_nqi(df_complete, plots_dir)
-        plot_num_samples_vs_noise_by_nqi(df_complete, plots_dir)
-        plot_elapsed_time_vs_noise_by_nqi(df_complete, plots_dir)
-        print("Plots generated successfully\n")
-    else:
-        print("Warning: No complete jobs to plot\n")
-    
-    # Get numeric columns (exclude filename and num_samples itself)
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    if 'num_samples' in numeric_cols:
-        numeric_cols.remove('num_samples')
-    
-    print(f"\n\nAnalyzing correlations with num_samples for {len(numeric_cols)} numeric columns")
-    print("=" * 80)
-    
-    # Calculate correlations
-    correlations = []
-    
-    for col in numeric_cols:
-        # Remove rows with NaN in either column
-        valid_data = df[[col, 'num_samples']].dropna()
-        
-        if len(valid_data) < 2:
-            print(f"\nSkipping {col}: insufficient data ({len(valid_data)} rows)")
-            continue
-        
-        # Skip columns with constant values
-        if valid_data[col].nunique() == 1 or valid_data['num_samples'].nunique() == 1:
-            print(f"\nSkipping {col}: constant values")
-            continue
-        
-        # Calculate Pearson correlation
-        pearson_r, pearson_p = stats.pearsonr(valid_data[col], valid_data['num_samples'])
-        
-        # Calculate Spearman correlation (rank-based, handles non-linear monotonic relationships)
-        spearman_r, spearman_p = stats.spearmanr(valid_data[col], valid_data['num_samples'])
-        
-        correlations.append({
-            'column': col,
-            'pearson_r': pearson_r,
-            'pearson_p': pearson_p,
-            'spearman_r': spearman_r,
-            'spearman_p': spearman_p,
-            'abs_pearson_r': abs(pearson_r),
-            'abs_spearman_r': abs(spearman_r),
-            'n_samples': len(valid_data)
-        })
-    
-    # Create correlation dataframe and sort by absolute Pearson correlation
-    corr_df = pd.DataFrame(correlations).sort_values('abs_pearson_r', ascending=False)
-    
-    # Print strong correlations (|r| > 0.3)
-    print("\n\nSTRONG CORRELATIONS (|Pearson r| > 0.3):")
-    print("=" * 80)
-    
-    strong_corr = corr_df[corr_df['abs_pearson_r'] > 0.3]
-    
-    if len(strong_corr) == 0:
-        print("No strong correlations found")
-    else:
-        for _, row in strong_corr.iterrows():
-            print(f"\n{row['column']}:")
-            print(f"  Pearson correlation:  r = {row['pearson_r']:7.4f}, p = {row['pearson_p']:.4e} (n={row['n_samples']})")
-            print(f"  Spearman correlation: r = {row['spearman_r']:7.4f}, p = {row['spearman_p']:.4e}")
-            
-            # Interpret the correlation
-            abs_r = row['abs_pearson_r']
-            direction = "positive" if row['pearson_r'] > 0 else "negative"
-            if abs_r > 0.7:
-                strength = "very strong"
-            elif abs_r > 0.5:
-                strength = "strong"
-            elif abs_r > 0.3:
-                strength = "moderate"
-            else:
-                strength = "weak"
-            
-            print(f"  Interpretation: {strength} {direction} correlation")
-            
-            # Show some statistics
-            col_data = df[row['column']].dropna()
-            print(f"  {row['column']} range: [{col_data.min()}, {col_data.max()}]")
-            print(f"  {row['column']} mean: {col_data.mean():.4f}, std: {col_data.std():.4f}")
-    
-    # Print moderate correlations (0.2 < |r| <= 0.3)
-    print("\n\nMODERATE CORRELATIONS (0.2 < |Pearson r| <= 0.3):")
-    print("=" * 80)
-    
-    moderate_corr = corr_df[(corr_df['abs_pearson_r'] > 0.2) & (corr_df['abs_pearson_r'] <= 0.3)]
-    
-    if len(moderate_corr) == 0:
-        print("No moderate correlations found")
-    else:
-        for _, row in moderate_corr.iterrows():
-            direction = "positive" if row['pearson_r'] > 0 else "negative"
-            print(f"{row['column']:20s}: r = {row['pearson_r']:7.4f} ({direction}), p = {row['pearson_p']:.4e}")
-    
-    # Print all correlations summary
-    print("\n\nALL CORRELATIONS (sorted by |Pearson r|):")
-    print("=" * 80)
-    print(corr_df[['column', 'pearson_r', 'pearson_p', 'spearman_r', 'n_samples']].to_string(index=False))
-    
-    # Summary statistics
-    print("\n\nSUMMARY:")
-    print("=" * 80)
-    print(f"Total numeric columns analyzed: {len(correlations)}")
-    print(f"Strong correlations (|r| > 0.3): {len(strong_corr)}")
-    print(f"Moderate correlations (0.2 < |r| <= 0.3): {len(moderate_corr)}")
-    print(f"Weak correlations (|r| <= 0.2): {len(corr_df[corr_df['abs_pearson_r'] <= 0.2])}")
-    
-    # Basic statistics on num_samples
-    print(f"\nnum_samples statistics:")
-    print(f"  Range: [{df['num_samples'].min()}, {df['num_samples'].max()}]")
-    print(f"  Mean: {df['num_samples'].mean():.2f}")
-    print(f"  Median: {df['num_samples'].median():.2f}")
-    print(f"  Std: {df['num_samples'].std():.2f}")
-
-def do_agg_dinur_basic_analysis(df):
-    print("\n\nANALYSIS FOR aggregated_dinur_basics EXPERIMENT GROUP")
+    # Check for single parameter variation
+    if experiments is not None and exp_group is not None:
+        analyze_single_parameter_variation(df, experiments, exp_group)
     
     # Check if num_samples exists
     if 'num_samples' not in df.columns:
