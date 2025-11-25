@@ -1,26 +1,40 @@
 # Define parameter ranges
 experiments = [
-#    {   # Pure Dinur-style (individual selection of rows, binary target)
-#        'experiment_group': 'pure_dinur_basics',
-#        'nrows': [100, 200, 300],
-#        'mask_size': [20, 30, 50],
-#        'nunique': [2],
-#        'noise': [0, 2, 4, 8, 16],
-#        'nqi': [0],
-#        'min_num_rows': [5],
-#        'vals_per_qi': [0],
-#    },
-#    {   # Aggregated Dinur-style (aggregate selection of row IDs, binary target)
-#        'experiment_group': 'agg_dinur_basics',
-#        'nrows': [100, 200],
-#        'mask_size': [0],       # not used
-#        'nunique': [2],
-#        'noise': [0, 2, 4, 8, 16],
-#        'nqi': [3, 5, 7, 9, 11],
-#        'min_num_rows': [5],
-#        'vals_per_qi': [0],      # auto-select
-#    },
+    {   # Pure Dinur-style (individual selection of rows, binary target)
+        'dont_run': False,
+        'experiment_group': 'pure_dinur_basics',
+        'nrows': [100, 200],
+        'mask_size': [20, 30, 50],
+        'nunique': [2],
+        'noise': [0, 2, 4, 8, 16],
+        'nqi': [0],
+        'min_num_rows': [5],
+        'vals_per_qi': [0],
+    },
+    {   # Aggregated Dinur-style (aggregate selection of row IDs, binary target)
+        'dont_run': False,
+        'experiment_group': 'agg_dinur_basics',
+        'nrows': [100, 200],
+        'mask_size': [0],       # not used
+        'nunique': [2],
+        'noise': [0, 2, 4, 8, 16],
+        'nqi': [3, 5, 7, 9, 11],
+        'min_num_rows': [5],
+        'vals_per_qi': [0],      # auto-select
+    },
+    {   # Pure Dinur-style, test effect of nrows
+        'dont_run': False,
+        'experiment_group': 'pure_dinur_nrows',
+        'nrows': [100, 200, 300],
+        'mask_size': [20],
+        'nunique': [2],
+        'noise': [4],
+        'nqi': [0],
+        'min_num_rows': [5],
+        'vals_per_qi': [0],      # auto-select
+    },
     {   # Pure Dinur-style, test effect of nunique
+        'dont_run': False,
         'experiment_group': 'pure_dinur_nunique',
         'nrows': [200],
         'mask_size': [20],
@@ -31,6 +45,7 @@ experiments = [
         'vals_per_qi': [0],      # auto-select
     },
     {   # Pure Dinur-style, test effect of min_num_rows
+        'dont_run': False,
         'experiment_group': 'pure_dinur_min_num_rows',
         'nrows': [200],
         'mask_size': [20],
@@ -41,6 +56,7 @@ experiments = [
         'vals_per_qi': [0],      # auto-select
     },
     {   # Aggregated Dinur-style, test effect of nunique
+        'dont_run': False,
         'experiment_group': 'agg_dinur_nunique',
         'nrows': [200],
         'mask_size': [0],       # not used
@@ -51,6 +67,7 @@ experiments = [
         'vals_per_qi': [0],      # auto-select
     },
     {   # Aggregated Dinur-style, test effect of min_num_rows
+        'dont_run': False,
         'experiment_group': 'agg_dinur_min_num_rows',
         'nrows': [200],
         'mask_size': [0],       # not used

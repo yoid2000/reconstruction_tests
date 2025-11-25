@@ -132,14 +132,40 @@ def reconstruct(samples: List[Dict], noise: int) -> tuple[List[Dict], int]:
                 num_equations += 2
         
         print(f"  Total: {len(sample_constraints)} constraints ({len(samples)} samples)")
-        if len(sample_constraints) <= 20:
+        if len(sample_constraints) <= 5:
             for c in sample_constraints:
                 print(c)
         else:
-            for c in sample_constraints[:10]:
+            for c in sample_constraints[:2]:
                 print(c)
             print("  ...")
-            for c in sample_constraints[-10:]:
+            for c in sample_constraints[-2:]:
+                print(c)
+        
+        # Constraint: For each sample, sum of all value counts equals number of IDs
+        print("\n3. Sum of counts per sample equals number of IDs:")
+        sum_constraints = []
+        for sample_idx, sample in enumerate(samples):
+            ids = sample['ids']
+            ids_in_sample = [id for id in ids if id in all_ids]
+            
+            # Sum of counts across all values should equal number of IDs
+            total_count = gp.quicksum(x[id][val] for id in ids_in_sample for val in all_vals)
+            model.addConstr(total_count == len(ids_in_sample))
+            
+            constraint_str = f"  Sample {sample_idx}: sum of all value counts = {len(ids_in_sample)}"
+            sum_constraints.append(constraint_str)
+            num_equations += 1
+        
+        print(f"  Total: {len(sum_constraints)} constraints")
+        if len(sum_constraints) <= 5:
+            for c in sum_constraints:
+                print(c)
+        else:
+            for c in sum_constraints[:2]:
+                print(c)
+            print("  ...")
+            for c in sum_constraints[-2:]:
                 print(c)
         
         print(f"\n=== TOTAL EQUATIONS: {num_equations} ===\n")
@@ -215,14 +241,40 @@ def reconstruct(samples: List[Dict], noise: int) -> tuple[List[Dict], int]:
                 num_equations += 2
         
         print(f"  Total: {len(sample_constraints)} constraints ({len(samples)} samples)")
-        if len(sample_constraints) <= 20:
+        if len(sample_constraints) <= 5:
             for c in sample_constraints:
                 print(c)
         else:
-            for c in sample_constraints[:10]:
+            for c in sample_constraints[:2]:
                 print(c)
             print("  ...")
-            for c in sample_constraints[-10:]:
+            for c in sample_constraints[-2:]:
+                print(c)
+        
+        # Constraint: For each sample, sum of all value counts equals number of IDs
+        print("\n3. Sum of counts per sample equals number of IDs:")
+        sum_constraints = []
+        for sample_idx, sample in enumerate(samples):
+            ids = sample['ids']
+            ids_in_sample = [id for id in ids if id in all_ids]
+            
+            # Sum of counts across all values should equal number of IDs
+            total_count = sum(x[id][val] for id in ids_in_sample for val in all_vals)
+            model.Add(total_count == len(ids_in_sample))
+            
+            constraint_str = f"  Sample {sample_idx}: sum of all value counts = {len(ids_in_sample)}"
+            sum_constraints.append(constraint_str)
+            num_equations += 1
+        
+        print(f"  Total: {len(sum_constraints)} constraints")
+        if len(sum_constraints) <= 5:
+            for c in sum_constraints:
+                print(c)
+        else:
+            for c in sum_constraints[:2]:
+                print(c)
+            print("  ...")
+            for c in sum_constraints[-2:]:
                 print(c)
         
         print(f"\n=== TOTAL EQUATIONS: {num_equations} ===\n")
@@ -854,6 +906,8 @@ def main():
     unique_first_pass = []
     
     for exp in experiments:
+        if exp['dont_run'] is True:
+            continue
         for nrows in exp['nrows']:
             for mask_size in exp['mask_size']:
                 for nunique in exp['nunique']:
