@@ -554,7 +554,6 @@ def attack_loop(nrows: int,
                 target_accuracy: float = 0.99,
                 min_num_rows: int = 5,
                 vals_per_qi: int = 0,
-                experiment_group: str = '',
                 output_file: Path = None,
                 cur_attack_results: List[Dict] = None) -> None:
     """ Runs an iterative attack loop to reconstruct values from noisy samples.
@@ -706,7 +705,6 @@ def attack_loop(nrows: int,
         # Save results incrementally if output file is provided
         if output_file is not None:
             save_dict = {
-                'experiment_group': experiment_group,
                 'nrows': nrows,
                 'mask_size': mask_size,
                 'nunique': nunique,
@@ -760,29 +758,9 @@ def main():
     attack_results_dir.mkdir(exist_ok=True)
     slurm_out_dir.mkdir(exist_ok=True)
     
-    # Define parameter ranges
-    experiments = [
-        {   # Pure Dinur-style (individual selection of rows, binary target)
-            'experiment_group': 'pure_dinur_basics',
-            'nrows_values': [100, 200, 300],
-            'mask_size_values': [20, 30, 50],
-            'nunique_values': [2],
-            'noise_values': [0, 2, 4, 8, 16],
-            'nqi_values': [0],
-            'min_num_rows_values': [5],
-            'vals_per_qi_values': [0],
-        },
-        {   # Aggregated Dinur-style (aggregate selection of row IDs, binary target)
-            'experiment_group': 'aggregated_dinur_basics',
-            'nrows_values': [100, 200],
-            'mask_size_values': [0],       # not used
-            'nunique_values': [2],
-            'noise_values': [0, 2, 4, 8, 16],
-            'nqi_values': [3, 5, 7, 9, 11],
-            'min_num_rows_values': [5],
-            'vals_per_qi_values': [0],      # auto-select
-        },
-    ]
+    # Read in the experiments data structure from experiments.py
+    from experiments import read_experiments
+    experiments = read_experiments()
     
     # Fixed parameters
     max_samples = 20000
@@ -876,15 +854,14 @@ def main():
     unique_first_pass = []
     
     for exp in experiments:
-        for nrows in exp['nrows_values']:
-            for mask_size in exp['mask_size_values']:
-                for nunique in exp['nunique_values']:
-                    for noise in exp['noise_values']:
-                        for nqi in exp['nqi_values']:
-                            for min_num_rows in exp['min_num_rows_values']:
-                                for vals_per_qi in exp['vals_per_qi_values']:
+        for nrows in exp['nrows']:
+            for mask_size in exp['mask_size']:
+                for nunique in exp['nunique']:
+                    for noise in exp['noise']:
+                        for nqi in exp['nqi']:
+                            for min_num_rows in exp['min_num_rows']:
+                                for vals_per_qi in exp['vals_per_qi']:
                                     params = {
-                                        'experiment_group': exp['experiment_group'],
                                         'nrows': nrows,
                                         'mask_size': mask_size,
                                         'nunique': nunique,
@@ -963,7 +940,6 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
         target_accuracy=target_accuracy,
         min_num_rows=params['min_num_rows'],
         vals_per_qi=params['vals_per_qi'],
-        experiment_group=params['experiment_group'],
         output_file=file_path,
         cur_attack_results=cur_attack_results_list,
     )

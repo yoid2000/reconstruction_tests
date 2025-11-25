@@ -32,44 +32,28 @@ def gather_results() -> pd.DataFrame:
             with open(json_file, 'r') as f:
                 result = json.load(f)
             
-            # Extract top-level parameters
-            row = {
-                'filename': json_file.name,
-                'nrows': result.get('nrows'),
-                'mask_size': result.get('mask_size'),
-                'nunique': result.get('nunique'),
-                'noise': result.get('noise'),
-                'max_samples': result.get('max_samples'),
-                'batch_size': result.get('batch_size'),
-                'target_accuracy': result.get('target_accuracy'),
-                'elapsed_time': result.get('elapsed_time'),
-            }
+            # Start with filename
+            row = {'filename': json_file.name}
+            
+            # Add all top-level keys except 'attack_results'
+            for key, value in result.items():
+                if key != 'attack_results':
+                    row[key] = value
             
             # Extract from last element of attack_results
             attack_results = result.get('attack_results', [])
             if attack_results:
                 last_result = attack_results[-1]
-                row['num_samples'] = last_result.get('num_samples')
-                row['actual_num_rows'] = last_result.get('actual_num_rows')
-                row['measure'] = last_result.get('measure')
                 
-                # Extract mixing statistics
-                mixing = last_result.get('mixing', {})
-                row['mixing_min'] = mixing.get('min')
-                row['mixing_max'] = mixing.get('max')
-                row['mixing_avg'] = mixing.get('avg')
-                row['mixing_stddev'] = mixing.get('stddev')
-                row['mixing_median'] = mixing.get('median')
-            else:
-                # No attack results
-                row['num_samples'] = None
-                row['actual_num_rows'] = None
-                row['measure'] = None
-                row['mixing_min'] = None
-                row['mixing_max'] = None
-                row['mixing_avg'] = None
-                row['mixing_stddev'] = None
-                row['mixing_median'] = None
+                # Add all keys from last attack result
+                for key, value in last_result.items():
+                    # Handle nested dicts like 'mixing'
+                    if isinstance(value, dict):
+                        # Flatten nested dict with prefix
+                        for nested_key, nested_value in value.items():
+                            row[f'{key}_{nested_key}'] = nested_value
+                    else:
+                        row[key] = value
             
             data.append(row)
             
@@ -96,10 +80,10 @@ def main():
     df.to_parquet(output_path, index=False)
     
     print(f"\nSaved {len(df)} results to {output_path}")
-    print(f"\nDataFrame shape: {df.shape}")
-    print(f"\nColumns: {list(df.columns)}")
     print(f"\nFirst few rows:")
     print(df.head())
+    print(f"\nDataFrame shape: {df.shape}")
+    print(f"\nColumns: {list(df.columns)}")
 
 if __name__ == '__main__':
     main()
