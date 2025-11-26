@@ -22,16 +22,16 @@ experiments = [
         'min_num_rows': [5],
         'vals_per_qi': [0],      # auto-select
     },
-    {   # Pure Dinur-style, test effect of vals_per_qi
+    {   # Aggregated Dinur-style, explore vals_per_qi
         'dont_run': False,
-        'experiment_group': 'pure_dinur_vals_per_qi',
+        'experiment_group': 'agg_dinur_explore_vals_per_qi',
         'nrows': [200],
-        'mask_size': [20],
+        'mask_size': [0],       # not used
         'nunique': [2],
-        'noise': [4],
-        'nqi': [0],
+        'noise': [0, 2, 4, 8, 16],
+        'nqi': [11],
         'min_num_rows': [5],
-        'vals_per_qi': [0, 5, 10],
+        'vals_per_qi': [3,4,5,6,7,8,9],      # auto-select
     },
     {   # Pure Dinur-style, test effect of nrows
         'dont_run': True,
@@ -89,7 +89,7 @@ experiments = [
         'vals_per_qi': [0],      # auto-select
     },
     {   # Aggregated Dinur-style, test effect of vals_per_qi
-        'dont_run': False,
+        'dont_run': True,
         'experiment_group': 'agg_dinur_vals_per_qi',
         'nrows': [200],
         'mask_size': [0],       # not used
