@@ -1,6 +1,5 @@
 import pandas as pd
 from typing import List, Dict, Set
-from ortools.sat.python import cp_model
 import numpy as np
 import json
 import os
@@ -10,296 +9,18 @@ from pathlib import Path
 import pprint
 import argparse
 pp = pprint.PrettyPrinter(indent=2)
-
-# Try to import Gurobi
-try:
-    import gurobipy as gp
-    from gurobipy import GRB
-    GUROBI_AVAILABLE = True
-except ImportError:
-    GUROBI_AVAILABLE = False
-
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from df_builds.build_row_masks import build_row_masks, build_row_masks_qi
+from reconstruct import reconstruct_by_row
 
-def check_gurobi_available() -> bool:
-    """Check if Gurobi is available and can actually be used.
-    
-    Returns:
-        True if Gurobi can be used, False otherwise
-    """
-    if not GUROBI_AVAILABLE:
-        return False
-    
-    try:
-        # Try to create a simple model to verify license
-        test_model = gp.Model("test")
-        test_model.dispose()
-        return True
-    except Exception as e:
-        print(f"Gurobi import succeeded but cannot create model: {e}")
-        return False
-
-def reconstruct(samples: List[Dict], noise: int) -> tuple[List[Dict], int]:
-    """ Reconstructs the value associated with each ID from noisy count samples.
-    
-    Args:
-        samples: List of dicts, each containing:
-            - 'ids': set of integer IDs
-            - 'noisy_counts': list of dicts with 'val' (int) and 'count' (int)
-        noise: Integer representing the noise bound (±noise from true count)
-    
-    Returns:
-        Tuple of (reconstructed_values, num_equations)
-        - reconstructed_values: List of dicts with 'id' (int) and 'val' (int)
-        - num_equations: Number of constraint equations used in the model
-    """
-    # Collect all unique IDs and values
-    all_ids = set()
-    all_vals = set()
-    for sample in samples:
-        all_ids.update(sample['ids'])
-        for count_info in sample['noisy_counts']:
-            all_vals.add(count_info['val'])
-    
-    all_ids = sorted(all_ids)
-    all_vals = sorted(all_vals)
-    
-    num_equations = 0
-    constraints_list = []
-    
-    if check_gurobi_available():
-        # Use Gurobi solver
-        print("Using Gurobi solver")
-        model = gp.Model("reconstruct")
-        model.setParam('OutputFlag', 0)  # Suppress output
-        
-        # Create binary variables: x[id][val] = 1 if id has value val
-        x = {}
-        for id in all_ids:
-            x[id] = {}
-            for val in all_vals:
-                x[id][val] = model.addVar(vtype=GRB.BINARY, name=f'x_{id}_{val}')
-        
-        model.update()
-        
-        # Display variables
-        print("\n=== MODEL VARIABLES ===")
-        print(f"Binary variables x[id][val] for {len(all_ids)} IDs and {len(all_vals)} values")
-        print(f"Total variables: {len(all_ids) * len(all_vals)}")
-        
-        print("\n=== MODEL CONSTRAINTS ===")
-        
-        # Constraint: Each ID must have exactly one value
-        print("\n1. Each ID must have exactly one value:")
-        for id in all_ids:
-            constr = model.addConstr(gp.quicksum(x[id][val] for val in all_vals) == 1)
-            constraint_str = f"  x[{id}][{all_vals[0]}]" + "".join([f" + x[{id}][{val}]" for val in all_vals[1:]]) + " = 1"
-            constraints_list.append(constraint_str)
-            num_equations += 1
-        print(f"  Total: {len(all_ids)} constraints")
-        if len(all_ids) <= 5:
-            for c in constraints_list[-len(all_ids):]:
-                print(c)
-        
-        # Constraint: For each sample, the counts must be within noise bounds
-        print("\n2. Noisy count constraints (for each sample and value):")
-        sample_constraints = []
-        for sample_idx, sample in enumerate(samples):
-            ids = sample['ids']
-            noisy_counts = sample['noisy_counts']
-            
-            for count_info in noisy_counts:
-                val = count_info['val']
-                noisy_count = count_info['count']
-                
-                # True count for this value in this sample
-                true_count = gp.quicksum(x[id][val] for id in ids if id in all_ids)
-                
-                # Constraint: noisy_count - noise <= true_count <= noisy_count + noise
-                ids_in_sample = [id for id in ids if id in all_ids]
-                sum_str = " + ".join([f"x[{id}][{val}]" for id in ids_in_sample])
-                
-                lower_bound = f"  Sample {sample_idx}, val={val}: {sum_str} >= {noisy_count - noise}"
-                upper_bound = f"  Sample {sample_idx}, val={val}: {sum_str} <= {noisy_count + noise}"
-                
-                sample_constraints.append(lower_bound)
-                sample_constraints.append(upper_bound)
-                
-                model.addConstr(true_count >= noisy_count - noise)
-                model.addConstr(true_count <= noisy_count + noise)
-                num_equations += 2
-        
-        print(f"  Total: {len(sample_constraints)} constraints ({len(samples)} samples)")
-        if len(sample_constraints) <= 5:
-            for c in sample_constraints:
-                print(c)
-        else:
-            for c in sample_constraints[:2]:
-                print(c)
-            print("  ...")
-            for c in sample_constraints[-2:]:
-                print(c)
-        
-        # Constraint: For each sample, sum of all value counts equals number of IDs
-        print("\n3. Sum of counts per sample equals number of IDs:")
-        sum_constraints = []
-        for sample_idx, sample in enumerate(samples):
-            ids = sample['ids']
-            ids_in_sample = [id for id in ids if id in all_ids]
-            
-            # Sum of counts across all values should equal number of IDs
-            total_count = gp.quicksum(x[id][val] for id in ids_in_sample for val in all_vals)
-            model.addConstr(total_count == len(ids_in_sample))
-            
-            constraint_str = f"  Sample {sample_idx}: sum of all value counts = {len(ids_in_sample)}"
-            sum_constraints.append(constraint_str)
-            num_equations += 1
-        
-        print(f"  Total: {len(sum_constraints)} constraints")
-        if len(sum_constraints) <= 5:
-            for c in sum_constraints:
-                print(c)
-        else:
-            for c in sum_constraints[:2]:
-                print(c)
-            print("  ...")
-            for c in sum_constraints[-2:]:
-                print(c)
-        
-        print(f"\n=== TOTAL EQUATIONS: {num_equations} ===\n")
-        
-        # Solve the model
-        model.optimize()
-        
-        # Extract solution
-        result = []
-        if model.status == GRB.OPTIMAL:
-            for id in all_ids:
-                for val in all_vals:
-                    if x[id][val].X > 0.5:  # Binary variable is 1
-                        result.append({'id': id, 'val': val})
-                        break
-    else:
-        # Use OR-Tools solver
-        print("Using OR-Tools CP-SAT solver")
-        model = cp_model.CpModel()
-        
-        # Create binary variables: x[id][val] = 1 if id has value val
-        x = {}
-        for id in all_ids:
-            x[id] = {}
-            for val in all_vals:
-                x[id][val] = model.NewBoolVar(f'x_{id}_{val}')
-        
-        # Display variables
-        print("\n=== MODEL VARIABLES ===")
-        print(f"Binary variables x[id][val] for {len(all_ids)} IDs and {len(all_vals)} values")
-        print(f"Total variables: {len(all_ids) * len(all_vals)}")
-        
-        print("\n=== MODEL CONSTRAINTS ===")
-        
-        # Constraint: Each ID must have exactly one value
-        print("\n1. Each ID must have exactly one value:")
-        for id in all_ids:
-            model.Add(sum(x[id][val] for val in all_vals) == 1)
-            constraint_str = f"  x[{id}][{all_vals[0]}]" + "".join([f" + x[{id}][{val}]" for val in all_vals[1:]]) + " = 1"
-            constraints_list.append(constraint_str)
-            num_equations += 1
-        print(f"  Total: {len(all_ids)} constraints")
-        if len(all_ids) <= 5:
-            for c in constraints_list[-len(all_ids):]:
-                print(c)
-        
-        # Constraint: For each sample, the counts must be within noise bounds
-        print("\n2. Noisy count constraints (for each sample and value):")
-        sample_constraints = []
-        for sample_idx, sample in enumerate(samples):
-            ids = sample['ids']
-            noisy_counts = sample['noisy_counts']
-            
-            for count_info in noisy_counts:
-                val = count_info['val']
-                noisy_count = count_info['count']
-                
-                # True count for this value in this sample
-                true_count = sum(x[id][val] for id in ids if id in all_ids)
-                
-                # Constraint: noisy_count - noise <= true_count <= noisy_count + noise
-                ids_in_sample = [id for id in ids if id in all_ids]
-                sum_str = " + ".join([f"x[{id}][{val}]" for id in ids_in_sample])
-                
-                lower_bound = f"  Sample {sample_idx}, val={val}: {sum_str} >= {noisy_count - noise}"
-                upper_bound = f"  Sample {sample_idx}, val={val}: {sum_str} <= {noisy_count + noise}"
-                
-                sample_constraints.append(lower_bound)
-                sample_constraints.append(upper_bound)
-                
-                model.Add(true_count >= noisy_count - noise)
-                model.Add(true_count <= noisy_count + noise)
-                num_equations += 2
-        
-        print(f"  Total: {len(sample_constraints)} constraints ({len(samples)} samples)")
-        if len(sample_constraints) <= 5:
-            for c in sample_constraints:
-                print(c)
-        else:
-            for c in sample_constraints[:2]:
-                print(c)
-            print("  ...")
-            for c in sample_constraints[-2:]:
-                print(c)
-        
-        # Constraint: For each sample, sum of all value counts equals number of IDs
-        print("\n3. Sum of counts per sample equals number of IDs:")
-        sum_constraints = []
-        for sample_idx, sample in enumerate(samples):
-            ids = sample['ids']
-            ids_in_sample = [id for id in ids if id in all_ids]
-            
-            # Sum of counts across all values should equal number of IDs
-            total_count = sum(x[id][val] for id in ids_in_sample for val in all_vals)
-            model.Add(total_count == len(ids_in_sample))
-            
-            constraint_str = f"  Sample {sample_idx}: sum of all value counts = {len(ids_in_sample)}"
-            sum_constraints.append(constraint_str)
-            num_equations += 1
-        
-        print(f"  Total: {len(sum_constraints)} constraints")
-        if len(sum_constraints) <= 5:
-            for c in sum_constraints:
-                print(c)
-        else:
-            for c in sum_constraints[:2]:
-                print(c)
-            print("  ...")
-            for c in sum_constraints[-2:]:
-                print(c)
-        
-        print(f"\n=== TOTAL EQUATIONS: {num_equations} ===\n")
-        
-        # Solve the model
-        solver = cp_model.CpSolver()
-        status = solver.Solve(model)
-        
-        # Extract solution
-        result = []
-        if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-            for id in all_ids:
-                for val in all_vals:
-                    if solver.Value(x[id][val]) == 1:
-                        result.append({'id': id, 'val': val})
-                        break
-    
-    return result, num_equations
 
 def measure(df: pd.DataFrame, reconstructed: List[Dict]) -> float:
     """ Measures the accuracy of reconstruction.
     
     Args:
         df: DataFrame with columns 'id' and 'val' (ground truth)
-        reconstructed: Output from reconstruct(), list of dicts with 'id' and 'val'
+        reconstructed: Output from reconstruct_by_row(), list of dicts with 'id' and 'val'
     
     Returns:
         Fraction of correct assignments (float between 0 and 1)
@@ -710,7 +431,7 @@ def attack_loop(nrows: int,
         
         # Reconstruct and measure
         print(f"Begin reconstruction with {len(samples)} samples\n    (current_num_samples={current_num_samples}, initial_samples={len(initial_samples)}, qi_index={qi_index}, num_suppressed={num_suppressed})")
-        reconstructed, num_equations = reconstruct(samples, noise)
+        reconstructed, num_equations = reconstruct_by_row(samples, noise)
         accuracy = measure(df, reconstructed)
         mixing = mixing_stats(samples)
 

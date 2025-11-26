@@ -25,7 +25,7 @@ experiments = [
     {   # Aggregated Dinur-style, explore vals_per_qi
         'dont_run': False,
         'experiment_group': 'agg_dinur_explore_vals_per_qi',
-        'nrows': [200],
+        'nrows': [100,200],
         'mask_size': [0],       # not used
         'nunique': [2],
         'noise': [0, 2, 4, 8, 16],
