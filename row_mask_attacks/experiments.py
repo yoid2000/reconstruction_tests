@@ -31,7 +31,7 @@ experiments = [
         'noise': [0, 2, 4, 8, 16],
         'nqi': [11],
         'min_num_rows': [5],
-        'vals_per_qi': [3,4,5,6,7,8,9],      # auto-select
+        'vals_per_qi': [2,3,4,5,6,7,8,9],      # auto-select
     },
     {   # Pure Dinur-style, test effect of nrows
         'dont_run': True,
