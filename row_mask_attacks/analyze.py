@@ -886,6 +886,8 @@ def analyze():
             do_pure_dinur_basic_analysis(exp_df, experiments, exp_group)
         elif exp_group == 'agg_dinur_basics':
             do_agg_dinur_basic_analysis(exp_df, experiments, exp_group)
+        elif exp_group == 'agg_dinur_explore_vals_per_qi':
+            do_agg_dinur_explore_vals_per_qi_analysis(exp_df, experiments, exp_group)
         else:
             # Generic analysis for other experiment groups
             print(f"\n\n{'='*80}")
@@ -1238,6 +1240,63 @@ def do_agg_dinur_basic_analysis(df, experiments=None, exp_group=None):
     print(f"  Mean: {df['num_samples'].mean():.2f}")
     print(f"  Median: {df['num_samples'].median():.2f}")
     print(f"  Std: {df['num_samples'].std():.2f}")
+
+def do_agg_dinur_explore_vals_per_qi_analysis(df, experiments=None, exp_group=None):
+    """Analyze agg_dinur_explore_vals_per_qi results with text tables."""
+    print("\n\nANALYSIS FOR agg_dinur_explore_vals_per_qi EXPERIMENT GROUP")
+    print("=" * 80)
+    
+    if len(df) == 0:
+        print("No results found for this experiment group")
+        return
+    
+    # Get unique values for table axes
+    noise_vals = sorted(df['noise'].unique())
+    vpq_vals = sorted(df['vals_per_qi'].unique())
+    nrows_vals = sorted(df['nrows'].unique())
+    
+    print(f"\nNoise levels: {noise_vals}")
+    print(f"Vals_per_qi values: {vpq_vals}")
+    print(f"Nrows values: {nrows_vals}")
+    print(f"Total rows: {len(df)}")
+    
+    # Create tables for each nrows value
+    for nrows_val in [100, 200]:
+        df_nrows = df[df['nrows'] == nrows_val]
+        
+        if len(df_nrows) == 0:
+            print(f"\nNo data for nrows={nrows_val}")
+            continue
+        
+        print("\n" + "="*80)
+        print(f"Table: Measure (Accuracy) for nrows={nrows_val}")
+        print("="*80)
+        
+        # Create header
+        header = f"{'vals_per_qi':>12}"
+        for noise in noise_vals:
+            header += f" | {str(noise):>10}"
+        print(header)
+        print("-" * len(header))
+        
+        # Create rows
+        for vpq in vpq_vals:
+            row = f"{vpq:>12}"
+            for noise in noise_vals:
+                # Find the specific row
+                match = df_nrows[(df_nrows['vals_per_qi'] == vpq) & (df_nrows['noise'] == noise)]
+                if len(match) == 1 and 'measure' in match.columns:
+                    value = match['measure'].iloc[0]
+                    row += f" | {value:>10.4f}"
+                else:
+                    row += f" | {'---':>10}"
+            print(row)
+    
+    print("="*80 + "\n")
+    
+    # Check for single parameter variation
+    if experiments is not None and exp_group is not None:
+        analyze_single_parameter_variation(df, experiments, exp_group)
 
 if __name__ == '__main__':
     analyze()
