@@ -886,7 +886,7 @@ def analyze():
             do_pure_dinur_basic_analysis(exp_df, experiments, exp_group)
         elif exp_group == 'agg_dinur_basics':
             do_agg_dinur_basic_analysis(exp_df, experiments, exp_group)
-        elif exp_group == 'agg_dinur_explore_vals_per_qi':
+        elif exp_group == 'agg_dinur_explore_vals_per_qi_nrows':
             do_agg_dinur_explore_vals_per_qi_analysis(exp_df, experiments, exp_group)
         else:
             # Generic analysis for other experiment groups

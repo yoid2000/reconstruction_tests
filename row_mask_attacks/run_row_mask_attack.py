@@ -12,36 +12,14 @@ pp = pprint.PrettyPrinter(indent=2)
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from df_builds.build_row_masks import build_row_masks, build_row_masks_qi
-from reconstruct import reconstruct_by_row
+from reconstruct import reconstruct_by_row, measure_by_row
 
-
-def measure(df: pd.DataFrame, reconstructed: List[Dict]) -> float:
-    """ Measures the accuracy of reconstruction.
-    
-    Args:
-        df: DataFrame with columns 'id' and 'val' (ground truth)
-        reconstructed: Output from reconstruct_by_row(), list of dicts with 'id' and 'val'
-    
-    Returns:
-        Fraction of correct assignments (float between 0 and 1)
-    """
-    # Convert reconstructed to dict for easy lookup
-    recon_dict = {item['id']: item['val'] for item in reconstructed}
-    
-    # Count correct assignments
-    correct = 0
-    total = 0
-    
-    for _, row in df.iterrows():
-        id = row['id']
-        true_val = row['val']
+solve_type_map = {
+    'pure_row': 'pr',
+    'agg_row': 'ar',
+    'agg_only': 'ao',
+}
         
-        if id in recon_dict:
-            total += 1
-            if recon_dict[id] == true_val:
-                correct += 1
-    
-    return correct / total if total > 0 else 0.0
 
 def mixing_stats(samples: List[Dict]) -> Dict:
     """ Computes mixing statistics for IDs across samples.
@@ -327,6 +305,7 @@ def attack_loop(nrows: int,
                 target_accuracy: float = 0.99,
                 min_num_rows: int = 5,
                 vals_per_qi: int = 0,
+                solve_type: str = 'pure_row',
                 output_file: Path = None,
                 cur_attack_results: List[Dict] = None) -> None:
     """ Runs an iterative attack loop to reconstruct values from noisy samples.
@@ -430,9 +409,12 @@ def attack_loop(nrows: int,
             })
         
         # Reconstruct and measure
-        print(f"Begin reconstruction with {len(samples)} samples\n    (current_num_samples={current_num_samples}, initial_samples={len(initial_samples)}, qi_index={qi_index}, num_suppressed={num_suppressed})")
-        reconstructed, num_equations = reconstruct_by_row(samples, noise)
-        accuracy = measure(df, reconstructed)
+        print(f"Begin {solve_type} reconstruction with {len(samples)} samples\n    (current_num_samples={current_num_samples}, initial_samples={len(initial_samples)}, qi_index={qi_index}, num_suppressed={num_suppressed})")
+        if solve_type in ['pure_row', 'agg_row']:
+            reconstructed, num_equations = reconstruct_by_row(samples, noise)
+            accuracy = measure_by_row(df, reconstructed)
+        else:
+            raise ValueError(f"Unsupported solve_type: {solve_type}")
         mixing = mixing_stats(samples)
 
         if nqi > 0:
@@ -478,6 +460,7 @@ def attack_loop(nrows: int,
         # Save results incrementally if output file is provided
         if output_file is not None:
             save_dict = {
+                'solve_type': solve_type,
                 'nrows': nrows,
                 'mask_size': mask_size,
                 'nunique': nunique,
@@ -506,6 +489,8 @@ def main():
     parser = argparse.ArgumentParser(description='Run row mask attack experiments')
     parser.add_argument('job_num', type=int, nargs='?', default=None,
                        help='Job number to run from parameter combinations')
+    parser.add_argument('--solve_type', type=str, default=None,
+                       help='Type of solve: pure_row, agg_row, agg_only')
     parser.add_argument('--nrows', type=int, default=None,
                        help='Number of rows')
     parser.add_argument('--mask_size', type=int, default=None,
@@ -541,6 +526,7 @@ def main():
     
     # Defaults
     defaults = {
+        'solve_type': 'pure_row',
         'nrows': 200,
         'mask_size': 20,
         'nunique': 2,
@@ -552,6 +538,7 @@ def main():
     
     # Check if any individual parameters were provided
     individual_params_provided = any([
+        args.solve_type is not None,
         args.nrows is not None,
         args.mask_size is not None,
         args.nunique is not None,
@@ -565,6 +552,7 @@ def main():
         # Use command line parameters, falling back to defaults
         params = {
             'nrows': args.nrows if args.nrows is not None else defaults['nrows'],
+            'solve_type': args.solve_type if args.solve_type is not None else defaults['solve_type'],
             'mask_size': args.mask_size if args.mask_size is not None else defaults['mask_size'],
             'nunique': args.nunique if args.nunique is not None else defaults['nunique'],
             'noise': args.noise if args.noise is not None else defaults['noise'],
@@ -572,11 +560,12 @@ def main():
             'min_num_rows': args.min_num_rows if args.min_num_rows is not None else defaults['min_num_rows'],
             'vals_per_qi': args.vals_per_qi if args.vals_per_qi is not None else defaults['vals_per_qi'],
         }
-        
+
         # Generate filename
         file_name = (f"nr{params['nrows']}_mf{params['mask_size']}_"
                     f"nu{params['nunique']}_qi{params['nqi']}_n{params['noise']}_"
                     f"mnr{params['min_num_rows']}_vpq{params['vals_per_qi']}_"
+                    f"st{solve_type_map[params['solve_type']]}_"
                     f"ms{max_samples}_ta{int(target_accuracy*100)}")
         
         file_path = attack_results_dir / f"{file_name}.json"
@@ -603,6 +592,7 @@ def main():
             target_accuracy=target_accuracy,
             min_num_rows=params['min_num_rows'],
             vals_per_qi=params['vals_per_qi'],
+            solve_type=params['solve_type'],
             output_file=file_path,
             cur_attack_results=cur_attack_results_list,
         )
@@ -624,7 +614,6 @@ def main():
     test_params = []
     
     seen = set()
-    unique_first_pass = []
     
     for exp in experiments:
         if exp['dont_run'] is True:
@@ -638,6 +627,7 @@ def main():
                                 for vals_per_qi in exp['vals_per_qi']:
                                     params = {
                                         'nrows': nrows,
+                                        'solve_type': exp['solve_type'],
                                         'mask_size': mask_size,
                                         'nunique': nunique,
                                         'noise': noise,
@@ -687,9 +677,10 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
     
     # Generate filename
     file_name = (f"nr{params['nrows']}_mf{params['mask_size']}_"
-                    f"nu{params['nunique']}_qi{params['nqi']}_n{params['noise']}_"
-                    f"mnr{params['min_num_rows']}_vpq{params['vals_per_qi']}_"
-                    f"ms{max_samples}_ta{int(target_accuracy*100)}")
+                f"nu{params['nunique']}_qi{params['nqi']}_n{params['noise']}_"
+                f"mnr{params['min_num_rows']}_vpq{params['vals_per_qi']}_"
+                f"st{solve_type_map[params['solve_type']]}_"
+                f"ms{max_samples}_ta{int(target_accuracy*100)}")
         
     file_path = attack_results_dir / f"{file_name}.json"
     
@@ -715,6 +706,7 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
         target_accuracy=target_accuracy,
         min_num_rows=params['min_num_rows'],
         vals_per_qi=params['vals_per_qi'],
+        solve_type=params['solve_type'],
         output_file=file_path,
         cur_attack_results=cur_attack_results_list,
     )

@@ -1,4 +1,5 @@
 from typing import List, Dict
+import pandas as pd
 
 # Try to import Gurobi
 try:
@@ -283,6 +284,34 @@ def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int
                         break
     
     return result, num_equations
+
+def measure_by_row(df: pd.DataFrame, reconstructed: List[Dict]) -> float:
+    """ Measures the accuracy of reconstruction.
+    
+    Args:
+        df: DataFrame with columns 'id' and 'val' (ground truth)
+        reconstructed: Output from reconstruct_by_row(), list of dicts with 'id' and 'val'
+    
+    Returns:
+        Fraction of correct assignments (float between 0 and 1)
+    """
+    # Convert reconstructed to dict for easy lookup
+    recon_dict = {item['id']: item['val'] for item in reconstructed}
+    
+    # Count correct assignments
+    correct = 0
+    total = 0
+    
+    for _, row in df.iterrows():
+        id = row['id']
+        true_val = row['val']
+        
+        if id in recon_dict:
+            total += 1
+            if recon_dict[id] == true_val:
+                correct += 1
+    
+    return correct / total if total > 0 else 0.0
 
 
 def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, all_qi_cols: List[str]) -> tuple[List[Dict], int]:
