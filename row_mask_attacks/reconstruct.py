@@ -1,5 +1,7 @@
 from typing import List, Dict
 import pandas as pd
+import pprint as pp
+pp = pp.PrettyPrinter(indent=2)
 
 # Try to import Gurobi
 try:
@@ -32,7 +34,7 @@ def check_gurobi_available() -> bool:
         return False
 
 
-def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int]:
+def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int, Dict]:
     """ Reconstructs the value associated with each ID from noisy count samples.
     
     Args:
@@ -42,9 +44,10 @@ def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int
         noise: Integer representing the noise bound (±noise from true count)
     
     Returns:
-        Tuple of (reconstructed_values, num_equations)
+        Tuple of (reconstructed_values, num_equations, solver_metrics)
         - reconstructed_values: List of dicts with 'id' (int) and 'val' (int)
         - num_equations: Number of constraint equations used in the model
+        - solver_metrics: Dict with all solver performance metrics
     """
     # Collect all unique IDs and values
     all_ids = set()
@@ -164,6 +167,34 @@ def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int
         # Solve the model
         model.optimize()
         
+        # Collect Gurobi metrics
+        solver_metrics = {
+            'solver': 'gurobi',
+            'status': model.status,
+            'status_string': {1: 'LOADED', 2: 'OPTIMAL', 3: 'INFEASIBLE', 4: 'INF_OR_UNBD', 
+                            5: 'UNBOUNDED', 6: 'CUTOFF', 7: 'ITERATION_LIMIT', 8: 'NODE_LIMIT',
+                            9: 'TIME_LIMIT', 10: 'SOLUTION_LIMIT', 11: 'INTERRUPTED', 
+                            12: 'NUMERIC', 13: 'SUBOPTIMAL', 14: 'INPROGRESS', 15: 'USER_OBJ_LIMIT'}.get(model.status, 'UNKNOWN'),
+            'runtime': model.Runtime,
+            'obj_val': model.ObjVal if model.status == GRB.OPTIMAL else None,
+            'obj_bound': model.ObjBound if model.status == GRB.OPTIMAL else None,
+            'mip_gap': model.MIPGap if hasattr(model, 'MIPGap') else None,
+            'node_count': model.NodeCount if hasattr(model, 'NodeCount') else None,
+            'simplex_iterations': model.IterCount if hasattr(model, 'IterCount') else None,
+            'barrier_iterations': model.BarIterCount if hasattr(model, 'BarIterCount') else None,
+            'num_vars': model.NumVars,
+            'num_constrs': model.NumConstrs,
+            'num_sos': model.NumSOS if hasattr(model, 'NumSOS') else None,
+            'num_qconstrs': model.NumQConstrs if hasattr(model, 'NumQConstrs') else None,
+            'num_genconstrs': model.NumGenConstrs if hasattr(model, 'NumGenConstrs') else None,
+            'num_nzs': model.NumNZs if hasattr(model, 'NumNZs') else None,
+            'num_int_vars': model.NumIntVars if hasattr(model, 'NumIntVars') else None,
+            'num_bin_vars': model.NumBinVars if hasattr(model, 'NumBinVars') else None,
+            'is_mip': model.IsMIP,
+            'is_qp': model.IsQP,
+            'is_qcp': model.IsQCP,
+        }
+        
         # Extract solution
         result = []
         if model.status == GRB.OPTIMAL:
@@ -274,6 +305,22 @@ def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int
         solver = cp_model.CpSolver()
         status = solver.Solve(model)
         
+        # Collect OR-Tools metrics
+        solver_metrics = {
+            'solver': 'ortools',
+            'status': status,
+            'status_string': {0: 'UNKNOWN', 1: 'MODEL_INVALID', 2: 'FEASIBLE', 3: 'INFEASIBLE', 4: 'OPTIMAL'}.get(status, 'UNKNOWN'),
+            'runtime': solver.WallTime(),
+            'user_time': solver.UserTime(),
+            'obj_val': solver.ObjectiveValue() if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else None,
+            'best_obj_bound': solver.BestObjectiveBound() if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else None,
+            'num_booleans': solver.NumBooleans(),
+            'num_conflicts': solver.NumConflicts(),
+            'num_branches': solver.NumBranches(),
+            'num_binary_propagations': solver.NumBinaryPropagations(),
+            'num_integer_propagations': solver.NumIntegerPropagations(),
+        }
+        
         # Extract solution
         result = []
         if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
@@ -283,7 +330,63 @@ def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int
                         result.append({'id': id, 'val': val})
                         break
     
-    return result, num_equations
+    return result, num_equations, solver_metrics
+
+def measure_by_aggregate(df: pd.DataFrame, reconstructed: List[Dict]) -> Dict[str, float]:
+    """ Measures the accuracy of aggregate reconstruction.
+    
+    Args:
+        df: DataFrame with QI columns and 'val' column (ground truth)
+        reconstructed: Output from reconstruct_by_aggregate(), list of dicts with QI columns and 'val'
+    
+    Returns:
+        Dict with two fractions:
+        - 'qi_and_val_match': Fraction where QI columns AND value match a row in df
+        - 'qi_match': Fraction where QI columns match a row in df (ignoring value)
+    """
+    if len(reconstructed) == 0:
+        return {'qi_and_val_match': 0.0, 'qi_match': 0.0}
+    
+    # Get QI column names (all columns except 'id' and 'val')
+    qi_cols = [col for col in df.columns if col not in ['id', 'val']]
+    
+    # Create sets for efficient lookup
+    # For QI+val match: tuples of (qi_col1_val, qi_col2_val, ..., target_val)
+    df_qi_and_val = set()
+    for _, row in df.iterrows():
+        qi_vals_tuple = tuple(row[col] for col in qi_cols)
+        target_val = row['val']
+        df_qi_and_val.add(qi_vals_tuple + (target_val,))
+    
+    # For QI-only match: tuples of (qi_col1_val, qi_col2_val, ...)
+    df_qi_only = set()
+    for _, row in df.iterrows():
+        qi_vals_tuple = tuple(row[col] for col in qi_cols)
+        df_qi_only.add(qi_vals_tuple)
+    
+    # Count matches in reconstructed
+    qi_and_val_matches = 0
+    qi_matches = 0
+    
+    for recon_row in reconstructed:
+        # Extract QI values and target value from reconstructed row
+        qi_vals_tuple = tuple(recon_row[col] for col in qi_cols)
+        target_val = recon_row['val']
+        
+        # Check QI+val match
+        if qi_vals_tuple + (target_val,) in df_qi_and_val:
+            qi_and_val_matches += 1
+        
+        # Check QI-only match
+        if qi_vals_tuple in df_qi_only:
+            qi_matches += 1
+    
+    total_reconstructed = len(reconstructed)
+    
+    return {
+        'qi_and_val_match': qi_and_val_matches / total_reconstructed,
+        'qi_match': qi_matches / total_reconstructed
+    }
 
 def measure_by_row(df: pd.DataFrame, reconstructed: List[Dict]) -> float:
     """ Measures the accuracy of reconstruction.
@@ -314,7 +417,7 @@ def measure_by_row(df: pd.DataFrame, reconstructed: List[Dict]) -> float:
     return correct / total if total > 0 else 0.0
 
 
-def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, all_qi_cols: List[str]) -> tuple[List[Dict], int]:
+def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, all_qi_cols: List[str]) -> tuple[List[Dict], int, Dict]:
     """Reconstructs rows with QI column values and target values from aggregate samples.
     
     Args:
@@ -327,9 +430,10 @@ def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, a
         all_qi_cols: List of all QI column names
     
     Returns:
-        Tuple of (reconstructed_rows, num_equations)
+        Tuple of (reconstructed_rows, num_equations, solver_metrics)
         - reconstructed_rows: List of dicts with QI columns and 'val' (target value)
         - num_equations: Number of constraint equations used in the model
+        - solver_metrics: Dict with all solver performance metrics
     """
     # Step 1: Validate inputs and extract domains
     all_qi_cols_set = set(all_qi_cols)
@@ -360,18 +464,6 @@ def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, a
         # Collect target values
         for count_info in sample['noisy_counts']:
             all_target_vals.add(count_info['val'])
-    
-    # Detect overlapping QI filters
-    for i, sample_i in enumerate(samples):
-        filter_i = set(zip(sample_i['qi_cols'], sample_i['qi_vals']))
-        for j, sample_j in enumerate(samples):
-            if i >= j:
-                continue
-            filter_j = set(zip(sample_j['qi_cols'], sample_j['qi_vals']))
-            
-            # Check if one filter is a subset of the other
-            if filter_i.issubset(filter_j) or filter_j.issubset(filter_i):
-                raise ValueError(f"Overlapping QI filters detected: sample {i} and sample {j}")
     
     # Convert domains to sorted lists
     qi_domains_sorted = {col: sorted(vals) for col, vals in qi_domains.items()}
@@ -484,6 +576,34 @@ def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, a
         
         # Step 5: Solve and extract solution
         model.optimize()
+        
+        # Collect Gurobi metrics
+        solver_metrics = {
+            'solver': 'gurobi',
+            'status': model.status,
+            'status_string': {1: 'LOADED', 2: 'OPTIMAL', 3: 'INFEASIBLE', 4: 'INF_OR_UNBD', 
+                            5: 'UNBOUNDED', 6: 'CUTOFF', 7: 'ITERATION_LIMIT', 8: 'NODE_LIMIT',
+                            9: 'TIME_LIMIT', 10: 'SOLUTION_LIMIT', 11: 'INTERRUPTED', 
+                            12: 'NUMERIC', 13: 'SUBOPTIMAL', 14: 'INPROGRESS', 15: 'USER_OBJ_LIMIT'}.get(model.status, 'UNKNOWN'),
+            'runtime': model.Runtime,
+            'obj_val': model.ObjVal if model.status == GRB.OPTIMAL else None,
+            'obj_bound': model.ObjBound if model.status == GRB.OPTIMAL else None,
+            'mip_gap': model.MIPGap if hasattr(model, 'MIPGap') else None,
+            'node_count': model.NodeCount if hasattr(model, 'NodeCount') else None,
+            'simplex_iterations': model.IterCount if hasattr(model, 'IterCount') else None,
+            'barrier_iterations': model.BarIterCount if hasattr(model, 'BarIterCount') else None,
+            'num_vars': model.NumVars,
+            'num_constrs': model.NumConstrs,
+            'num_sos': model.NumSOS if hasattr(model, 'NumSOS') else None,
+            'num_qconstrs': model.NumQConstrs if hasattr(model, 'NumQConstrs') else None,
+            'num_genconstrs': model.NumGenConstrs if hasattr(model, 'NumGenConstrs') else None,
+            'num_nzs': model.NumNZs if hasattr(model, 'NumNZs') else None,
+            'num_int_vars': model.NumIntVars if hasattr(model, 'NumIntVars') else None,
+            'num_bin_vars': model.NumBinVars if hasattr(model, 'NumBinVars') else None,
+            'is_mip': model.IsMIP,
+            'is_qp': model.IsQP,
+            'is_qcp': model.IsQCP,
+        }
         
         result = []
         if model.status == GRB.OPTIMAL:
@@ -606,6 +726,22 @@ def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, a
         solver = cp_model.CpSolver()
         status = solver.Solve(model)
         
+        # Collect OR-Tools metrics
+        solver_metrics = {
+            'solver': 'ortools',
+            'status': status,
+            'status_string': {0: 'UNKNOWN', 1: 'MODEL_INVALID', 2: 'FEASIBLE', 3: 'INFEASIBLE', 4: 'OPTIMAL'}.get(status, 'UNKNOWN'),
+            'runtime': solver.WallTime(),
+            'user_time': solver.UserTime(),
+            'obj_val': solver.ObjectiveValue() if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else None,
+            'best_obj_bound': solver.BestObjectiveBound() if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else None,
+            'num_booleans': solver.NumBooleans(),
+            'num_conflicts': solver.NumConflicts(),
+            'num_branches': solver.NumBranches(),
+            'num_binary_propagations': solver.NumBinaryPropagations(),
+            'num_integer_propagations': solver.NumIntegerPropagations(),
+        }
+        
         result = []
         if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
             for row_idx in range(total_rows):
@@ -626,4 +762,4 @@ def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, a
                 
                 result.append(row_dict)
     
-    return result, num_equations
+    return result, num_equations, solver_metrics

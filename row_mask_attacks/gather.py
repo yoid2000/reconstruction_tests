@@ -47,7 +47,7 @@ def gather_results() -> pd.DataFrame:
                 
                 # Add all keys from last attack result
                 for key, value in last_result.items():
-                    # Handle nested dicts like 'mixing'
+                    # Handle nested dicts like 'mixing' and 'solver_metrics'
                     if isinstance(value, dict):
                         # Flatten nested dict with prefix
                         for nested_key, nested_value in value.items():

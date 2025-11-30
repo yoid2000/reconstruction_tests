@@ -12,7 +12,7 @@ pp = pprint.PrettyPrinter(indent=2)
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from df_builds.build_row_masks import build_row_masks, build_row_masks_qi
-from reconstruct import reconstruct_by_row, measure_by_row
+from reconstruct import reconstruct_by_row, measure_by_row, reconstruct_by_aggregate, measure_by_aggregate
 
 solve_type_map = {
     'pure_row': 'pr',
@@ -271,6 +271,8 @@ def initialize_qi_samples(df: pd.DataFrame, nunique: int, noise: int, qi_subsets
     while len(covered_ids) < len(all_ids) and qi_index < len(qi_subsets):
         # Get masked IDs for this subset
         masked_ids = get_qi_subsets_mask(df, qi_subsets, qi_index)
+        qi_cols = qi_subsets[qi_index]['qi_cols']
+        qi_vals = qi_subsets[qi_index]['qi_vals']
         
         # Get exact counts for each value in the masked subset
         masked_df = df[df['id'].isin(masked_ids)]
@@ -287,6 +289,8 @@ def initialize_qi_samples(df: pd.DataFrame, nunique: int, noise: int, qi_subsets
         # Add sample
         initial_samples.append({
             'ids': masked_ids,
+            'qi_cols': qi_cols,
+            'qi_vals': qi_vals,
             'noisy_counts': noisy_counts
         })
         
@@ -347,7 +351,7 @@ def attack_loop(nrows: int,
     start_time = time.time()
     
     # Build the ground truth dataframe
-    if nqi == 0:
+    if solve_type == 'pure_row':
         df = build_row_masks(nrows=nrows, nunique=nunique)
     else:
         df = build_row_masks_qi(nrows=nrows, nunique=nunique, nqi=nqi, vals_per_qi=vals_per_qi)
@@ -356,7 +360,8 @@ def attack_loop(nrows: int,
     num_masked = None
     qi_index = 0
     qi_subsets = []
-    if nqi > 0:
+    all_qi_cols = [col for col in df.columns if col.startswith('qi')]
+    if solve_type in ['agg_row', 'agg_only']:
         qi_subsets = get_qi_subset_list(df, min_num_rows, int(round(min_num_rows * nunique * 1.5)))
         initial_samples, qi_index = initialize_qi_samples(df, nunique, noise, qi_subsets)
         print(f"Total QI subsets available: {len(qi_subsets)}. qi_index {qi_index}.")
@@ -373,7 +378,9 @@ def attack_loop(nrows: int,
         
         for _ in range(current_num_samples):
             # Select random subset of IDs
-            if nqi == 0:
+            qi_cols = []
+            qi_vals = []
+            if solve_type == 'pure_row':
                 masked_ids = set(np.random.choice(df['id'].values, size=num_masked, replace=False))
             else:
                 if qi_index >= len(qi_subsets):
@@ -381,6 +388,8 @@ def attack_loop(nrows: int,
                     break
                 masked_ids = get_qi_subsets_mask(df, qi_subsets, qi_index)
                 avg_num_masked += len(masked_ids)
+                qi_cols = qi_subsets[qi_index]['qi_cols']
+                qi_vals = qi_subsets[qi_index]['qi_vals']
                 qi_index += 1
             
             # Get exact counts for each value in the masked subset
@@ -405,19 +414,27 @@ def attack_loop(nrows: int,
             # Add sample
             samples.append({
                 'ids': masked_ids,
+                'qi_cols': qi_cols,            # for agg_only attacks
+                'qi_vals': qi_vals,            # for agg_only attacks
                 'noisy_counts': noisy_counts
             })
         
         # Reconstruct and measure
         print(f"Begin {solve_type} reconstruction with {len(samples)} samples\n    (current_num_samples={current_num_samples}, initial_samples={len(initial_samples)}, qi_index={qi_index}, num_suppressed={num_suppressed})")
+        qi_match_accuracy = 0.0
         if solve_type in ['pure_row', 'agg_row']:
-            reconstructed, num_equations = reconstruct_by_row(samples, noise)
+            reconstructed, num_equations, solver_metrics = reconstruct_by_row(samples, noise)
             accuracy = measure_by_row(df, reconstructed)
+        elif solve_type == 'agg_only':
+            reconstructed, num_equations, solver_metrics = reconstruct_by_aggregate(samples, noise, nrows, all_qi_cols)
+            accuracy_measure = measure_by_aggregate(df, reconstructed)
+            accuracy = accuracy_measure['qi_and_val_match']
+            qi_match_accuracy = accuracy_measure['qi_match']
         else:
             raise ValueError(f"Unsupported solve_type: {solve_type}")
         mixing = mixing_stats(samples)
 
-        if nqi > 0:
+        if solve_type in ['agg_row', 'agg_only']:
             num_masked = int(avg_num_masked / (len(samples) - len(initial_samples))) if (len(samples) - len(initial_samples)) > 0 else 0
             initial_samples = samples.copy()
         
@@ -426,8 +443,10 @@ def attack_loop(nrows: int,
             'num_samples': len(samples),
             'num_equations': num_equations,
             'measure': accuracy,
+            'qi_match_measure': qi_match_accuracy,
             'mixing': mixing,
             'actual_num_rows': num_masked,
+            'solver_metrics': solver_metrics,
         })
         pp.pprint(results[-1])
         
