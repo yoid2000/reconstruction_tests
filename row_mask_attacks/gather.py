@@ -86,7 +86,7 @@ def main():
         return
     
     # Save to parquet
-    output_path = Path('./results/row_mask_attacks/results.parquet')
+    output_path = Path('./results/row_mask_attacks/result.parquet')
     df.to_parquet(output_path, index=False)
     
     print(f"\nSaved {len(df)} results to {output_path}")
