@@ -853,6 +853,8 @@ def analyze():
         return
     
     df = pd.read_parquet(parquet_path)
+
+    # Make df_final, which removes rows where final_attack is False
     
     print(f"Loaded {len(df)} rows from {parquet_path}")
     print(f"\nColumns: {list(df.columns)}")
