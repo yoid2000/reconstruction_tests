@@ -40,7 +40,7 @@ def _rows_from_result(result_json, source_file=None):
 
 def gather_results(results_root=None, out_csv=None, verbose=False):
 	if results_root is None:
-		results_root = os.path.join(os.path.dirname(__file__), "results")
+		results_root = os.path.join(os.path.dirname(__file__), "row_mask_attacks", "results")
 
 	pattern = os.path.join(results_root, "**", "*.json")
 	json_files = glob(pattern, recursive=True)
