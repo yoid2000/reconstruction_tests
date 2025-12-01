@@ -32,30 +32,40 @@ def gather_results() -> pd.DataFrame:
             with open(json_file, 'r') as f:
                 result = json.load(f)
             
-            # Start with filename
-            row = {'filename': json_file.name}
-            
-            # Add all top-level keys except 'attack_results'
+            # Get top-level metadata (everything except attack_results)
+            base_data = {'filename': json_file.name}
             for key, value in result.items():
                 if key != 'attack_results':
-                    row[key] = value
+                    base_data[key] = value
             
-            # Extract from last element of attack_results
+            # Process each entry in attack_results
             attack_results = result.get('attack_results', [])
-            if attack_results:
-                last_result = attack_results[-1]
-                
-                # Add all keys from last attack result
-                for key, value in last_result.items():
-                    # Handle nested dicts like 'mixing' and 'solver_metrics'
-                    if isinstance(value, dict):
-                        # Flatten nested dict with prefix
-                        for nested_key, nested_value in value.items():
-                            row[f'{key}_{nested_key}'] = nested_value
-                    else:
-                        row[key] = value
-            
-            data.append(row)
+            if not attack_results:
+                # If no attack_results, create one row with base data
+                row = base_data.copy()
+                row['final_attack'] = True
+                row['attack_index'] = 0
+                data.append(row)
+            else:
+                # Create one row per attack_results entry
+                for idx, attack_result in enumerate(attack_results):
+                    row = base_data.copy()
+                    
+                    # Add attack_index and final_attack columns
+                    row['attack_index'] = idx
+                    row['final_attack'] = (idx == len(attack_results) - 1)
+                    
+                    # Add all keys from this attack result
+                    for key, value in attack_result.items():
+                        # Handle nested dicts like 'mixing' and 'solver_metrics'
+                        if isinstance(value, dict):
+                            # Flatten nested dict with prefix
+                            for nested_key, nested_value in value.items():
+                                row[f'{key}_{nested_key}'] = nested_value
+                        else:
+                            row[key] = value
+                    
+                    data.append(row)
             
         except Exception as e:
             print(f"Error processing {json_file.name}: {e}")
@@ -76,7 +86,7 @@ def main():
         return
     
     # Save to parquet
-    output_path = Path('./results/row_mask_attacks/result.parquet')
+    output_path = Path('./results/row_mask_attacks/results.parquet')
     df.to_parquet(output_path, index=False)
     
     print(f"\nSaved {len(df)} results to {output_path}")
