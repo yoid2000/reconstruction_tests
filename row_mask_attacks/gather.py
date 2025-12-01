@@ -38,9 +38,9 @@ def _rows_from_result(result_json, source_file=None):
 		rows.append(row)
 	return rows
 
-def gather_results(results_root=None, out_csv=None, verbose=False):
+def gather_results(results_root=None, out_file=None, verbose=False):
 	if results_root is None:
-		results_root = os.path.join(os.path.dirname(__file__), "results")
+		results_root = os.path.join(os.path.dirname(__file__), "row_mask_attacks", "results")
 
 	pattern = os.path.join(results_root, "**", "*.json")
 	json_files = glob(pattern, recursive=True)
@@ -65,16 +65,21 @@ def gather_results(results_root=None, out_csv=None, verbose=False):
 
 	df = pd.DataFrame(all_rows)
 
-	if out_csv:
-		df.to_csv(out_csv, index=False)
+	if out_file:
+		if out_file.endswith('.parquet'):
+			df.to_parquet(out_file, index=False)
+		elif out_file.endswith('.csv'):
+			df.to_csv(out_file, index=False)
+		else:
+			df.to_parquet(out_file, index=False)
 		if verbose:
 			print(f"gathered {len(df)} rows from {len(json_files)} files")
-			print(f"output written to: {out_csv}")
+			print(f"output written to: {out_file}")
 	elif verbose:
 		print(f"gathered {len(df)} rows from {len(json_files)} files")
 
 	return df
 
 if __name__ == "__main__":
-	out_path = os.path.join(os.path.dirname(__file__), "gathered_results.csv")
-	df = gather_results(out_csv=out_path, verbose=True)
+	out_path = os.path.join(os.path.dirname(__file__), "row_mask_attacks", "results.parquet")
+	df = gather_results(out_file=out_path, verbose=True)
