@@ -1,89 +1,83 @@
 import json
 import pandas as pd
-from pathlib import Path
-from typing import List, Dict
+import os
+from glob import glob
 
-def gather_results() -> pd.DataFrame:
-    """Read all JSON result files and consolidate into a DataFrame.
-    
-    Returns:
-        DataFrame with all results and parameters
-    """
-    results_dir = Path('./results/row_mask_attacks')
-    
-    if not results_dir.exists():
-        print(f"Results directory {results_dir} does not exist")
-        return pd.DataFrame()
-    
-    # Find all JSON files
-    json_files = list(results_dir.glob('*.json'))
-    
-    if not json_files:
-        print(f"No JSON files found in {results_dir}")
-        return pd.DataFrame()
-    
-    print(f"Found {len(json_files)} JSON files")
-    
-    # Collect data from each file
-    data = []
-    
-    for json_file in json_files:
-        try:
-            with open(json_file, 'r') as f:
-                result = json.load(f)
-            
-            # Start with filename
-            row = {'filename': json_file.name}
-            
-            # Add all top-level keys except 'attack_results'
-            for key, value in result.items():
-                if key != 'attack_results':
-                    row[key] = value
-            
-            # Extract from last element of attack_results
-            attack_results = result.get('attack_results', [])
-            if attack_results:
-                last_result = attack_results[-1]
-                
-                # Add all keys from last attack result
-                for key, value in last_result.items():
-                    # Handle nested dicts like 'mixing' and 'solver_metrics'
-                    if isinstance(value, dict):
-                        # Flatten nested dict with prefix
-                        for nested_key, nested_value in value.items():
-                            row[f'{key}_{nested_key}'] = nested_value
-                    else:
-                        row[key] = value
-            
-            data.append(row)
-            
-        except Exception as e:
-            print(f"Error processing {json_file.name}: {e}")
-            continue
-    
-    # Create DataFrame
-    df = pd.DataFrame(data)
-    
-    return df
 
-def main():
-    """Main function to gather results and save to parquet."""
-    # Gather results
-    df = gather_results()
-    
-    if df.empty:
-        print("No data collected")
-        return
-    
-    # Save to parquet
-    output_path = Path('./results/row_mask_attacks/result.parquet')
-    df.to_parquet(output_path, index=False)
-    
-    print(f"\nSaved {len(df)} results to {output_path}")
-    print(f"\nFirst few rows:")
-    print(df.head())
-    print(f"\nDataFrame shape: {df.shape}")
-    print(f"\nColumns: {list(df.columns)}")
+# Expand a single result JSON into a list of rows, one per attack_results entry.
+# Each row contains top-level metadata plus the attack entry fields.
+# Adds:
+#   - final_attack: True if this is the last entry in attack_results
+#   - attack_index: index of the entry in attack_results (0-based)
+# Flattens 'mixing' and 'solver_metrics' nested dicts by prefixing keys.
+def _rows_from_result(result_json, source_file=None):
+	# base metadata: everything except attack_results
+	base = {k: v for k, v in result_json.items() if k != "attack_results"}
+	if source_file is not None:
+		base["source_file"] = source_file
 
-if __name__ == '__main__':
-    main()
+	attack_results = result_json.get("attack_results", [])
+	rows = []
+	if not attack_results:
+		# keep one row using only base metadata
+		row = base.copy()
+		row["final_attack"] = True
+		row["attack_index"] = 0
+		rows.append(row)
+		return rows
+
+	for idx, entry in enumerate(attack_results):
+		row = base.copy()
+		# copy simple fields from the attack entry, flatten certain nested dicts
+		for k, v in entry.items():
+			if k in ("mixing", "solver_metrics") and isinstance(v, dict):
+				for subk, subv in v.items():
+					row[f"{k}_{subk}"] = subv
+			else:
+				row[k] = v
+		row["final_attack"] = (idx == len(attack_results) - 1)
+		row["attack_index"] = idx
+		rows.append(row)
+	return rows
+
+def gather_results(results_root=None, out_csv=None, verbose=False):
+	# default: search under the package's row_mask_attacks/results directory
+	if results_root is None:
+		results_root = os.path.join(os.path.dirname(__file__), "row_mask_attacks", "results")
+
+	pattern = os.path.join(results_root, "**", "*.json")
+	json_files = glob(pattern, recursive=True)
+
+	all_rows = []
+	for fp in sorted(json_files):
+		try:
+			with open(fp, "r", encoding="utf-8") as fh:
+				data = json.load(fh)
+		except Exception as e:
+			if verbose:
+				print(f"skipping {fp}: {e}")
+			continue
+
+		# expand into one row per attack_results entry
+		for r in _rows_from_result(data, source_file=os.path.basename(fp)):
+			all_rows.append(r)
+
+	if not all_rows:
+		if verbose:
+			print("no rows gathered")
+		return pd.DataFrame()
+
+	df = pd.DataFrame(all_rows)
+
+	if out_csv:
+		df.to_csv(out_csv, index=False)
+	elif verbose:
+		print(f"gathered {len(df)} rows from {len(json_files)} files")
+
+	return df
+
+if __name__ == "__main__":
+	# when run directly, write to gathered_results.csv next to this file
+	out_path = os.path.join(os.path.dirname(__file__), "gathered_results.csv")
+	df = gather_results(out_csv=out_path, verbose=True)
+	print("output written to:", out_path)
