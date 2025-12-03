@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 import numpy as np
+from scipy import stats
 
 def analyze_solver_metrics():
     """Analyze solver performance metrics from gathered results."""
@@ -155,6 +156,33 @@ def analyze_solver_metrics():
             plt.yscale('log')
             plt.tight_layout()
             plot_file = plots_dir / 'gurobi_iterations_vs_equations.png'
+            plt.savefig(plot_file, dpi=300)
+            plt.close()
+            print(f"Saved plot: {plot_file}")
+    
+    # Plot 6: Simplex iterations vs Runtime with correlation
+    if 'solver_metrics_simplex_iterations' in df.columns and 'solver_metrics_runtime' in df.columns:
+        gurobi_df = df[df['solver_metrics_solver'] == 'gurobi'].copy()
+        # Filter out NaN values
+        valid_data = gurobi_df[['solver_metrics_simplex_iterations', 'solver_metrics_runtime']].dropna()
+        
+        if len(valid_data) > 1:
+            x = valid_data['solver_metrics_simplex_iterations'].values
+            y = valid_data['solver_metrics_runtime'].values
+            
+            # Calculate correlation on original data
+            correlation = np.corrcoef(x, y)[0, 1]
+            
+            plt.figure(figsize=(10, 6))
+            plt.scatter(x, y, alpha=0.6, s=50, color='steelblue', edgecolors='black', linewidth=0.5)
+            plt.xscale('log')
+            plt.yscale('log')
+            plt.xlabel('Simplex Iterations')
+            plt.ylabel('Runtime (seconds)')
+            plt.title(f'Gurobi: Simplex Iterations vs Runtime (Correlation: {correlation:.3f})')
+            plt.grid(True, alpha=0.3)
+            plt.tight_layout()
+            plot_file = plots_dir / 'simplex_iterations_vs_runtime.png'
             plt.savefig(plot_file, dpi=300)
             plt.close()
             print(f"Saved plot: {plot_file}")

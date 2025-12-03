@@ -9,3 +9,4 @@ pyarrow
 scipy
 matplotlib
 seaborn
+scikit-learn

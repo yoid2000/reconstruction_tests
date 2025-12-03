@@ -830,11 +830,12 @@ def get_experiment_dataframes(experiments, df):
         
         # Filter by each parameter
         for param, values in exp.items():
-            if param == 'experiment_group':
+            if param in ['experiment_group', 'solve_type', 'dont_run']:
                 continue
             
             if param in df.columns:
                 # Row must have value in the experiment's value list
+                print(param, values)
                 mask = mask & df[param].isin(values)
         
         result[exp_group] = df[mask].copy()
@@ -852,26 +853,27 @@ def analyze():
         print("Please run gather.py first")
         return
     
-    df = pd.read_parquet(parquet_path)
+    df_all = pd.read_parquet(parquet_path)
 
     # Make df_final, which removes rows where final_attack is False
+    df_final = df_all[df_all['final_attack'] == True].copy()
     
-    print(f"Loaded {len(df)} rows from {parquet_path}")
-    print(f"\nColumns: {list(df.columns)}")
-    print(f"\nDataFrame shape: {df.shape}")
+    print(f"Loaded {len(df_all)} rows from {parquet_path}")
+    print(f"\nColumns: {list(df_all.columns)}")
+    print(f"\nDataFrame shape: {df_all.shape}")
     
     # Remove unfinished jobs
-    if 'finished' in df.columns:
-        unfinished = df[df['finished'] == False]
+    if 'finished' in df_final.columns:
+        unfinished = df_final[df_final['finished'] == False]
         print(f"\nRemoving {len(unfinished)} unfinished jobs (finished==False)")
-        df = df[df['finished'] == True].copy()
-        print(f"Remaining rows: {len(df)}")
+        df_final = df_final[df_final['finished'] == True].copy()
+        print(f"Remaining rows: {len(df_final)}")
     else:
         print("\nWarning: 'finished' column not found, keeping all rows")
     
     # Read experiments and group dataframes
     experiments = read_experiments()
-    exp_dataframes = get_experiment_dataframes(experiments, df)
+    exp_dataframes = get_experiment_dataframes(experiments, df_final)
     
     print(f"\nExperiment groups:")
     for exp_group, exp_df in exp_dataframes.items():
