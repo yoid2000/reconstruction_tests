@@ -727,7 +727,7 @@ def analyze_single_parameter_variation(df: pd.DataFrame, experiments: list, exp_
     
     # Result columns to analyze
     result_cols = ['num_samples', 'num_equations', 'measure', 'num_suppressed',
-                   'mixing_avg', 'mixing_min', 'mixing_max', 'mixing_median', 'elapsed_time']
+                   'mixing_avg', 'mixing_min', 'mixing_max', 'mixing_median', 'elapsed_time', 'solver_metrics_runtime', 'solver_metrics_simplex_iterations', 'solver_metrics_num_vars', 'solver_metrics_num_constraints']
     
     # Filter to columns that exist in the dataframe
     result_cols = [col for col in result_cols if col in df.columns]

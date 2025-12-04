@@ -34,7 +34,7 @@ def check_gurobi_available() -> bool:
         return False
 
 
-def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int, Dict]:
+def reconstruct_by_row(samples: List[Dict], noise: int, seed: int = None) -> tuple[List[Dict], int, Dict]:
     """ Reconstructs the value associated with each ID from noisy count samples.
     
     Args:
@@ -42,6 +42,7 @@ def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int
             - 'ids': set of integer IDs
             - 'noisy_counts': list of dicts with 'val' (int) and 'count' (int)
         noise: Integer representing the noise bound (±noise from true count)
+        seed: Random seed for solver (default: None)
     
     Returns:
         Tuple of (reconstructed_values, num_equations, solver_metrics)
@@ -68,6 +69,10 @@ def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int
         print("Using Gurobi solver")
         model = gp.Model("reconstruct_by_row")
         model.setParam('OutputFlag', 0)  # Suppress output
+        
+        # Set random seed if provided
+        if seed is not None:
+            model.setParam('Seed', seed)
         
         # Create binary variables: x[id][val] = 1 if id has value val
         x = {}
@@ -100,6 +105,7 @@ def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int
         # Constraint: For each sample, the counts must be within noise bounds
         print("\n2. Noisy count constraints (for each sample and value):")
         sample_constraints = []
+        skipped_constraints = 0
         for sample_idx, sample in enumerate(samples):
             ids = sample['ids']
             noisy_counts = sample['noisy_counts']
@@ -112,20 +118,32 @@ def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int
                 true_count = gp.quicksum(x[id][val] for id in ids if id in all_ids)
                 
                 # Constraint: noisy_count - noise <= true_count <= noisy_count + noise
+                # Clamp bounds: lower >= 0, upper <= number of IDs in sample
                 ids_in_sample = [id for id in ids if id in all_ids]
+                num_ids = len(ids_in_sample)
+                lower_bound_val = max(0, noisy_count - noise)
+                upper_bound_val = min(num_ids, noisy_count + noise)
+                
+                # Skip if constraint provides no information (covers entire range)
+                if lower_bound_val == 0 and upper_bound_val == num_ids:
+                    skipped_constraints += 2
+                    continue
+                
                 sum_str = " + ".join([f"x[{id}][{val}]" for id in ids_in_sample])
                 
-                lower_bound = f"  Sample {sample_idx}, val={val}: {sum_str} >= {noisy_count - noise}"
-                upper_bound = f"  Sample {sample_idx}, val={val}: {sum_str} <= {noisy_count + noise}"
+                lower_bound = f"  Sample {sample_idx}, val={val}: {sum_str} >= {lower_bound_val}"
+                upper_bound = f"  Sample {sample_idx}, val={val}: {sum_str} <= {upper_bound_val}"
                 
                 sample_constraints.append(lower_bound)
                 sample_constraints.append(upper_bound)
                 
-                model.addConstr(true_count >= noisy_count - noise)
-                model.addConstr(true_count <= noisy_count + noise)
+                model.addConstr(true_count >= lower_bound_val)
+                model.addConstr(true_count <= upper_bound_val)
                 num_equations += 2
         
         print(f"  Total: {len(sample_constraints)} constraints ({len(samples)} samples)")
+        if skipped_constraints > 0:
+            print(f"  Skipped: {skipped_constraints} redundant constraints (covering entire range)")
         if len(sample_constraints) <= 5:
             for c in sample_constraints:
                 print(c)
@@ -193,6 +211,7 @@ def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int
             'is_mip': model.IsMIP,
             'is_qp': model.IsQP,
             'is_qcp': model.IsQCP,
+            'skipped_constraints': skipped_constraints,
         }
         
         # Extract solution
@@ -237,6 +256,7 @@ def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int
         # Constraint: For each sample, the counts must be within noise bounds
         print("\n2. Noisy count constraints (for each sample and value):")
         sample_constraints = []
+        skipped_constraints = 0
         for sample_idx, sample in enumerate(samples):
             ids = sample['ids']
             noisy_counts = sample['noisy_counts']
@@ -249,20 +269,32 @@ def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int
                 true_count = sum(x[id][val] for id in ids if id in all_ids)
                 
                 # Constraint: noisy_count - noise <= true_count <= noisy_count + noise
+                # Clamp bounds: lower >= 0, upper <= number of IDs in sample
                 ids_in_sample = [id for id in ids if id in all_ids]
+                num_ids = len(ids_in_sample)
+                lower_bound_val = max(0, noisy_count - noise)
+                upper_bound_val = min(num_ids, noisy_count + noise)
+                
+                # Skip if constraint provides no information (covers entire range)
+                if lower_bound_val == 0 and upper_bound_val == num_ids:
+                    skipped_constraints += 2
+                    continue
+                
                 sum_str = " + ".join([f"x[{id}][{val}]" for id in ids_in_sample])
                 
-                lower_bound = f"  Sample {sample_idx}, val={val}: {sum_str} >= {noisy_count - noise}"
-                upper_bound = f"  Sample {sample_idx}, val={val}: {sum_str} <= {noisy_count + noise}"
+                lower_bound = f"  Sample {sample_idx}, val={val}: {sum_str} >= {lower_bound_val}"
+                upper_bound = f"  Sample {sample_idx}, val={val}: {sum_str} <= {upper_bound_val}"
                 
                 sample_constraints.append(lower_bound)
                 sample_constraints.append(upper_bound)
                 
-                model.Add(true_count >= noisy_count - noise)
-                model.Add(true_count <= noisy_count + noise)
+                model.Add(true_count >= lower_bound_val)
+                model.Add(true_count <= upper_bound_val)
                 num_equations += 2
         
         print(f"  Total: {len(sample_constraints)} constraints ({len(samples)} samples)")
+        if skipped_constraints > 0:
+            print(f"  Skipped: {skipped_constraints} redundant constraints (covering entire range)")
         if len(sample_constraints) <= 5:
             for c in sample_constraints:
                 print(c)
@@ -303,6 +335,11 @@ def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int
         
         # Solve the model
         solver = cp_model.CpSolver()
+        
+        # Set random seed if provided
+        if seed is not None:
+            solver.parameters.random_seed = seed
+        
         status = solver.Solve(model)
         
         # Collect OR-Tools metrics
@@ -319,6 +356,7 @@ def reconstruct_by_row(samples: List[Dict], noise: int) -> tuple[List[Dict], int
             'num_branches': solver.NumBranches(),
             'num_binary_propagations': solver.NumBinaryPropagations(),
             'num_integer_propagations': solver.NumIntegerPropagations(),
+            'skipped_constraints': skipped_constraints,
         }
         
         # Extract solution
@@ -417,7 +455,7 @@ def measure_by_row(df: pd.DataFrame, reconstructed: List[Dict]) -> float:
     return correct / total if total > 0 else 0.0
 
 
-def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, all_qi_cols: List[str]) -> tuple[List[Dict], int, Dict]:
+def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, all_qi_cols: List[str], seed: int = None) -> tuple[List[Dict], int, Dict]:
     """Reconstructs rows with QI column values and target values from aggregate samples.
     
     Args:
@@ -428,6 +466,7 @@ def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, a
         noise: Integer representing the noise bound (±noise from true count)
         total_rows: Exact number of rows to reconstruct
         all_qi_cols: List of all QI column names
+        seed: Random seed for solver (default: None)
     
     Returns:
         Tuple of (reconstructed_rows, num_equations, solver_metrics)
@@ -477,6 +516,10 @@ def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, a
         print("Using Gurobi solver")
         model = gp.Model("reconstruct_by_aggregate")
         model.setParam('OutputFlag', 0)  # Suppress output
+        
+        # Set random seed if provided
+        if seed is not None:
+            model.setParam('Seed', seed)
         
         # Step 2: Create binary variables
         x = {}  # x[row_idx][qi_col][qi_val]
@@ -532,6 +575,7 @@ def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, a
         # Step 4: Add partial-match counting constraints
         print("\n3. Partial-match counting constraints (with auxiliary variables):")
         match_constraints_count = 0
+        skipped_constraints = 0
         
         for sample_idx, sample in enumerate(samples):
             qi_cols = sample['qi_cols']
@@ -541,6 +585,15 @@ def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, a
             for count_info in noisy_counts:
                 target_val = count_info['val']
                 noisy_count = count_info['count']
+                
+                # Clamp bounds: lower >= 0, upper <= total_rows
+                lower_bound_val = max(0, noisy_count - noise)
+                upper_bound_val = min(total_rows, noisy_count + noise)
+                
+                # Skip if constraint provides no information (covers entire range)
+                if lower_bound_val == 0 and upper_bound_val == total_rows:
+                    skipped_constraints += 2
+                    continue
                 
                 # Create auxiliary match variables for each row
                 match_vars = []
@@ -564,13 +617,15 @@ def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, a
                 
                 # Add counting constraints
                 total_matches = gp.quicksum(match_vars)
-                model.addConstr(total_matches >= noisy_count - noise)
-                model.addConstr(total_matches <= noisy_count + noise)
+                model.addConstr(total_matches >= lower_bound_val)
+                model.addConstr(total_matches <= upper_bound_val)
                 num_equations += 2
                 match_constraints_count += 2
         
         print(f"  Auxiliary match variables created for each sample-target-row combination")
         print(f"  Counting constraints (upper and lower bounds): {match_constraints_count}")
+        if skipped_constraints > 0:
+            print(f"  Skipped: {skipped_constraints} redundant constraints (covering entire range)")
         
         print(f"\n=== TOTAL EQUATIONS: {num_equations} ===\n")
         
@@ -603,6 +658,7 @@ def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, a
             'is_mip': model.IsMIP,
             'is_qp': model.IsQP,
             'is_qcp': model.IsQCP,
+            'skipped_constraints': skipped_constraints,
         }
         
         result = []
@@ -680,6 +736,7 @@ def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, a
         # Step 4: Add partial-match counting constraints
         print("\n3. Partial-match counting constraints (with auxiliary variables):")
         match_constraints_count = 0
+        skipped_constraints = 0
         
         for sample_idx, sample in enumerate(samples):
             qi_cols = sample['qi_cols']
@@ -689,6 +746,15 @@ def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, a
             for count_info in noisy_counts:
                 target_val = count_info['val']
                 noisy_count = count_info['count']
+                
+                # Clamp bounds: lower >= 0, upper <= total_rows
+                lower_bound_val = max(0, noisy_count - noise)
+                upper_bound_val = min(total_rows, noisy_count + noise)
+                
+                # Skip if constraint provides no information (covers entire range)
+                if lower_bound_val == 0 and upper_bound_val == total_rows:
+                    skipped_constraints += 2
+                    continue
                 
                 # Create auxiliary match variables for each row
                 match_vars = []
@@ -712,18 +778,25 @@ def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, a
                 
                 # Add counting constraints
                 total_matches = sum(match_vars)
-                model.Add(total_matches >= noisy_count - noise)
-                model.Add(total_matches <= noisy_count + noise)
+                model.Add(total_matches >= lower_bound_val)
+                model.Add(total_matches <= upper_bound_val)
                 num_equations += 2
                 match_constraints_count += 2
         
         print(f"  Auxiliary match variables created for each sample-target-row combination")
         print(f"  Counting constraints (upper and lower bounds): {match_constraints_count}")
+        if skipped_constraints > 0:
+            print(f"  Skipped: {skipped_constraints} redundant constraints (covering entire range)")
         
         print(f"\n=== TOTAL EQUATIONS: {num_equations} ===\n")
         
         # Step 5: Solve and extract solution
         solver = cp_model.CpSolver()
+        
+        # Set random seed if provided
+        if seed is not None:
+            solver.parameters.random_seed = seed
+        
         status = solver.Solve(model)
         
         # Collect OR-Tools metrics
@@ -740,6 +813,7 @@ def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, a
             'num_branches': solver.NumBranches(),
             'num_binary_propagations': solver.NumBinaryPropagations(),
             'num_integer_propagations': solver.NumIntegerPropagations(),
+            'skipped_constraints': skipped_constraints,
         }
         
         result = []

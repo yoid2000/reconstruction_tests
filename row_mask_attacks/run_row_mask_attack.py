@@ -305,11 +305,12 @@ def attack_loop(nrows: int,
                 mask_size: int, 
                 noise: int,
                 nqi: int = 0,
-                max_samples: int = 20000,
                 target_accuracy: float = 0.99,
                 min_num_rows: int = 5,
                 vals_per_qi: int = 0,
+                max_samples: int = 20000,
                 solve_type: str = 'pure_row',
+                seed: int = None,
                 output_file: Path = None,
                 cur_attack_results: List[Dict] = None) -> None:
     """ Runs an iterative attack loop to reconstruct values from noisy samples.
@@ -323,12 +324,17 @@ def attack_loop(nrows: int,
         vals_per_qi: Number of distinct values per QI column (default: 0, means auto compute)
         target_accuracy: Target accuracy to stop early (default: 0.99)
         min_num_rows: Minimum number of rows in any aggregate (default: 5)
+        seed: Random seed for reproducibility (default: None)
         output_file: Path to JSON file to save results incrementally (default: None)
         cur_attack_results: Previous attack results to resume from (default: None)
     
     Returns:
         None
     """
+    # Set random seed if provided
+    if seed is not None:
+        np.random.seed(seed)
+    
     # Check if we're resuming from prior results
     if cur_attack_results is not None and len(cur_attack_results) > 0:
         last_result = cur_attack_results[-1]
@@ -423,10 +429,10 @@ def attack_loop(nrows: int,
         print(f"Begin {solve_type} reconstruction with {len(samples)} samples\n    (current_num_samples={current_num_samples}, initial_samples={len(initial_samples)}, qi_index={qi_index}, num_suppressed={num_suppressed})")
         qi_match_accuracy = 0.0
         if solve_type in ['pure_row', 'agg_row']:
-            reconstructed, num_equations, solver_metrics = reconstruct_by_row(samples, noise)
+            reconstructed, num_equations, solver_metrics = reconstruct_by_row(samples, noise, seed)
             accuracy = measure_by_row(df, reconstructed)
         elif solve_type == 'agg_only':
-            reconstructed, num_equations, solver_metrics = reconstruct_by_aggregate(samples, noise, nrows, all_qi_cols)
+            reconstructed, num_equations, solver_metrics = reconstruct_by_aggregate(samples, noise, nrows, all_qi_cols, seed)
             accuracy_measure = measure_by_aggregate(df, reconstructed)
             accuracy = accuracy_measure['qi_and_val_match']
             qi_match_accuracy = accuracy_measure['qi_match']
@@ -486,6 +492,7 @@ def attack_loop(nrows: int,
                 'noise': noise,
                 'nqi': nqi,
                 'vals_per_qi': vals_per_qi,
+                'seed': seed,
                 'max_samples': max_samples,
                 'target_accuracy': target_accuracy,
                 'min_num_rows': min_num_rows,
@@ -524,6 +531,10 @@ def main():
                        help='Minimum number of rows in any aggregate')
     parser.add_argument('--vals_per_qi', type=int, default=None,
                        help='Number of distinct values per QI column')
+    parser.add_argument('--max_samples', type=int, default=None,
+                       help='Maximum number of samples to use before quitting')
+    parser.add_argument('--seed', type=int, default=None,
+                       help='Random seed for reproducibility')
     
     args = parser.parse_args()
     
@@ -546,13 +557,15 @@ def main():
     # Defaults
     defaults = {
         'solve_type': 'pure_row',
-        'nrows': 200,
+        'nrows': 100,
         'mask_size': 20,
         'nunique': 2,
         'noise': 2,
         'nqi': 0,
         'min_num_rows': 5,
         'vals_per_qi': 0,
+        'max_samples': max_samples,
+        'seed': None,
     }
     
     # Check if any individual parameters were provided
@@ -564,7 +577,9 @@ def main():
         args.noise is not None,
         args.nqi is not None,
         args.min_num_rows is not None,
-        args.vals_per_qi is not None
+        args.vals_per_qi is not None,
+        args.max_samples is not None,
+        args.seed is not None
     ])
     
     if individual_params_provided:
@@ -578,14 +593,17 @@ def main():
             'nqi': args.nqi if args.nqi is not None else defaults['nqi'],
             'min_num_rows': args.min_num_rows if args.min_num_rows is not None else defaults['min_num_rows'],
             'vals_per_qi': args.vals_per_qi if args.vals_per_qi is not None else defaults['vals_per_qi'],
+            'max_samples': args.max_samples if args.max_samples is not None else defaults['max_samples'],
+            'seed': args.seed if args.seed is not None else defaults['seed'],
         }
 
         # Generate filename
+        seed_str = f"_s{params['seed']}" if params['seed'] is not None else ""
         file_name = (f"nr{params['nrows']}_mf{params['mask_size']}_"
                     f"nu{params['nunique']}_qi{params['nqi']}_n{params['noise']}_"
                     f"mnr{params['min_num_rows']}_vpq{params['vals_per_qi']}_"
                     f"st{solve_type_map[params['solve_type']]}_"
-                    f"ms{max_samples}_ta{int(target_accuracy*100)}")
+                    f"ms{params['max_samples']}_ta{int(target_accuracy*100)}{seed_str}")
         
         file_path = attack_results_dir / f"{file_name}.json"
         
@@ -612,6 +630,7 @@ def main():
             min_num_rows=params['min_num_rows'],
             vals_per_qi=params['vals_per_qi'],
             solve_type=params['solve_type'],
+            seed=params['seed'],
             output_file=file_path,
             cur_attack_results=cur_attack_results_list,
         )
@@ -637,6 +656,8 @@ def main():
     for exp in experiments:
         if exp['dont_run'] is True:
             continue
+        # Get seed list from experiment, default to [None] if not specified
+        seed_list = exp.get('seed', [None])
         for nrows in exp['nrows']:
             for mask_size in exp['mask_size']:
                 for nunique in exp['nunique']:
@@ -644,20 +665,23 @@ def main():
                         for nqi in exp['nqi']:
                             for min_num_rows in exp['min_num_rows']:
                                 for vals_per_qi in exp['vals_per_qi']:
-                                    params = {
-                                        'nrows': nrows,
-                                        'solve_type': exp['solve_type'],
-                                        'mask_size': mask_size,
-                                        'nunique': nunique,
-                                        'noise': noise,
-                                        'nqi': nqi,
-                                        'min_num_rows': min_num_rows,
-                                        'vals_per_qi': vals_per_qi,
-                                    }
-                                    key = tuple(sorted(params.items()))
-                                    if key not in seen:
-                                        seen.add(key)
-                                        test_params.append(params)
+                                    for seed in seed_list:
+                                        params = {
+                                            'nrows': nrows,
+                                            'solve_type': exp['solve_type'],
+                                            'mask_size': mask_size,
+                                            'nunique': nunique,
+                                            'noise': noise,
+                                            'nqi': nqi,
+                                            'min_num_rows': min_num_rows,
+                                            'vals_per_qi': vals_per_qi,
+                                            'max_samples': max_samples,
+                                            'seed': seed,
+                                        }
+                                        key = tuple(sorted(params.items()))
+                                        if key not in seen:
+                                            seen.add(key)
+                                            test_params.append(params)
     
     # If no job_num, just print all combinations
     if args.job_num is None:
@@ -695,11 +719,12 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
     params = test_params[args.job_num]
     
     # Generate filename
+    seed_str = f"_s{params['seed']}" if params['seed'] is not None else ""
     file_name = (f"nr{params['nrows']}_mf{params['mask_size']}_"
                 f"nu{params['nunique']}_qi{params['nqi']}_n{params['noise']}_"
                 f"mnr{params['min_num_rows']}_vpq{params['vals_per_qi']}_"
                 f"st{solve_type_map[params['solve_type']]}_"
-                f"ms{max_samples}_ta{int(target_accuracy*100)}")
+                f"ms{params['max_samples']}_ta{int(target_accuracy*100)}{seed_str}")
         
     file_path = attack_results_dir / f"{file_name}.json"
     
@@ -721,11 +746,12 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
         mask_size=params['mask_size'],
         noise=params['noise'],
         nqi=params['nqi'],
-        max_samples=max_samples,
         target_accuracy=target_accuracy,
         min_num_rows=params['min_num_rows'],
         vals_per_qi=params['vals_per_qi'],
+        max_samples=params['max_samples'],
         solve_type=params['solve_type'],
+        seed=params['seed'],
         output_file=file_path,
         cur_attack_results=cur_attack_results_list,
     )
