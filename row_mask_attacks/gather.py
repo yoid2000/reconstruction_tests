@@ -14,7 +14,7 @@ def gather_results() -> pd.DataFrame:
     if not results_dir.exists():
         print(f"Results directory {results_dir} does not exist")
         return pd.DataFrame()
-    
+
     # Find all JSON files
     json_files = list(results_dir.glob('*.json'))
     

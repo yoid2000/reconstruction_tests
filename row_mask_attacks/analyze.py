@@ -830,17 +830,153 @@ def get_experiment_dataframes(experiments, df):
         
         # Filter by each parameter
         for param, values in exp.items():
-            if param in ['experiment_group', 'solve_type', 'dont_run']:
+            if param in ['experiment_group', 'solve_type', 'dont_run', 'seed', ]:
                 continue
             
             if param in df.columns:
                 # Row must have value in the experiment's value list
-                print(param, values)
                 mask = mask & df[param].isin(values)
         
         result[exp_group] = df[mask].copy()
         
     return result
+
+def group_by_experiment_parameters(df_final):
+    
+    # Group data by key columns before reading experiments
+    grouping_cols = ['solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'min_num_rows']
+    
+    # Filter to only columns that exist in the dataframe
+    grouping_cols_present = [col for col in grouping_cols if col in df_final.columns]
+    
+    print(f"\nGrouping by columns: {grouping_cols_present}")
+    
+    # Identify numeric and non-numeric columns
+    numeric_cols = df_final.select_dtypes(include=[np.number]).columns.tolist()
+    non_numeric_cols = df_final.select_dtypes(exclude=[np.number]).columns.tolist()
+    
+    # Exclude grouping columns from aggregation
+    numeric_cols_to_agg = [col for col in numeric_cols if col not in grouping_cols_present]
+    non_numeric_cols_to_agg = [col for col in non_numeric_cols if col not in grouping_cols_present]
+    
+    # Create aggregation dictionary
+    agg_dict = {}
+    # Mean for numeric columns
+    for col in numeric_cols_to_agg:
+        agg_dict[col] = 'mean'
+    # First for non-numeric columns
+    for col in non_numeric_cols_to_agg:
+        agg_dict[col] = 'first'
+    
+    # Group and aggregate
+    df_grouped = df_final.groupby(grouping_cols_present, dropna=False).agg(agg_dict).reset_index()
+
+    print(f"Grouped dataframe shape: {df_grouped.shape}")
+    print(f"Original dataframe rows: {len(df_final)}")
+    print(f"Grouped dataframe rows: {len(df_grouped)}")
+    print(f"Numeric columns averaged: {len(numeric_cols_to_agg)}")
+    print(f"Non-numeric columns (first value): {len(non_numeric_cols_to_agg)}")
+
+    return df_grouped
+
+def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, thresh: float = 0.95, thresh_direction: str = 'lowest', output_dir: Path = None):
+    """Plot lowest/highest y value where measure >= threshold for each (x, lines) pair.
+    
+    For each pair of values (x, l) in x_col and lines_col, find the lowest or highest value y 
+    of y_col where measure >= thresh. Connect points with the same lines_col value.
+    
+    Args:
+        df: DataFrame with data
+        x_col: Column name for x-axis
+        y_col: Column name for y-axis (find lowest/highest value where measure >= thresh)
+        lines_col: Column name for line grouping
+        thresh: Threshold for measure column (default: 0.95)
+        thresh_direction: 'lowest' or 'highest' - which y value to select (default: 'lowest')
+        output_dir: Directory to save plot (default: results/row_mask_attacks/plots)
+    """
+    if output_dir is None:
+        output_dir = Path('./results/row_mask_attacks/plots')
+    
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    if thresh_direction not in ['lowest', 'highest']:
+        raise ValueError(f"thresh_direction must be 'lowest' or 'highest', got '{thresh_direction}'")
+    
+    # Get unique values for x and lines
+    x_values = sorted(df[x_col].unique())
+    line_values = sorted(df[lines_col].unique())
+    
+    # For each (x, line) pair, find the lowest/highest y value where measure >= thresh
+    plot_data = []
+    for x_val in x_values:
+        for line_val in line_values:
+            # Filter to this (x, line) combination
+            subset = df[(df[x_col] == x_val) & (df[lines_col] == line_val)]
+            
+            if len(subset) == 0:
+                continue
+            
+            # Find rows where measure >= thresh
+            valid_rows = subset[subset['measure'] >= thresh]
+            
+            if len(valid_rows) > 0:
+                # Get the lowest or highest y value from rows that meet threshold
+                if thresh_direction == 'lowest':
+                    y_val = valid_rows[y_col].min()
+                else:  # highest
+                    y_val = valid_rows[y_col].max()
+                
+                plot_data.append({
+                    'x': x_val,
+                    'y': y_val,
+                    'line': line_val
+                })
+    
+    if len(plot_data) == 0:
+        print(f"No data points found for measure threshold {thresh}")
+        return
+    
+    # Create plot
+    plt.figure(figsize=(10, 6))
+    
+    # Create a line for each line_val
+    for line_val in line_values:
+        line_data = [p for p in plot_data if p['line'] == line_val]
+        
+        if len(line_data) == 0:
+            continue
+        
+        # Sort by x value
+        line_data = sorted(line_data, key=lambda p: p['x'])
+        
+        x_vals = [p['x'] for p in line_data]
+        y_vals = [p['y'] for p in line_data]
+        
+        # Plot line with markers
+        plt.plot(x_vals, y_vals, marker='o', linewidth=2, markersize=8, 
+                label=f'{lines_col}={line_val}')
+    
+    plt.xlabel(x_col)
+    plt.ylabel(f'{y_col} ({thresh_direction} where measure >= {thresh})')
+    plt.title(f'{thresh_direction.capitalize()} {y_col} (measure ≥ {thresh}) by {x_col} and {lines_col}')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # Use log scale for y if appropriate
+    if any(p['y'] > 0 for p in plot_data):
+        y_min = min(p['y'] for p in plot_data if p['y'] > 0)
+        y_max = max(p['y'] for p in plot_data)
+        if y_max / y_min > 10:
+            plt.yscale('log')
+    
+    plt.tight_layout()
+    
+    # Save plot
+    filename = f'plot_by_x_{x_col}_y_{y_col}_l_{lines_col}.png'
+    filepath = output_dir / filename
+    plt.savefig(filepath, dpi=300)
+    plt.close()
+    print(f"Saved: {filepath}")
 
 def analyze():
     """Read result.parquet and analyze correlations with num_samples."""
@@ -855,6 +991,24 @@ def analyze():
     
     df_all = pd.read_parquet(parquet_path)
 
+    cols_to_fill = [{'col': 'seed', 'value': -1},
+                    {'col': 'solver_metrics_skipped_constraints', 'value': -1},
+                   ]
+    for item in cols_to_fill:
+        col = item['col']
+        value = item['value']
+        if col in df_all.columns:
+            df_all[col] = df_all[col].fillna(value)
+
+    # check if any columns have NaN values, and if so print the column names and quit
+    nan_columns = df_all.columns[df_all.isna().any()].tolist()
+    if len(nan_columns) > 0:
+        print(f"Columns with NaN values: {nan_columns}")
+        print("Please clean the data before analysis")
+        return
+    else:
+        print("No NaN values found in dataframe")
+
     # Make df_final, which removes rows where final_attack is False
     df_final = df_all[df_all['final_attack'] == True].copy()
     
@@ -863,17 +1017,19 @@ def analyze():
     print(f"\nDataFrame shape: {df_all.shape}")
     
     # Remove unfinished jobs
-    if 'finished' in df_final.columns:
-        unfinished = df_final[df_final['finished'] == False]
-        print(f"\nRemoving {len(unfinished)} unfinished jobs (finished==False)")
-        df_final = df_final[df_final['finished'] == True].copy()
-        print(f"Remaining rows: {len(df_final)}")
-    else:
-        print("\nWarning: 'finished' column not found, keeping all rows")
+    unfinished = df_final[df_final['finished'] == False]
+    print(f"\nRemoving {len(unfinished)} unfinished jobs (finished==False)")
+    df_final = df_final[df_final['finished'] == True].copy()
+    print(f"Remaining rows: {len(df_final)}")
+
+    df_grouped = group_by_experiment_parameters(df_final)
     
+    # print first row of df_grouped using to_string to show all columns
+    print(f"\nFirst row of grouped dataframe:\n{df_grouped.iloc[0].to_string()}\n")
+
     # Read experiments and group dataframes
     experiments = read_experiments()
-    exp_dataframes = get_experiment_dataframes(experiments, df_final)
+    exp_dataframes = get_experiment_dataframes(experiments, df_grouped)
     
     print(f"\nExperiment groups:")
     for exp_group, exp_df in exp_dataframes.items():
@@ -892,12 +1048,25 @@ def analyze():
             do_agg_dinur_basic_analysis(exp_df, experiments, exp_group)
         elif exp_group == 'agg_dinur_explore_vals_per_qi_nrows':
             do_agg_dinur_explore_vals_per_qi_analysis(exp_df, experiments, exp_group)
+        elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nrows':
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', thresh=0.95)
+            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', thresh_direction='highest', thresh=0.95)
         else:
             # Generic analysis for other experiment groups
             print(f"\n\n{'='*80}")
             print(f"ANALYSIS FOR {exp_group} EXPERIMENT GROUP")
             print(f"{'='*80}")
             analyze_single_parameter_variation(exp_df, experiments, exp_group)
+
+def do_analysis_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, thresh: float = 0.95):
+    print(f"\n\nANALYSIS BY X={x_col}, Y={y_col}, LINES={lines_col}, THRESH={thresh}")
+    print("=" * 80)
+    # sort by x_col, then y_col, then lines_col, and display x_col, y_col, lines_col, and measure
+    df_sorted = df.sort_values(by=['measure', x_col, y_col, lines_col])
+    print(df_sorted[[x_col, y_col, lines_col, 'measure']].to_string())
+
+    plot_by_x_y_lines(df, x_col=x_col, y_col=y_col, lines_col=lines_col, thresh=thresh)
+
 
 def do_pure_dinur_basic_analysis(df, experiments=None, exp_group=None):
     print("\n\nANALYSIS FOR pure_dinur_basics EXPERIMENT GROUP")
@@ -953,6 +1122,7 @@ def do_pure_dinur_basic_analysis(df, experiments=None, exp_group=None):
         plot_mixing_vs_noise_by_mask_size(df_complete, plots_dir)
         plot_num_samples_vs_noise_by_mask_size(df_complete, plots_dir)
         plot_elapsed_time_vs_noise_by_mask_size(df_complete, plots_dir)
+        
         print("Plots generated successfully\n")
     else:
         print("Warning: No complete jobs to plot\n")
@@ -1131,6 +1301,7 @@ def do_agg_dinur_basic_analysis(df, experiments=None, exp_group=None):
         plot_mixing_vs_noise_by_nqi(df_complete, plots_dir)
         plot_num_samples_vs_noise_by_nqi(df_complete, plots_dir)
         plot_elapsed_time_vs_noise_by_nqi(df_complete, plots_dir)
+        
         print("Plots generated successfully\n")
     else:
         print("Warning: No complete jobs to plot\n")
@@ -1302,5 +1473,5 @@ def do_agg_dinur_explore_vals_per_qi_analysis(df, experiments=None, exp_group=No
     if experiments is not None and exp_group is not None:
         analyze_single_parameter_variation(df, experiments, exp_group)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     analyze()

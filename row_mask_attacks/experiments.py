@@ -169,15 +169,15 @@ experiments = [
         'min_num_rows': [5],
         'vals_per_qi': [2],
     },
-    {   # Agg Dinur-style, x=noise, y=nqi, lines=nrows
+    {   # Agg Dinur-style, x=nqi, y=noise, lines=nrows
         'dont_run': False,
-        'experiment_group': 'agg_dinur_x_noise_y_nqi_lines_nrows',
+        'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_nrows',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9],
         'nrows': [50,75,100,125],
         'mask_size': [0],
         'nunique': [2],
-        'noise': [2,4,6,8,10,12,14,16],
+        'noise': [0,1,2,4,6,8,10,12,14,16],
         'nqi': [3,5,7,9,11],
         'min_num_rows': [5],
         'vals_per_qi': [0],   # auto-select
