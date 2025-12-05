@@ -884,6 +884,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
     
     For each pair of values (x, l) in x_col and lines_col, find the lowest or highest value y 
     of y_col where measure >= thresh. Connect points with the same lines_col value.
+    When no data exceeds threshold for an x value, display "None" above that x-tick.
     
     Args:
         df: DataFrame with data
@@ -908,7 +909,11 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
     
     # For each (x, line) pair, find the lowest/highest y value where measure >= thresh
     plot_data = []
+    x_values_with_none = set()  # Track x values where ALL lines have no valid data
+    
     for x_val in x_values:
+        has_any_valid_data = False
+        
         for line_val in line_values:
             # Filter to this (x, line) combination
             subset = df[(df[x_col] == x_val) & (df[lines_col] == line_val)]
@@ -931,43 +936,69 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                     'y': y_val,
                     'line': line_val
                 })
+                has_any_valid_data = True
+        
+        # If no line had valid data for this x value, mark it
+        if not has_any_valid_data:
+            x_values_with_none.add(x_val)
     
-    if len(plot_data) == 0:
-        print(f"No data points found for measure threshold {thresh}")
+    if len(plot_data) == 0 and len(x_values_with_none) == 0:
+        print(f"No data points found")
         return
     
     # Create plot
-    plt.figure(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(10, 6))
     
     # Create a line for each line_val
     for line_val in line_values:
         line_data = [p for p in plot_data if p['line'] == line_val]
         
-        if len(line_data) == 0:
-            continue
-        
-        # Sort by x value
-        line_data = sorted(line_data, key=lambda p: p['x'])
-        
-        x_vals = [p['x'] for p in line_data]
-        y_vals = [p['y'] for p in line_data]
-        
-        # Plot line with markers
-        plt.plot(x_vals, y_vals, marker='o', linewidth=2, markersize=8, 
-                label=f'{lines_col}={line_val}')
+        if len(line_data) > 0:
+            # Sort by x value
+            line_data = sorted(line_data, key=lambda p: p['x'])
+            
+            x_vals = [p['x'] for p in line_data]
+            y_vals = [p['y'] for p in line_data]
+            
+            # Plot line with markers
+            ax.plot(x_vals, y_vals, marker='o', linewidth=2, markersize=8, 
+                    label=f'{lines_col}={line_val}')
     
-    plt.xlabel(x_col)
-    plt.ylabel(f'{y_col} ({thresh_direction} where measure >= {thresh})')
-    plt.title(f'{thresh_direction.capitalize()} {y_col} (measure ≥ {thresh}) by {x_col} and {lines_col}')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+    # Determine positioning for "None" labels
+    if len(plot_data) > 0:
+        y_values = [p['y'] for p in plot_data]
+        y_min_data = min(y_values)
+        y_max_data = max(y_values)
+        
+        # Position "None" at the minimum y value
+        none_y_pos = y_min_data
+        
+        # Check if we should use log scale
+        if all(y > 0 for y in y_values) and y_max_data / y_min_data > 10:
+            ax.set_yscale('log')
+    else:
+        # No valid data points, only "None" labels
+        none_y_pos = 0.5
+        ax.set_ylim(0, 1)
     
-    # Use log scale for y if appropriate
-    if any(p['y'] > 0 for p in plot_data):
-        y_min = min(p['y'] for p in plot_data if p['y'] > 0)
-        y_max = max(p['y'] for p in plot_data)
-        if y_max / y_min > 10:
-            plt.yscale('log')
+    # Add "None" labels for x values with no valid data
+    for x_val in x_values_with_none:
+        ax.text(x_val, none_y_pos, 'None', 
+                ha='center', va='bottom', fontsize=10, 
+                style='italic', color='red', fontweight='bold')
+    
+    # Set x-axis to show all x values and add margin on the left
+    ax.set_xticks(x_values)
+    if len(x_values) > 1:
+        x_range = x_values[-1] - x_values[0]
+        left_margin = x_range * 0.05  # 5% margin on the left
+        ax.set_xlim(left=x_values[0] - left_margin)
+    
+    ax.set_xlabel(x_col)
+    ax.set_ylabel(f'{y_col} ({thresh_direction} where measure >= {thresh})')
+    ax.set_title(f'{thresh_direction.capitalize()} {y_col} (measure ≥ {thresh}) by {x_col} and {lines_col}')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
     
@@ -1050,7 +1081,6 @@ def analyze():
             do_agg_dinur_explore_vals_per_qi_analysis(exp_df, experiments, exp_group)
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nrows':
             do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', thresh=0.95)
-            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', thresh_direction='highest', thresh=0.95)
         else:
             # Generic analysis for other experiment groups
             print(f"\n\n{'='*80}")
@@ -1065,7 +1095,7 @@ def do_analysis_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col
     df_sorted = df.sort_values(by=['measure', x_col, y_col, lines_col])
     print(df_sorted[[x_col, y_col, lines_col, 'measure']].to_string())
 
-    plot_by_x_y_lines(df, x_col=x_col, y_col=y_col, lines_col=lines_col, thresh=thresh)
+    plot_by_x_y_lines(df, x_col=x_col, y_col=y_col, lines_col=lines_col, thresh_direction="highest", thresh=thresh)
 
 
 def do_pure_dinur_basic_analysis(df, experiments=None, exp_group=None):
