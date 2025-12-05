@@ -948,9 +948,10 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
     
     # Create plot
     fig, ax = plt.subplots(figsize=(10, 6))
+    markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x']
     
     # Create a line for each line_val
-    for line_val in line_values:
+    for idx, line_val in enumerate(line_values):
         line_data = [p for p in plot_data if p['line'] == line_val]
         
         if len(line_data) > 0:
@@ -961,7 +962,8 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
             y_vals = [p['y'] for p in line_data]
             
             # Plot line with markers
-            ax.plot(x_vals, y_vals, marker='o', linewidth=2, markersize=8, 
+            ax.plot(x_vals, y_vals, marker=markers[idx % len(markers)], 
+                    linewidth=2, markersize=8, 
                     label=f'{lines_col}={line_val}')
     
     # Determine positioning for "None" labels
