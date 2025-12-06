@@ -5,7 +5,7 @@ experiments = [
         'experiment_group': 'temp',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9],
-        'nrows': [100,200,300,400],
+        'nrows': [100,200,300,400,500,1000,2500,5000],
         'mask_size': [0],
         'nunique': [2],
         'noise': [4],
