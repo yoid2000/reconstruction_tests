@@ -289,6 +289,8 @@ def analyze():
             do_agg_dinur_explore_vals_per_qi_analysis(exp_df, experiments, exp_group)
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nrows':
             do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', thresh=0.90)
+        elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_min_num_rows':
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='min_num_rows', thresh=0.90)
         else:
             # Generic analysis for other experiment groups
             print(f"\n\n{'='*80}")
