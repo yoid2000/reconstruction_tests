@@ -20,6 +20,20 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
         output_dir: Directory to save plot (default: results/row_mask_attacks/plots)
     """
 
+    maps = {          'nrows': "Number rows",
+                      'nunique': "Distinct target values",
+                      'noise': "Noise",
+                      'nqi': "Number QI columns",
+                      'min_num_rows': "Suppress threshold",
+                      'vals_per_qi': "Distinct QI values",
+                   }
+    dashed_columns = {'nrows': 150,
+                      'nunique': 2,
+                      'noise': 4,
+                      'nqi': 6,
+                      'min_num_rows': 5,
+                      'vals_per_qi': 0,
+                   }
     reportable_columns = ['nrows', 'nunique', 'noise', 'nqi', 'min_num_rows', 'vals_per_qi',]
     output_dir = Path('./results/row_mask_attacks/plots')
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -35,10 +49,16 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
     for col in display_cols:
         unique_vals = df[col].unique()
         if len(unique_vals) == 1:
-            reportable_values[col] = unique_vals[0]
+            display_name = maps.get(col, col)
+            val = unique_vals[0]
+            # Display "auto" instead of 0 for vals_per_qi
+            if col == 'vals_per_qi' and val == 0:
+                val = 'auto'
+            reportable_values[display_name] = val
         else:
             print(f"Warning: Column '{col}' has {len(unique_vals)} unique values, expected 1")
-            reportable_values[col] = f"Multiple ({len(unique_vals)})"
+            display_name = maps.get(col, col)
+            reportable_values[display_name] = f"Multiple ({len(unique_vals)})"
     
     # Get unique values for x and lines
     x_values = sorted(df[x_col].unique())
@@ -98,10 +118,25 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
             x_vals = [p['x'] for p in line_data]
             y_vals = [p['y'] for p in line_data]
             
+            # Determine if this line should be dashed
+            linestyle = 'solid'
+            linewidth = 2
+            if lines_col in dashed_columns and line_val == dashed_columns[lines_col]:
+                linestyle = 'dashed'
+                linewidth = 4
+            
+            # Get display name for lines_col
+            lines_display = maps.get(lines_col, lines_col)
+            
+            # Format line_val for display (show "auto" for vals_per_qi=0)
+            display_line_val = line_val
+            if lines_col == 'vals_per_qi' and line_val == 0:
+                display_line_val = 'auto'
+            
             # Plot line with different marker for each line
             ax.plot(x_vals, y_vals, marker=markers[idx % len(markers)], 
-                    linewidth=2, markersize=8, 
-                    label=f'{lines_col}={line_val}')
+                    linewidth=linewidth, markersize=8, linestyle=linestyle,
+                    label=f'{lines_display}={display_line_val}')
     
     # Determine positioning for "None" labels
     if len(plot_data) > 0:
@@ -190,16 +225,21 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
         left_margin = x_range * 0.05  # 5% margin on the left
         ax.set_xlim(left=x_values[0] - left_margin)
     
-    ax.set_xlabel(x_col)
-    ax.set_ylabel(f'{y_col} ({thresh_direction} where measure >= {thresh})')
-    ax.set_title(f'{thresh_direction.capitalize()} {y_col} (measure ≥ {thresh}) by {x_col} and {lines_col}')
+    # Get display names for axes and title
+    x_display = maps.get(x_col, x_col)
+    y_display = maps.get(y_col, y_col)
+    lines_display = maps.get(lines_col, lines_col)
+    
+    ax.set_xlabel(x_display)
+    ax.set_ylabel(f'{y_display} ({thresh_direction} where measure >= {thresh})')
+    ax.set_title(f'{thresh_direction.capitalize()} {y_display} (measure ≥ {thresh}) by {x_display} and {lines_display}')
     ax.legend()
     ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
     
     # Save plot
-    filename = f'plot_by_x_{x_col}_y_{y_col}_l_{lines_col}.png'
+    filename = f'plot_by_x_{x_col}_y_{y_col}_l_{lines_col}_thr_{thresh}.png'
     filepath = output_dir / filename
     plt.savefig(filepath, dpi=300)
     plt.close()

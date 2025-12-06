@@ -1,7 +1,20 @@
 # Define parameter ranges
 experiments = [
-    {   # Agg Dinur-style, explore nrows
+    {   # Agg Dinur-style, x=nqi, y=noise, lines=min_num_rows
         'dont_run': False,
+        'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_min_num_rows',
+        'solve_type': 'agg_row',
+        'seed': [0,1,2,3,4,5,6,7,8,9],
+        'nrows': [150],
+        'mask_size': [0],
+        'nunique': [2],
+        'noise': [0,1,2,4,6,8,10,12,14,16,18,20,22,24],
+        'nqi': [3,4,5,6,7,9,11],
+        'min_num_rows': [2,3,4,5,8,11,15],
+        'vals_per_qi': [0],   # auto-select
+    },
+    {   # Agg Dinur-style, explore nrows
+        'dont_run': True,
         'experiment_group': 'temp',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9],
