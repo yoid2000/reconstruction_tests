@@ -35,7 +35,10 @@ def gather_results() -> pd.DataFrame:
             with open(json_file, 'r') as f:
                 result = json.load(f)
             if 'actual_vals_per_qi' not in result:
-                actual_vals_per_qi = get_required_num_distinct(result['nrows'], result['nqi'])
+                if result['vals_per_qi'] == 0:
+                    actual_vals_per_qi = get_required_num_distinct(result['nrows'], result['nqi'])
+                else:
+                    actual_vals_per_qi = result['vals_per_qi']
                 result['actual_vals_per_qi'] = actual_vals_per_qi
             
             # Get top-level metadata (everything except attack_results)

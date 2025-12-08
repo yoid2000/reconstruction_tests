@@ -377,11 +377,14 @@ def attack_loop(nrows: int,
     if solve_type == 'pure_row':
         df = build_row_masks(nrows=nrows, nunique=nunique)
     else:
-        actual_vals_per_qi = get_required_num_distinct(nrows, nqi)
+        min_vals_per_qi = get_required_num_distinct(nrows, nqi)
         # If it so happens that the actual vals_per_qi is more than what is specified,
         # then we pretend that we are on auto-select so that we don't run extra jobs.
-        if actual_vals_per_qi > vals_per_qi:
+        if min_vals_per_qi > vals_per_qi:
             vals_per_qi = 0
+            actual_vals_per_qi = min_vals_per_qi
+        else:
+            actual_vals_per_qi = vals_per_qi
         df = build_row_masks_qi(nrows=nrows, nunique=nunique, nqi=nqi, vals_per_qi=vals_per_qi)
     
     initial_samples = []

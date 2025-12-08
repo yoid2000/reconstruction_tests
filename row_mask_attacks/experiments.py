@@ -91,19 +91,6 @@ experiments = [
         'min_num_rows': [5],
         'vals_per_qi': [0],      # auto-select
     },
-    {   # Aggregated Dinur-style, explore vals_per_qi, nunique
-        'dont_run': True,
-        'experiment_group': 'agg_dinur_explore_vals_per_qi_nunique',
-        'solve_type': 'agg_row',
-        'seed': [0],
-        'nrows': [200],
-        'mask_size': [0],       # not used
-        'nunique': [2,4,8],
-        'noise': [0, 2, 4, 8, 16],
-        'nqi': [11],
-        'min_num_rows': [5],
-        'vals_per_qi': [2,3,4,5,6,7,8,9],      # auto-select
-    },
     {   # Pure Dinur-style, test effect of nunique
         'dont_run': True,
         'experiment_group': 'pure_dinur_nunique',
@@ -156,45 +143,6 @@ experiments = [
         'min_num_rows': [5, 10, 15],
         'vals_per_qi': [0],      # auto-select
     },
-    {   # Aggregated Dinur-style, test effect of vals_per_qi
-        'dont_run': True,
-        'experiment_group': 'agg_dinur_vals_per_qi',
-        'solve_type': 'agg_row',
-        'seed': [0],
-        'nrows': [200],
-        'mask_size': [0],       # not used
-        'nunique': [2],
-        'noise': [4],
-        'nqi': [11],
-        'min_num_rows': [5],
-        'vals_per_qi': [0, 5, 10],
-    },
-    {   # Aggregated Dinur-style, explore vals_per_qi, nrows
-        'dont_run': True,
-        'experiment_group': 'agg_dinur_explore_vals_per_qi_nrows',
-        'solve_type': 'agg_row',
-        'seed': [0],
-        'nrows': [100,200],
-        'mask_size': [0],       # not used
-        'nunique': [2],
-        'noise': [0, 2, 4, 8, 16],
-        'nqi': [11],
-        'min_num_rows': [5],
-        'vals_per_qi': [2,3,4,5,6,7,8,9],      # auto-select
-    },
-    {   # Aggregated Dinur-style, explore vals_per_qi, min_num_rows
-        'dont_run': True,
-        'experiment_group': 'agg_dinur_explore_vals_per_qi_min_num_rows',
-        'solve_type': 'agg_row',
-        'seed': [0],
-        'nrows': [200],
-        'mask_size': [0],       # not used
-        'nunique': [2],
-        'noise': [0, 2, 4, 8, 16],
-        'nqi': [11],
-        'min_num_rows': [5, 10, 15],
-        'vals_per_qi': [2,3,4,5,6,7,8,9],      # auto-select
-    },
     {   # Pure Dinur-style, test effect of nrows
         'dont_run': True,
         'experiment_group': 'pure_dinur_nrows',
@@ -232,7 +180,7 @@ experiments = [
         'noise': [4],
         'nqi': [11],
         'min_num_rows': [5],
-        'vals_per_qi': [2],
+        'vals_per_qi': [0],
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=nrows
         'dont_run': True,
