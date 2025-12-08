@@ -221,7 +221,7 @@ def analyze():
     """Read result.parquet and analyze correlations with num_samples."""
     
     # Read the parquet file
-    parquet_path = Path('./results/row_mask_attacks/result.parquet')
+    parquet_path = Path('./results/result.parquet')
     
     if not parquet_path.exists():
         print(f"File {parquet_path} does not exist")
@@ -350,7 +350,7 @@ def do_pure_dinur_basic_analysis(df, experiments=None, exp_group=None):
         print("Warning: measure or target_accuracy column not found, using all data")
     
     # Create plots directory
-    plots_dir = Path('./results/row_mask_attacks/plots')
+    plots_dir = Path('./results/plots')
     plots_dir.mkdir(exist_ok=True)
     print(f"\nPlots directory: {plots_dir}")
     
@@ -523,7 +523,7 @@ def do_agg_dinur_basic_analysis(df, experiments=None, exp_group=None):
         print("Warning: measure or target_accuracy column not found, using all data")
     
     # Create plots directory
-    plots_dir = Path('./results/row_mask_attacks/plots_agg')
+    plots_dir = Path('./results/plots_agg')
     plots_dir.mkdir(exist_ok=True)
     print(f"\nPlots directory: {plots_dir}")
     

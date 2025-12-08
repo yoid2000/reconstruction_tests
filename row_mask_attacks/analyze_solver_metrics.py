@@ -9,7 +9,7 @@ def analyze_solver_metrics():
     """Analyze solver performance metrics from gathered results."""
     
     # Load gathered results
-    results_file = Path('./results/row_mask_attacks/result.parquet')
+    results_file = Path('./results/result.parquet')
     if not results_file.exists():
         print(f"Results file not found: {results_file}")
         print("Run gather.py first to create the parquet file.")
@@ -50,7 +50,7 @@ def analyze_solver_metrics():
         print()
     
     # Create output directory for plots
-    plots_dir = Path('./results/row_mask_attacks/solver_analysis')
+    plots_dir = Path('./results/solver_analysis')
     plots_dir.mkdir(exist_ok=True, parents=True)
     
     # Plot 1: Runtime vs Number of Equations

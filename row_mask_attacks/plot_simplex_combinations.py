@@ -8,7 +8,7 @@ def plot_simplex_combinations():
     """Create 3x3 subplot scatterplots for simplex iterations analysis."""
     
     # Load gathered results
-    results_file = Path('./results/row_mask_attacks/result.parquet')
+    results_file = Path('./results/result.parquet')
     if not results_file.exists():
         print(f"Results file not found: {results_file}")
         print("Run gather.py first to create the parquet file.")
@@ -29,7 +29,7 @@ def plot_simplex_combinations():
     print(f"Analyzing {len(gurobi_df)} Gurobi results")
     
     # Create output directory
-    plots_dir = Path('./results/row_mask_attacks/simplex_combinations')
+    plots_dir = Path('./results/simplex_combinations')
     plots_dir.mkdir(exist_ok=True, parents=True)
     
     # Extract data

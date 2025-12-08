@@ -14,7 +14,7 @@ def build_prediction_model():
     """Build a model to predict solver_metrics_simplex_iterations."""
     
     # Load gathered results
-    results_file = Path('./results/row_mask_attacks/result.parquet')
+    results_file = Path('./results/result.parquet')
     if not results_file.exists():
         print(f"Results file not found: {results_file}")
         print("Run gather.py first to create the parquet file.")
@@ -71,7 +71,7 @@ def build_prediction_model():
     X_test_scaled = scaler.transform(X_test)
     
     # Create output directory
-    plots_dir = Path('./results/row_mask_attacks/prediction_model')
+    plots_dir = Path('./results/prediction_model')
     plots_dir.mkdir(exist_ok=True, parents=True)
     
     # Train multiple models

@@ -108,7 +108,7 @@ Solver metrics are now automatically collected and saved in the JSON output file
 python gather.py
 ```
 
-This creates `results/row_mask_attacks/result.parquet` with all metrics flattened into columns:
+This creates `results/result.parquet` with all metrics flattened into columns:
 - `solver_metrics_solver`
 - `solver_metrics_runtime`
 - `solver_metrics_status_string`
@@ -120,7 +120,7 @@ This creates `results/row_mask_attacks/result.parquet` with all metrics flattene
 import pandas as pd
 
 # Load gathered results
-df = pd.read_parquet('./results/row_mask_attacks/result.parquet')
+df = pd.read_parquet('./results/result.parquet')
 
 # Basic analysis
 print("Average runtime:", df['solver_metrics_runtime'].mean())
@@ -156,7 +156,7 @@ This will:
   - Solver comparison boxplots
   - OR-Tools branch analysis
   - Gurobi iteration analysis
-- Save all plots to `results/row_mask_attacks/solver_analysis/`
+- Save all plots to `results/solver_analysis/`
 
 ## Files Modified
 
@@ -189,13 +189,13 @@ To verify everything works:
 python run_row_mask_attack.py --nqi 6 --solve_type agg_only --nrows 50 --noise 1 --min_num_rows 2
 
 # Check the JSON output has solver_metrics
-cat results/row_mask_attacks/nr50_mf20_nu2_qi6_n1_mnr2_vpq0_stao_ms20000_ta99.json
+cat results/nr50_mf20_nu2_qi6_n1_mnr2_vpq0_stao_ms20000_ta99.json
 
 # Gather results
 python gather.py
 
 # Verify metrics are in the DataFrame
-python -c "import pandas as pd; df = pd.read_parquet('./results/row_mask_attacks/result.parquet'); print([c for c in df.columns if 'solver_metrics' in c])"
+python -c "import pandas as pd; df = pd.read_parquet('./results/result.parquet'); print([c for c in df.columns if 'solver_metrics' in c])"
 
 # Run analysis
 python analyze_solver_metrics.py

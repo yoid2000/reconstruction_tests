@@ -260,7 +260,7 @@ To add to your analyze.py, you can:
 2. In your analyze() function or wherever you process results:
    
    # Your existing code to load and filter data
-   df = pd.read_parquet('./results/row_mask_attacks/result.parquet')
+   df = pd.read_parquet('./results/result.parquet')
    complete_df = df[df['measure'] >= target_accuracy]
    
    # Add solver metrics analysis
@@ -268,7 +268,7 @@ To add to your analyze.py, you can:
    analyze_solver_scaling(complete_df)
    
    # Create solver metrics plots
-   plots_dir = Path('./results/row_mask_attacks/plots')
+   plots_dir = Path('./results/plots')
    plots_dir.mkdir(exist_ok=True)
    
    plot_solver_runtime_by_parameters(complete_df, plots_dir)

@@ -12,7 +12,7 @@ def gather_results() -> pd.DataFrame:
     Returns:
         DataFrame with all results and parameters
     """
-    results_dir = Path('./results')
+    results_dir = Path('./results/files')
     
     if not results_dir.exists():
         print(f"Results directory {results_dir} does not exist")

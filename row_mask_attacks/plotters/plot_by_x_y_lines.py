@@ -17,7 +17,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
         lines_col: Column name for line grouping
         thresh: Threshold for measure column (default: 0.95)
         thresh_direction: 'lowest' or 'highest' - which y value to select (default: 'lowest')
-        output_dir: Directory to save plot (default: results/row_mask_attacks/plots)
+        output_dir: Directory to save plot (default: results/plots)
     """
 
     maps = {          'nrows': "Number rows",
@@ -35,7 +35,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                       'vals_per_qi': 0,
                    }
     reportable_columns = ['nrows', 'nunique', 'noise', 'nqi', 'min_num_rows', 'vals_per_qi',]
-    output_dir = Path('./results/row_mask_attacks/plots')
+    output_dir = Path('./results/plots')
     output_dir.mkdir(parents=True, exist_ok=True)
     
     if thresh_direction not in ['lowest', 'highest']:

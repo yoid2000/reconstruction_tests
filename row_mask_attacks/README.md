@@ -20,11 +20,11 @@ Otherwise, it runs an attack with the following parameters:
                         range -NOISE to +NOISE)
 ```
 
-The attack result is stored under `results/row_mask_attacks` in a json file
+The attack result is stored under `results/` in a json file
 
 ## gather.py
 
-`gather.py` reads in the json files produced by `run_row_mask_attack.py`, reads the data, and places the result in `results/row_mask_attacks/result.parquet`.
+`gather.py` reads in the json files produced by `run_row_mask_attack.py`, reads the data, and places the result in `results/result.parquet`.
 
 ## analyze.py
 

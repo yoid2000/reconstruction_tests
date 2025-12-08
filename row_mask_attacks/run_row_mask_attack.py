@@ -562,8 +562,8 @@ def main():
     args = parser.parse_args()
     
     # Create directories
-    results_dir = Path('./results')
-    attack_results_dir = results_dir / 'row_mask_attacks'
+    results_dir = Path('./results/files')
+    attack_results_dir = results_dir
     slurm_out_dir = Path('./slurm_out')
     results_dir.mkdir(exist_ok=True)
     attack_results_dir.mkdir(exist_ok=True)

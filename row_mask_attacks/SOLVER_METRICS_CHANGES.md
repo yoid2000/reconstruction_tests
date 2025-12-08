@@ -123,7 +123,7 @@ import pandas as pd
 from pathlib import Path
 
 # Load gathered results
-df = pd.read_parquet('./results/row_mask_attacks/result.parquet')
+df = pd.read_parquet('./results/result.parquet')
 
 # Filter by solver type
 gurobi_results = df[df['solver_metrics_solver'] == 'gurobi']
