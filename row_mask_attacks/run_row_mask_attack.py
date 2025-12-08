@@ -22,11 +22,13 @@ solve_type_map = {
         
 def generate_filename(params, target_accuracy) -> str:
     """ Generate a filename string based on attack parameters. """
-    vals_per_qi = get_required_num_distinct(params['nrows'], params['nqi'])
-    # If it so happens that the actual vals_per_qi is more than what is specified,
-    # then we pretend that we are on auto-select so that we don't run extra jobs.
-    if vals_per_qi > params['vals_per_qi']:
-        vals_per_qi = 0
+    vals_per_qi = params['vals_per_qi']
+    if params['nqi'] > 0:
+        vals_per_qi = get_required_num_distinct(params['nrows'], params['nqi'])
+        # If it so happens that the actual vals_per_qi is more than what is specified,
+        # then we pretend that we are on auto-select so that we don't run extra jobs.
+        if vals_per_qi > params['vals_per_qi']:
+            vals_per_qi = 0
     seed_str = f"_s{params['seed']}" if params['seed'] is not None else ""
     file_name = (f"nr{params['nrows']}_mf{params['mask_size']}_"
                 f"nu{params['nunique']}_qi{params['nqi']}_n{params['noise']}_"
