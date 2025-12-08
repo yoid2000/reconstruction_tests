@@ -12,7 +12,7 @@ def gather_results() -> pd.DataFrame:
     Returns:
         DataFrame with all results and parameters
     """
-    results_dir = Path('./results/row_mask_attacks')
+    results_dir = Path('./results')
     
     if not results_dir.exists():
         print(f"Results directory {results_dir} does not exist")
@@ -92,7 +92,7 @@ def main():
         return
     
     # Save to parquet
-    output_path = Path('./results/row_mask_attacks/result.parquet')
+    output_path = Path('./results/result.parquet')
     df.to_parquet(output_path, index=False)
     
     print(f"\nSaved {len(df)} results to {output_path}")
