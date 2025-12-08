@@ -42,7 +42,7 @@ def check_masks_qi(df: pd.DataFrame) -> None:
             f"First few duplicates:\n{duplicate_rows.head()}"
         )
 
-def get_required_num_distinct(nrows: int, nqi: int) -> int:
+def get_required_num_distinct(nrows: int, nqi: int) -> int | None:
     """ Calculates the minimum number of distinct values needed per QI column
         to ensure all nrows have unique combinations.
     
@@ -53,6 +53,8 @@ def get_required_num_distinct(nrows: int, nqi: int) -> int:
     Returns:
         Minimum number of distinct values per QI column
     """
+    if nqi == 0:
+        return None
     return math.ceil(nrows ** (1.0 / nqi))
 
 def build_row_masks_qi(nrows: int = 1024,
