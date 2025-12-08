@@ -26,6 +26,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                       'nqi': "Number QI columns",
                       'min_num_rows': "Suppress threshold",
                       'vals_per_qi': "Distinct QI values",
+                      'actual_vals_per_qi': "Distinct QI values",
                    }
     dashed_columns = {'nrows': 150,
                       'nunique': 2,
@@ -220,6 +221,27 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
     
     # Set x-axis to show all x values and add margin on the left
     ax.set_xticks(x_values)
+    
+    # Special handling for nqi x-axis labels
+    if x_col == 'nqi' and lines_col != 'nrows':
+        # Create labels showing "nqi (actual_vals_per_qi)"
+        tick_labels = []
+        for x_val in x_values:
+            # Get actual_vals_per_qi for this nqi value
+            subset = df[df[x_col] == x_val]
+            if 'actual_vals_per_qi' in df.columns and len(subset) > 0:
+                actual_vals = subset['actual_vals_per_qi'].unique()
+                if len(actual_vals) == 1:
+                    actual_val = int(actual_vals[0])  # Convert to integer
+                    tick_labels.append(f'{x_val} ({actual_val})')
+                else:
+                    # Multiple actual values, just show nqi
+                    tick_labels.append(str(x_val))
+            else:
+                # No actual_vals_per_qi column, just show nqi
+                tick_labels.append(str(x_val))
+        ax.set_xticklabels(tick_labels)
+      
     if len(x_values) > 1:
         x_range = x_values[-1] - x_values[0]
         left_margin = x_range * 0.05  # 5% margin on the left
@@ -229,6 +251,10 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
     x_display = maps.get(x_col, x_col)
     y_display = maps.get(y_col, y_col)
     lines_display = maps.get(lines_col, lines_col)
+    
+    # Modify x_display if showing actual_vals_per_qi in parentheses
+    if x_col == 'nqi' and lines_col != 'nrows' and 'actual_vals_per_qi' in df.columns:
+        x_display = f"{x_display} ({maps.get('actual_vals_per_qi', 'actual_vals_per_qi')})"
     
     ax.set_xlabel(x_display)
     ax.set_ylabel(f'{y_display} ({thresh_direction} where measure >= {thresh})')
