@@ -11,7 +11,7 @@ import argparse
 pp = pprint.PrettyPrinter(indent=2)
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from df_builds.build_row_masks import build_row_masks, build_row_masks_qi
+from df_builds.build_row_masks import build_row_masks, build_row_masks_qi, get_required_num_distinct
 from reconstruct import reconstruct_by_row, measure_by_row, reconstruct_by_aggregate, measure_by_aggregate
 
 solve_type_map = {
@@ -20,6 +20,20 @@ solve_type_map = {
     'agg_only': 'ao',
 }
         
+def generate_filename(params, target_accuracy) -> str:
+    """ Generate a filename string based on attack parameters. """
+    vals_per_qi = get_required_num_distinct(params['nrows'], params['nqi'])
+    # If it so happens that the actual vals_per_qi is more than what is specified,
+    # then we pretend that we are on auto-select so that we don't run extra jobs.
+    if vals_per_qi > params['vals_per_qi']:
+        vals_per_qi = 0
+    seed_str = f"_s{params['seed']}" if params['seed'] is not None else ""
+    file_name = (f"nr{params['nrows']}_mf{params['mask_size']}_"
+                f"nu{params['nunique']}_qi{params['nqi']}_n{params['noise']}_"
+                f"mnr{params['min_num_rows']}_vpq{vals_per_qi}_"
+                f"st{solve_type_map[params['solve_type']]}_"
+                f"ms{params['max_samples']}_ta{int(target_accuracy*100)}{seed_str}")
+    return file_name
 
 def mixing_stats(samples: List[Dict]) -> Dict:
     """ Computes mixing statistics for IDs across samples.
@@ -356,10 +370,16 @@ def attack_loop(nrows: int,
     # Start timing
     start_time = time.time()
     
+    actual_vals_per_qi = None
     # Build the ground truth dataframe
     if solve_type == 'pure_row':
         df = build_row_masks(nrows=nrows, nunique=nunique)
     else:
+        actual_vals_per_qi = get_required_num_distinct(nrows, nqi)
+        # If it so happens that the actual vals_per_qi is more than what is specified,
+        # then we pretend that we are on auto-select so that we don't run extra jobs.
+        if actual_vals_per_qi > vals_per_qi:
+            vals_per_qi = 0
         df = build_row_masks_qi(nrows=nrows, nunique=nunique, nqi=nqi, vals_per_qi=vals_per_qi)
     
     initial_samples = []
@@ -492,6 +512,7 @@ def attack_loop(nrows: int,
                 'noise': noise,
                 'nqi': nqi,
                 'vals_per_qi': vals_per_qi,
+                'actual_vals_per_qi': actual_vals_per_qi,
                 'seed': seed,
                 'max_samples': max_samples,
                 'target_accuracy': target_accuracy,
@@ -597,14 +618,7 @@ def main():
             'seed': args.seed if args.seed is not None else defaults['seed'],
         }
 
-        # Generate filename
-        seed_str = f"_s{params['seed']}" if params['seed'] is not None else ""
-        file_name = (f"nr{params['nrows']}_mf{params['mask_size']}_"
-                    f"nu{params['nunique']}_qi{params['nqi']}_n{params['noise']}_"
-                    f"mnr{params['min_num_rows']}_vpq{params['vals_per_qi']}_"
-                    f"st{solve_type_map[params['solve_type']]}_"
-                    f"ms{params['max_samples']}_ta{int(target_accuracy*100)}{seed_str}")
-        
+        file_name = generate_filename(params, target_accuracy)
         file_path = attack_results_dir / f"{file_name}.json"
         
         # Load prior results if they exist
@@ -719,13 +733,7 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
     params = test_params[args.job_num]
     
     # Generate filename
-    seed_str = f"_s{params['seed']}" if params['seed'] is not None else ""
-    file_name = (f"nr{params['nrows']}_mf{params['mask_size']}_"
-                f"nu{params['nunique']}_qi{params['nqi']}_n{params['noise']}_"
-                f"mnr{params['min_num_rows']}_vpq{params['vals_per_qi']}_"
-                f"st{solve_type_map[params['solve_type']]}_"
-                f"ms{params['max_samples']}_ta{int(target_accuracy*100)}{seed_str}")
-        
+    file_name = generate_filename(params, target_accuracy)
     file_path = attack_results_dir / f"{file_name}.json"
     
     # Load prior results if they exist

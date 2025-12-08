@@ -1,7 +1,10 @@
+import sys
 import json
 import pandas as pd
 from pathlib import Path
 from typing import List, Dict
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from df_builds.build_row_masks import get_required_num_distinct
 
 def gather_results() -> pd.DataFrame:
     """Read all JSON result files and consolidate into a DataFrame.
@@ -31,6 +34,9 @@ def gather_results() -> pd.DataFrame:
         try:
             with open(json_file, 'r') as f:
                 result = json.load(f)
+            if 'actual_vals_per_qi' not in result:
+                actual_vals_per_qi = get_required_num_distinct(result['nrows'], result['nqi'])
+                result['actual_vals_per_qi'] = actual_vals_per_qi
             
             # Get top-level metadata (everything except attack_results)
             base_data = {'filename': json_file.name}
