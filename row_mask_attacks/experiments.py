@@ -11,7 +11,7 @@ experiments = [
         'noise': [0,1,2,4,6,8,10,12,14,16,18,20,22,24],
         'nqi': [3,4,5,6,7,9,11],
         'min_num_rows': [5],
-        'vals_per_qi': [5,6],
+        'vals_per_qi': [10,15],
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=vals_per_qi
         'dont_run': True,
