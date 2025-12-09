@@ -1,7 +1,20 @@
 # Define parameter ranges
 experiments = [
-    {   # Agg Dinur-style, x=nqi, y=noise, lines=vals_per_qi
+    {   # Aggregated Dinur-style (aggregate selection of row IDs, binary target)
         'dont_run': False,
+        'experiment_group': 'agg_dinur_best_case_nrows_nqi3',
+        'solve_type': 'agg_row',
+        'seed': [0,1,2,3,4,5,6,7,8,9],
+        'nrows': [5,10,20,50,80,120,200,500],
+        'mask_size': [0],       # not used
+        'nunique': [2],
+        'noise': [0, 1, 2, 3],
+        'nqi': [3],
+        'min_num_rows': [1, 2, 3, 4],
+        'vals_per_qi': [0],      # auto-select
+    },
+    {   # Agg Dinur-style, x=nqi, y=noise, lines=vals_per_qi
+        'dont_run': True,
         'experiment_group': 'temp',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9],

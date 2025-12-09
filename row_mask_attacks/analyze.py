@@ -294,7 +294,7 @@ def analyze():
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nunique':
             do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nunique', thresh=0.90)
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_vals_per_qi':
-            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='vals_per_qi', thresh=0.90)
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='actual_vals_per_qi', thresh=0.90)
         else:
             # Generic analysis for other experiment groups
             print(f"\n\n{'='*80}")

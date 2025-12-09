@@ -325,7 +325,7 @@ def attack_loop(nrows: int,
                 min_num_rows: int = 5,
                 vals_per_qi: int = 0,
                 max_samples: int = 20000,
-                solve_type: str = 'pure_row',
+                solve_type: str = 'agg_row',
                 seed: int = None,
                 output_file: Path = None,
                 cur_attack_results: List[Dict] = None) -> None:
@@ -582,7 +582,7 @@ def main():
     
     # Defaults
     defaults = {
-        'solve_type': 'pure_row',
+        'solve_type': 'agg_row',
         'nrows': 100,
         'mask_size': 20,
         'nunique': 2,

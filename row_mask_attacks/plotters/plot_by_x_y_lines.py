@@ -33,9 +33,9 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                       'noise': 4,
                       'nqi': 6,
                       'min_num_rows': 5,
-                      'vals_per_qi': 0,
+                      'actual_vals_per_qi': 0,
                    }
-    reportable_columns = ['nrows', 'nunique', 'noise', 'nqi', 'min_num_rows', 'vals_per_qi',]
+    reportable_columns = ['nrows', 'nunique', 'noise', 'nqi', 'min_num_rows', 'actual_vals_per_qi',]
     output_dir = Path('./results/plots')
     output_dir.mkdir(parents=True, exist_ok=True)
     
@@ -223,7 +223,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
     ax.set_xticks(x_values)
     
     # Special handling for nqi x-axis labels
-    if x_col == 'nqi' and lines_col != 'nrows':
+    if x_col == 'nqi' and lines_col != 'nrows' and lines_col != 'actual_vals_per_qi':
         # Create labels showing "nqi (actual_vals_per_qi)"
         tick_labels = []
         for x_val in x_values:
@@ -253,7 +253,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
     lines_display = maps.get(lines_col, lines_col)
     
     # Modify x_display if showing actual_vals_per_qi in parentheses
-    if x_col == 'nqi' and lines_col != 'nrows' and 'actual_vals_per_qi' in df.columns:
+    if x_col == 'nqi' and lines_col != 'nrows' and lines_col != 'actual_vals_per_qi':
         x_display = f"{x_display} ({maps.get('actual_vals_per_qi', 'actual_vals_per_qi')})"
     
     ax.set_xlabel(x_display)
