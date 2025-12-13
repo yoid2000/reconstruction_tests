@@ -23,6 +23,7 @@ from plotters import (
     plot_elapsed_boxplots_by_parameters_nqi,
     plot_measure_by_nqi,
     plot_by_x_y_lines,
+    make_noise_min_num_rows_table,
 )
 
 def analyze_single_parameter_variation(df: pd.DataFrame, experiments: list, exp_group: str):
@@ -241,6 +242,8 @@ def analyze():
 
     # check if any columns have NaN values, and if so print the column names and quit
     nan_columns = df_all.columns[df_all.isna().any()].tolist()
+    # exclude columns beginning with 'solver_metrics_'
+    nan_columns = [col for col in nan_columns if not col.startswith('solver_metrics_')]
     if len(nan_columns) > 0:
         print(f"Columns with NaN values: {nan_columns}")
         print("Please clean the data before analysis")
@@ -297,6 +300,10 @@ def analyze():
             do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='actual_vals_per_qi', thresh=0.90)
         elif exp_group == 'agg_dinur_best_case_nrows_nqi3':
             do_analysis_by_x_y_lines(exp_df, x_col='min_num_rows', y_col='noise', lines_col='nrows', thresh=0.90)
+            make_noise_min_num_rows_table(exp_df, "nqi3")
+        elif exp_group == 'agg_dinur_best_case_nrows_nqi4':
+            do_analysis_by_x_y_lines(exp_df, x_col='min_num_rows', y_col='noise', lines_col='nrows', thresh=0.90)
+            make_noise_min_num_rows_table(exp_df, "nqi4")
         else:
             # Generic analysis for other experiment groups
             print(f"\n\n{'='*80}")
@@ -312,6 +319,7 @@ def do_analysis_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col
     print(df_sorted[[x_col, y_col, lines_col, 'measure']].to_string())
 
     plot_by_x_y_lines(df, x_col=x_col, y_col=y_col, lines_col=lines_col, thresh_direction="highest", thresh=thresh)
+    plot_by_x_y_lines(df, x_col=x_col, y_col='measure', lines_col=lines_col, thresh_direction="highest", thresh=thresh)
 
 
 def do_pure_dinur_basic_analysis(df, experiments=None, exp_group=None):

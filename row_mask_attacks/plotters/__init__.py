@@ -15,6 +15,7 @@ from .plot_mixing_boxplots_by_parameters_nqi import plot_mixing_boxplots_by_para
 from .plot_elapsed_boxplots_by_parameters_nqi import plot_elapsed_boxplots_by_parameters_nqi
 from .plot_measure_by_nqi import plot_measure_by_nqi
 from .plot_by_x_y_lines import plot_by_x_y_lines
+from .make_noise_min_num_rows_table import make_noise_min_num_rows_table
 
 __all__ = [
     'plot_mixing_vs_samples',
@@ -32,4 +33,5 @@ __all__ = [
     'plot_elapsed_boxplots_by_parameters_nqi',
     'plot_measure_by_nqi',
     'plot_by_x_y_lines',
+    'make_noise_min_num_rows_table',
 ]

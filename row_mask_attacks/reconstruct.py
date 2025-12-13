@@ -837,3 +837,499 @@ def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, a
                 result.append(row_dict)
     
     return result, num_equations, solver_metrics
+
+
+def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total_rows: int, all_qi_cols: List[str], known_qi_rows: List[Dict], seed: int = None) -> tuple[List[Dict], int, Dict]:
+    """Reconstructs rows with QI column values and target values from aggregate samples with known QI constraints.
+    
+    This extends reconstruct_by_aggregate by adding constraints that force specific QI column value
+    combinations to appear in the reconstructed rows.
+    
+    Args:
+        samples: List of dicts, each containing:
+            - 'qi_cols': list of QI column names (subset of all_qi_cols)
+            - 'qi_vals': list of values for those QI columns (same length as qi_cols)
+            - 'noisy_counts': list of dicts with 'val' (int) and 'count' (int)
+        noise: Integer representing the noise bound (±noise from true count)
+        total_rows: Exact number of rows to reconstruct
+        all_qi_cols: List of all QI column names
+        known_qi_rows: List of dicts, each containing all QI columns with their values.
+            At least one reconstructed row must match each known QI row combination.
+            Can be empty list.
+        seed: Random seed for solver (default: None)
+    
+    Returns:
+        Tuple of (reconstructed_rows, num_equations, solver_metrics)
+        - reconstructed_rows: List of dicts with QI columns and 'val' (target value)
+        - num_equations: Number of constraint equations used in the model
+        - solver_metrics: Dict with all solver performance metrics
+    
+    Raises:
+        ValueError: If validation fails (structure issues, infeasibility, invalid values)
+    """
+    # Step 1: Validate inputs and extract domains
+    all_qi_cols_set = set(all_qi_cols)
+    qi_domains = {col: set() for col in all_qi_cols}
+    all_target_vals = set()
+    
+    for sample_idx, sample in enumerate(samples):
+        # Validate sample structure
+        if 'qi_cols' not in sample or 'qi_vals' not in sample or 'noisy_counts' not in sample:
+            raise ValueError(f"Sample {sample_idx} missing required keys (qi_cols, qi_vals, or noisy_counts)")
+        
+        qi_cols = sample['qi_cols']
+        qi_vals = sample['qi_vals']
+        
+        # Validate qi_cols and qi_vals lengths match
+        if len(qi_cols) != len(qi_vals):
+            raise ValueError(f"Sample {sample_idx}: qi_cols length ({len(qi_cols)}) != qi_vals length ({len(qi_vals)})")
+        
+        # Validate all qi_cols are in all_qi_cols
+        for col in qi_cols:
+            if col not in all_qi_cols_set:
+                raise ValueError(f"Sample {sample_idx}: qi_col '{col}' not in all_qi_cols")
+        
+        # Collect domain values
+        for col, val in zip(qi_cols, qi_vals):
+            qi_domains[col].add(val)
+        
+        # Collect target values
+        for count_info in sample['noisy_counts']:
+            all_target_vals.add(count_info['val'])
+    
+    # Step 2: Validate known_qi_rows
+    if not isinstance(known_qi_rows, list):
+        raise ValueError("known_qi_rows must be a list")
+    
+    # Check infeasibility early: cannot have more known rows than total rows
+    if len(known_qi_rows) > total_rows:
+        raise ValueError(f"Infeasible: known_qi_rows has {len(known_qi_rows)} elements but total_rows is {total_rows}")
+    
+    # Validate structure of each known QI row
+    for known_idx, known_row in enumerate(known_qi_rows):
+        if not isinstance(known_row, dict):
+            raise ValueError(f"known_qi_rows[{known_idx}] must be a dict")
+        
+        # Check that all QI columns are present
+        known_cols = set(known_row.keys())
+        if known_cols != all_qi_cols_set:
+            missing = all_qi_cols_set - known_cols
+            extra = known_cols - all_qi_cols_set
+            error_parts = []
+            if missing:
+                error_parts.append(f"missing columns: {sorted(missing)}")
+            if extra:
+                error_parts.append(f"extra columns: {sorted(extra)}")
+            raise ValueError(f"known_qi_rows[{known_idx}] has incorrect columns ({', '.join(error_parts)}). Expected exactly: {sorted(all_qi_cols)}")
+        
+        # Collect values from known rows into domains
+        for col in all_qi_cols:
+            qi_domains[col].add(known_row[col])
+    
+    # Convert domains to sorted lists
+    qi_domains_sorted = {col: sorted(vals) for col, vals in qi_domains.items()}
+    qi_domains = qi_domains_sorted
+    all_target_vals = sorted(all_target_vals)
+    
+    num_equations = 0
+    
+    if check_gurobi_available():
+        # Use Gurobi solver
+        print("Using Gurobi solver")
+        model = gp.Model("reconstruct_by_aggregate_and_known_qi")
+        model.setParam('OutputFlag', 0)  # Suppress output
+        
+        # Set random seed if provided
+        if seed is not None:
+            model.setParam('Seed', seed)
+        
+        # Step 3: Create binary variables
+        x = {}  # x[row_idx][qi_col][qi_val]
+        for row_idx in range(total_rows):
+            x[row_idx] = {}
+            for qi_col in all_qi_cols:
+                x[row_idx][qi_col] = {}
+                for qi_val in qi_domains[qi_col]:
+                    x[row_idx][qi_col][qi_val] = model.addVar(
+                        vtype=GRB.BINARY, 
+                        name=f'x_{row_idx}_{qi_col}_{qi_val}'
+                    )
+        
+        y = {}  # y[row_idx][target_val]
+        for row_idx in range(total_rows):
+            y[row_idx] = {}
+            for target_val in all_target_vals:
+                y[row_idx][target_val] = model.addVar(
+                    vtype=GRB.BINARY,
+                    name=f'y_{row_idx}_{target_val}'
+                )
+        
+        model.update()
+        
+        # Display variables
+        print("\n=== MODEL VARIABLES ===")
+        total_x_vars = sum(len(qi_domains[col]) for col in all_qi_cols) * total_rows
+        total_y_vars = len(all_target_vals) * total_rows
+        print(f"Binary variables x[row][qi_col][qi_val]: {total_x_vars}")
+        print(f"Binary variables y[row][target_val]: {total_y_vars}")
+        print(f"Total variables: {total_x_vars + total_y_vars}")
+        
+        print("\n=== MODEL CONSTRAINTS ===")
+        
+        # Step 4: Add basic assignment constraints
+        print("\n1. Each row must have exactly one value per QI column:")
+        for row_idx in range(total_rows):
+            for qi_col in all_qi_cols:
+                model.addConstr(
+                    gp.quicksum(x[row_idx][qi_col][qi_val] for qi_val in qi_domains[qi_col]) == 1
+                )
+                num_equations += 1
+        print(f"  Total: {total_rows * len(all_qi_cols)} constraints")
+        
+        print("\n2. Each row must have exactly one target value:")
+        for row_idx in range(total_rows):
+            model.addConstr(
+                gp.quicksum(y[row_idx][target_val] for target_val in all_target_vals) == 1
+            )
+            num_equations += 1
+        print(f"  Total: {total_rows} constraints")
+        
+        # Step 5: Add partial-match counting constraints
+        print("\n3. Partial-match counting constraints (with auxiliary variables):")
+        match_constraints_count = 0
+        skipped_constraints = 0
+        
+        for sample_idx, sample in enumerate(samples):
+            qi_cols = sample['qi_cols']
+            qi_vals = sample['qi_vals']
+            noisy_counts = sample['noisy_counts']
+            
+            for count_info in noisy_counts:
+                target_val = count_info['val']
+                noisy_count = count_info['count']
+                
+                # Clamp bounds: lower >= 0, upper <= total_rows
+                lower_bound_val = max(0, noisy_count - noise)
+                upper_bound_val = min(total_rows, noisy_count + noise)
+                
+                # Skip if constraint provides no information (covers entire range)
+                if lower_bound_val == 0 and upper_bound_val == total_rows:
+                    skipped_constraints += 2
+                    continue
+                
+                # Create auxiliary match variables for each row
+                match_vars = []
+                for row_idx in range(total_rows):
+                    match_var = model.addVar(
+                        vtype=GRB.BINARY,
+                        name=f'match_{sample_idx}_{row_idx}_{target_val}'
+                    )
+                    
+                    # Build list of variables that must all be 1 for a match
+                    and_vars = []
+                    for col, val in zip(qi_cols, qi_vals):
+                        and_vars.append(x[row_idx][col][val])
+                    and_vars.append(y[row_idx][target_val])
+                    
+                    # Add AND constraint
+                    model.addGenConstrAnd(match_var, and_vars)
+                    num_equations += 1  # Count the AND constraint
+                    
+                    match_vars.append(match_var)
+                
+                # Add counting constraints
+                total_matches = gp.quicksum(match_vars)
+                model.addConstr(total_matches >= lower_bound_val)
+                model.addConstr(total_matches <= upper_bound_val)
+                num_equations += 2
+                match_constraints_count += 2
+        
+        print(f"  Auxiliary match variables created for each sample-target-row combination")
+        print(f"  Counting constraints (upper and lower bounds): {match_constraints_count}")
+        if skipped_constraints > 0:
+            print(f"  Skipped: {skipped_constraints} redundant constraints (covering entire range)")
+        
+        # Step 6: Add known QI row constraints
+        print(f"\n4. Known QI row constraints ({len(known_qi_rows)} known rows):")
+        known_constraints_count = 0
+        
+        for known_idx, known_row in enumerate(known_qi_rows):
+            # Create auxiliary match variables for each row
+            known_match_vars = []
+            for row_idx in range(total_rows):
+                known_match_var = model.addVar(
+                    vtype=GRB.BINARY,
+                    name=f'known_match_{known_idx}_{row_idx}'
+                )
+                
+                # Build list of variables that must all be 1 for a match
+                and_vars = []
+                for qi_col in all_qi_cols:
+                    qi_val = known_row[qi_col]
+                    and_vars.append(x[row_idx][qi_col][qi_val])
+                
+                # Add AND constraint
+                model.addGenConstrAnd(known_match_var, and_vars)
+                num_equations += 1  # Count the AND constraint
+                
+                known_match_vars.append(known_match_var)
+            
+            # At least one row must match this known QI combination
+            model.addConstr(gp.quicksum(known_match_vars) >= 1)
+            num_equations += 1
+            known_constraints_count += 1
+        
+        if len(known_qi_rows) > 0:
+            print(f"  Auxiliary match variables created for each known-row-row combination")
+            print(f"  At-least-one constraints: {known_constraints_count}")
+        else:
+            print(f"  No known QI rows provided, skipping these constraints")
+        
+        print(f"\n=== TOTAL EQUATIONS: {num_equations} ===\n")
+        
+        # Step 7: Solve and extract solution
+        model.optimize()
+        
+        # Collect Gurobi metrics
+        solver_metrics = {
+            'solver': 'gurobi',
+            'status': model.status,
+            'status_string': {1: 'LOADED', 2: 'OPTIMAL', 3: 'INFEASIBLE', 4: 'INF_OR_UNBD', 
+                            5: 'UNBOUNDED', 6: 'CUTOFF', 7: 'ITERATION_LIMIT', 8: 'NODE_LIMIT',
+                            9: 'TIME_LIMIT', 10: 'SOLUTION_LIMIT', 11: 'INTERRUPTED', 
+                            12: 'NUMERIC', 13: 'SUBOPTIMAL', 14: 'INPROGRESS', 15: 'USER_OBJ_LIMIT'}.get(model.status, 'UNKNOWN'),
+            'runtime': model.Runtime,
+            'obj_val': model.ObjVal if model.status == GRB.OPTIMAL else None,
+            'obj_bound': model.ObjBound if model.status == GRB.OPTIMAL else None,
+            'mip_gap': model.MIPGap if hasattr(model, 'MIPGap') else None,
+            'node_count': model.NodeCount if hasattr(model, 'NodeCount') else None,
+            'simplex_iterations': model.IterCount if hasattr(model, 'IterCount') else None,
+            'barrier_iterations': model.BarIterCount if hasattr(model, 'BarIterCount') else None,
+            'num_vars': model.NumVars,
+            'num_constrs': model.NumConstrs,
+            'num_sos': model.NumSOS if hasattr(model, 'NumSOS') else None,
+            'num_qconstrs': model.NumQConstrs if hasattr(model, 'NumQConstrs') else None,
+            'num_genconstrs': model.NumGenConstrs if hasattr(model, 'NumGenConstrs') else None,
+            'num_nzs': model.NumNZs if hasattr(model, 'NumNZs') else None,
+            'num_int_vars': model.NumIntVars if hasattr(model, 'NumIntVars') else None,
+            'num_bin_vars': model.NumBinVars if hasattr(model, 'NumBinVars') else None,
+            'is_mip': model.IsMIP,
+            'is_qp': model.IsQP,
+            'is_qcp': model.IsQCP,
+            'skipped_constraints': skipped_constraints,
+            'num_known_qi_rows': len(known_qi_rows),
+        }
+        
+        result = []
+        if model.status == GRB.OPTIMAL:
+            for row_idx in range(total_rows):
+                row_dict = {}
+                
+                # Extract QI column values
+                for qi_col in all_qi_cols:
+                    for qi_val in qi_domains[qi_col]:
+                        if x[row_idx][qi_col][qi_val].X > 0.5:
+                            row_dict[qi_col] = qi_val
+                            break
+                
+                # Extract target value
+                for target_val in all_target_vals:
+                    if y[row_idx][target_val].X > 0.5:
+                        row_dict['val'] = target_val
+                        break
+                
+                result.append(row_dict)
+        
+    else:
+        # Use OR-Tools solver
+        print("Using OR-Tools CP-SAT solver")
+        model = cp_model.CpModel()
+        
+        # Step 3: Create binary variables
+        x = {}  # x[row_idx][qi_col][qi_val]
+        for row_idx in range(total_rows):
+            x[row_idx] = {}
+            for qi_col in all_qi_cols:
+                x[row_idx][qi_col] = {}
+                for qi_val in qi_domains[qi_col]:
+                    x[row_idx][qi_col][qi_val] = model.NewBoolVar(
+                        f'x_{row_idx}_{qi_col}_{qi_val}'
+                    )
+        
+        y = {}  # y[row_idx][target_val]
+        for row_idx in range(total_rows):
+            y[row_idx] = {}
+            for target_val in all_target_vals:
+                y[row_idx][target_val] = model.NewBoolVar(
+                    f'y_{row_idx}_{target_val}'
+                )
+        
+        # Display variables
+        print("\n=== MODEL VARIABLES ===")
+        total_x_vars = sum(len(qi_domains[col]) for col in all_qi_cols) * total_rows
+        total_y_vars = len(all_target_vals) * total_rows
+        print(f"Binary variables x[row][qi_col][qi_val]: {total_x_vars}")
+        print(f"Binary variables y[row][target_val]: {total_y_vars}")
+        print(f"Total variables: {total_x_vars + total_y_vars}")
+        
+        print("\n=== MODEL CONSTRAINTS ===")
+        
+        # Step 4: Add basic assignment constraints
+        print("\n1. Each row must have exactly one value per QI column:")
+        for row_idx in range(total_rows):
+            for qi_col in all_qi_cols:
+                model.Add(
+                    sum(x[row_idx][qi_col][qi_val] for qi_val in qi_domains[qi_col]) == 1
+                )
+                num_equations += 1
+        print(f"  Total: {total_rows * len(all_qi_cols)} constraints")
+        
+        print("\n2. Each row must have exactly one target value:")
+        for row_idx in range(total_rows):
+            model.Add(
+                sum(y[row_idx][target_val] for target_val in all_target_vals) == 1
+            )
+            num_equations += 1
+        print(f"  Total: {total_rows} constraints")
+        
+        # Step 5: Add partial-match counting constraints
+        print("\n3. Partial-match counting constraints (with auxiliary variables):")
+        match_constraints_count = 0
+        skipped_constraints = 0
+        
+        for sample_idx, sample in enumerate(samples):
+            qi_cols = sample['qi_cols']
+            qi_vals = sample['qi_vals']
+            noisy_counts = sample['noisy_counts']
+            
+            for count_info in noisy_counts:
+                target_val = count_info['val']
+                noisy_count = count_info['count']
+                
+                # Clamp bounds: lower >= 0, upper <= total_rows
+                lower_bound_val = max(0, noisy_count - noise)
+                upper_bound_val = min(total_rows, noisy_count + noise)
+                
+                # Skip if constraint provides no information (covers entire range)
+                if lower_bound_val == 0 and upper_bound_val == total_rows:
+                    skipped_constraints += 2
+                    continue
+                
+                # Create auxiliary match variables for each row
+                match_vars = []
+                for row_idx in range(total_rows):
+                    match_var = model.NewBoolVar(
+                        f'match_{sample_idx}_{row_idx}_{target_val}'
+                    )
+                    
+                    # Build list of variables that must all be 1 for a match
+                    and_vars = []
+                    for col, val in zip(qi_cols, qi_vals):
+                        and_vars.append(x[row_idx][col][val])
+                    and_vars.append(y[row_idx][target_val])
+                    
+                    # Add AND constraint using AddBoolAnd
+                    model.AddBoolAnd(and_vars).OnlyEnforceIf(match_var)
+                    model.AddBoolOr([v.Not() for v in and_vars]).OnlyEnforceIf(match_var.Not())
+                    num_equations += 2  # Count both implications
+                    
+                    match_vars.append(match_var)
+                
+                # Add counting constraints
+                total_matches = sum(match_vars)
+                model.Add(total_matches >= lower_bound_val)
+                model.Add(total_matches <= upper_bound_val)
+                num_equations += 2
+                match_constraints_count += 2
+        
+        print(f"  Auxiliary match variables created for each sample-target-row combination")
+        print(f"  Counting constraints (upper and lower bounds): {match_constraints_count}")
+        if skipped_constraints > 0:
+            print(f"  Skipped: {skipped_constraints} redundant constraints (covering entire range)")
+        
+        # Step 6: Add known QI row constraints
+        print(f"\n4. Known QI row constraints ({len(known_qi_rows)} known rows):")
+        known_constraints_count = 0
+        
+        for known_idx, known_row in enumerate(known_qi_rows):
+            # Create auxiliary match variables for each row
+            known_match_vars = []
+            for row_idx in range(total_rows):
+                known_match_var = model.NewBoolVar(
+                    f'known_match_{known_idx}_{row_idx}'
+                )
+                
+                # Build list of variables that must all be 1 for a match
+                and_vars = []
+                for qi_col in all_qi_cols:
+                    qi_val = known_row[qi_col]
+                    and_vars.append(x[row_idx][qi_col][qi_val])
+                
+                # Add AND constraint using AddBoolAnd
+                model.AddBoolAnd(and_vars).OnlyEnforceIf(known_match_var)
+                model.AddBoolOr([v.Not() for v in and_vars]).OnlyEnforceIf(known_match_var.Not())
+                num_equations += 2  # Count both implications
+                
+                known_match_vars.append(known_match_var)
+            
+            # At least one row must match this known QI combination
+            model.Add(sum(known_match_vars) >= 1)
+            num_equations += 1
+            known_constraints_count += 1
+        
+        if len(known_qi_rows) > 0:
+            print(f"  Auxiliary match variables created for each known-row-row combination")
+            print(f"  At-least-one constraints: {known_constraints_count}")
+        else:
+            print(f"  No known QI rows provided, skipping these constraints")
+        
+        print(f"\n=== TOTAL EQUATIONS: {num_equations} ===\n")
+        
+        # Step 7: Solve and extract solution
+        solver = cp_model.CpSolver()
+        
+        # Set random seed if provided
+        if seed is not None:
+            solver.parameters.random_seed = seed
+        
+        status = solver.Solve(model)
+        
+        # Collect OR-Tools metrics
+        solver_metrics = {
+            'solver': 'ortools',
+            'status': status,
+            'status_string': {0: 'UNKNOWN', 1: 'MODEL_INVALID', 2: 'FEASIBLE', 3: 'INFEASIBLE', 4: 'OPTIMAL'}.get(status, 'UNKNOWN'),
+            'runtime': solver.WallTime(),
+            'user_time': solver.UserTime(),
+            'obj_val': solver.ObjectiveValue() if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else None,
+            'best_obj_bound': solver.BestObjectiveBound() if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else None,
+            'num_booleans': solver.NumBooleans(),
+            'num_conflicts': solver.NumConflicts(),
+            'num_branches': solver.NumBranches(),
+            'num_binary_propagations': solver.NumBinaryPropagations(),
+            'num_integer_propagations': solver.NumIntegerPropagations(),
+            'skipped_constraints': skipped_constraints,
+            'num_known_qi_rows': len(known_qi_rows),
+        }
+        
+        result = []
+        if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+            for row_idx in range(total_rows):
+                row_dict = {}
+                
+                # Extract QI column values
+                for qi_col in all_qi_cols:
+                    for qi_val in qi_domains[qi_col]:
+                        if solver.Value(x[row_idx][qi_col][qi_val]) == 1:
+                            row_dict[qi_col] = qi_val
+                            break
+                
+                # Extract target value
+                for target_val in all_target_vals:
+                    if solver.Value(y[row_idx][target_val]) == 1:
+                        row_dict['val'] = target_val
+                        break
+                
+                result.append(row_dict)
+    
+    return result, num_equations, solver_metrics

@@ -39,8 +39,8 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
     output_dir = Path('./results/plots')
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    if thresh_direction not in ['lowest', 'highest']:
-        raise ValueError(f"thresh_direction must be 'lowest' or 'highest', got '{thresh_direction}'")
+    if thresh_direction not in ['lowest', 'highest', 'average']:
+        raise ValueError(f"thresh_direction must be 'lowest', 'highest', or 'average', got '{thresh_direction}'")
     
     # Extract reportable column values (excluding x, y, lines columns)
     used_cols = {x_col, y_col, lines_col}
@@ -79,39 +79,24 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
             if len(subset) == 0:
                 continue
             
-            if y_col == 'measure':
-                # Special handling for measure: use average and max directly
-                if len(subset) > 0:
-                    y_val = subset['measure'].max()  # Use max for vertical line
-                    y_val_avg = subset['measure'].mean()  # Use average for line
-                    
-                    plot_data.append({
-                        'x': x_val,
-                        'y': y_val,
-                        'y_avg': y_val_avg,
-                        'line': line_val
-                    })
-                    has_any_valid_data = True
-            else:
-                # Original threshold-based logic for other y columns
-                # Find rows where measure >= thresh
-                valid_rows = subset[subset['measure'] >= thresh]
+            # Find rows where measure >= thresh
+            valid_rows = subset[subset['measure'] >= thresh]
+            
+            if len(valid_rows) > 0:
+                # Get the lowest or highest y value from rows that meet threshold
+                if thresh_direction == 'lowest':
+                    y_val = valid_rows[y_col].min()
+                elif thresh_direction == 'highest':
+                    y_val = valid_rows[y_col].max()
+                else:  # average
+                    y_val = valid_rows[y_col].mean()
                 
-                if len(valid_rows) > 0:
-                    # Get the lowest or highest y value from rows that meet threshold
-                    if thresh_direction == 'lowest':
-                        y_val = valid_rows[y_col].min()
-                    elif thresh_direction == 'highest':
-                        y_val = valid_rows[y_col].max()
-                    y_val_avg = valid_rows[y_col].mean()
-                    
-                    plot_data.append({
-                        'x': x_val,
-                        'y': y_val,
-                        'y_avg': y_val_avg,
-                        'line': line_val
-                    })
-                    has_any_valid_data = True
+                plot_data.append({
+                    'x': x_val,
+                    'y': y_val,
+                    'line': line_val
+                })
+                has_any_valid_data = True
         
         # If no line had valid data for this x value, mark it
         if not has_any_valid_data:
@@ -135,14 +120,13 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
             
             x_vals = [p['x'] for p in line_data]
             y_vals = [p['y'] for p in line_data]
-            y_avg_vals = [p['y_avg'] for p in line_data]
             
             # Determine if this line should be dashed
             linestyle = 'solid'
             linewidth = 2
             if lines_col in dashed_columns and line_val == dashed_columns[lines_col]:
                 linestyle = 'dashed'
-                linewidth = 2
+                linewidth = 4
             
             # Get display name for lines_col
             lines_display = maps.get(lines_col, lines_col)
@@ -152,28 +136,14 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
             if lines_col == 'vals_per_qi' and line_val == 0:
                 display_line_val = 'auto'
             
-            # Plot main line using y_avg with different marker for each line
-            line_obj = ax.plot(x_vals, y_avg_vals, marker=markers[idx % len(markers)], 
+            # Plot line with different marker for each line
+            ax.plot(x_vals, y_vals, marker=markers[idx % len(markers)], 
                     linewidth=linewidth, markersize=8, linestyle=linestyle,
                     label=f'{lines_display}={display_line_val}')
-            
-            # Get the color of the line for vertical lines
-            line_color = line_obj[0].get_color()
-            
-            # Draw vertical lines from y_avg to y and place markers at y
-            for x_val, y_val, y_avg_val in zip(x_vals, y_vals, y_avg_vals):
-                # Draw thin vertical line
-                ax.plot([x_val, x_val], [y_avg_val, y_val], 
-                       color=line_color, linewidth=1, alpha=0.6)
-                # Place small marker at y value
-                ax.plot(x_val, y_val, marker=markers[idx % len(markers)], 
-                       color=line_color, markersize=4, markerfacecolor='white',
-                       markeredgecolor=line_color, markeredgewidth=1.5)
     
     # Determine positioning for "None" labels
     if len(plot_data) > 0:
-        # Include both y and y_avg values for range calculation
-        y_values = [p['y'] for p in plot_data] + [p['y_avg'] for p in plot_data]
+        y_values = [p['y'] for p in plot_data]
         y_min_data = min(y_values)
         y_max_data = max(y_values)
         

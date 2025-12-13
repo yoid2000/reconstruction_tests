@@ -12,12 +12,12 @@ pp = pprint.PrettyPrinter(indent=2)
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from df_builds.build_row_masks import build_row_masks, build_row_masks_qi, get_required_num_distinct
-from reconstruct import reconstruct_by_row, measure_by_row, reconstruct_by_aggregate, measure_by_aggregate
+from reconstruct import reconstruct_by_row, measure_by_row, reconstruct_by_aggregate, measure_by_aggregate, reconstruct_by_aggregate_and_known_qi
 
 solve_type_map = {
     'pure_row': 'pr',
     'agg_row': 'ar',
-    'agg_only': 'ao',
+    'agg_known': 'ak',
 }
         
 def generate_filename(params, target_accuracy) -> str:
@@ -30,11 +30,15 @@ def generate_filename(params, target_accuracy) -> str:
         if new_vals_per_qi > params['vals_per_qi']:
             vals_per_qi = 0
     seed_str = f"_s{params['seed']}" if params['seed'] is not None else ""
+    # Only include known_qi_fraction in filename for agg_known solve_type
+    kqf_str = ""
+    if params['solve_type'] == 'agg_known':
+        kqf_str = f"_kqf{int(params['known_qi_fraction']*100)}"
     file_name = (f"nr{params['nrows']}_mf{params['mask_size']}_"
                 f"nu{params['nunique']}_qi{params['nqi']}_n{params['noise']}_"
                 f"mnr{params['min_num_rows']}_vpq{vals_per_qi}_"
                 f"st{solve_type_map[params['solve_type']]}_"
-                f"ms{params['max_samples']}_ta{int(target_accuracy*100)}{seed_str}")
+                f"ms{params['max_samples']}_ta{int(target_accuracy*100)}{kqf_str}{seed_str}")
     return file_name
 
 def mixing_stats(samples: List[Dict]) -> Dict:
@@ -326,6 +330,7 @@ def attack_loop(nrows: int,
                 vals_per_qi: int = 0,
                 max_samples: int = 20000,
                 solve_type: str = 'agg_row',
+                known_qi_fraction: float = 0.0,
                 seed: int = None,
                 output_file: Path = None,
                 cur_attack_results: List[Dict] = None) -> None:
@@ -340,6 +345,7 @@ def attack_loop(nrows: int,
         vals_per_qi: Number of distinct values per QI column (default: 0, means auto compute)
         target_accuracy: Target accuracy to stop early (default: 0.99)
         min_num_rows: Minimum number of rows in any aggregate (default: 5)
+        known_qi_fraction: Fraction of rows with known QI values (default: 0.0, range: 0.0-1.0)
         seed: Random seed for reproducibility (default: None)
         output_file: Path to JSON file to save results incrementally (default: None)
         cur_attack_results: Previous attack results to resume from (default: None)
@@ -387,12 +393,28 @@ def attack_loop(nrows: int,
             actual_vals_per_qi = vals_per_qi
         df = build_row_masks_qi(nrows=nrows, nunique=nunique, nqi=nqi, vals_per_qi=vals_per_qi)
     
+    # Generate complete_known_qi_rows if known_qi_fraction > 0
+    complete_known_qi_rows = []
+    if known_qi_fraction > 0.0 and solve_type == 'agg_known':
+        num_known_qi_rows = int(round(len(df) * known_qi_fraction))
+        if num_known_qi_rows > 0:
+            # Select random rows
+            known_indices = np.random.choice(len(df), size=num_known_qi_rows, replace=False)
+            all_qi_cols = [col for col in df.columns if col.startswith('qi')]
+            
+            # Extract QI columns only (no IDs)
+            for idx in known_indices:
+                row = df.iloc[idx]
+                known_qi_row = {col: int(row[col]) for col in all_qi_cols}
+                complete_known_qi_rows.append(known_qi_row)
+
+    
     initial_samples = []
     num_masked = None
     qi_index = 0
     qi_subsets = []
     all_qi_cols = [col for col in df.columns if col.startswith('qi')]
-    if solve_type in ['agg_row', 'agg_only']:
+    if solve_type in ['agg_row', 'agg_known']:
         qi_subsets = get_qi_subset_list(df, min_num_rows, int(round(min_num_rows * nunique * 1.5)))
         initial_samples, qi_index = initialize_qi_samples(df, nunique, noise, qi_subsets)
         print(f"Total QI subsets available: {len(qi_subsets)}. qi_index {qi_index}.")
@@ -445,8 +467,8 @@ def attack_loop(nrows: int,
             # Add sample
             samples.append({
                 'ids': masked_ids,
-                'qi_cols': qi_cols,            # for agg_only attacks
-                'qi_vals': qi_vals,            # for agg_only attacks
+                'qi_cols': qi_cols,            # for agg_known attacks
+                'qi_vals': qi_vals,            # for agg_known attacks
                 'noisy_counts': noisy_counts
             })
         
@@ -456,8 +478,26 @@ def attack_loop(nrows: int,
         if solve_type in ['pure_row', 'agg_row']:
             reconstructed, num_equations, solver_metrics = reconstruct_by_row(samples, noise, seed)
             accuracy = measure_by_row(df, reconstructed)
-        elif solve_type == 'agg_only':
-            reconstructed, num_equations, solver_metrics = reconstruct_by_aggregate(samples, noise, nrows, all_qi_cols, seed)
+        elif solve_type == 'agg_known':
+            # Filter complete_known_qi_rows to only those appearing in at least one sample
+            known_qi_rows = []
+            if len(complete_known_qi_rows) > 0:
+                for known_qi_row in complete_known_qi_rows:
+                    # Check if this known_qi_row matches any sample
+                    for sample in samples:
+                        if 'qi_cols' in sample and 'qi_vals' in sample:
+                            # Check if all qi_cols in the sample match the known_qi_row
+                            match = True
+                            for col, val in zip(sample['qi_cols'], sample['qi_vals']):
+                                if known_qi_row.get(col) != val:
+                                    match = False
+                                    break
+                            if match:
+                                # This known_qi_row is covered by at least one sample
+                                known_qi_rows.append(known_qi_row)
+                                break
+            
+            reconstructed, num_equations, solver_metrics = reconstruct_by_aggregate_and_known_qi(samples, noise, nrows, all_qi_cols, known_qi_rows, seed)
             accuracy_measure = measure_by_aggregate(df, reconstructed)
             accuracy = accuracy_measure['qi_and_val_match']
             qi_match_accuracy = accuracy_measure['qi_match']
@@ -465,7 +505,7 @@ def attack_loop(nrows: int,
             raise ValueError(f"Unsupported solve_type: {solve_type}")
         mixing = mixing_stats(samples)
 
-        if solve_type in ['agg_row', 'agg_only']:
+        if solve_type in ['agg_row', 'agg_known']:
             num_masked = int(avg_num_masked / (len(samples) - len(initial_samples))) if (len(samples) - len(initial_samples)) > 0 else 0
             initial_samples = samples.copy()
         
@@ -518,6 +558,7 @@ def attack_loop(nrows: int,
                 'nqi': nqi,
                 'vals_per_qi': vals_per_qi,
                 'actual_vals_per_qi': actual_vals_per_qi,
+                'known_qi_fraction': known_qi_fraction,
                 'seed': seed,
                 'max_samples': max_samples,
                 'target_accuracy': target_accuracy,
@@ -542,7 +583,7 @@ def main():
     parser.add_argument('job_num', type=int, nargs='?', default=None,
                        help='Job number to run from parameter combinations')
     parser.add_argument('--solve_type', type=str, default=None,
-                       help='Type of solve: pure_row, agg_row, agg_only')
+                       help='Type of solve: pure_row, agg_row, agg_known')
     parser.add_argument('--nrows', type=int, default=None,
                        help='Number of rows')
     parser.add_argument('--mask_size', type=int, default=None,
@@ -557,6 +598,8 @@ def main():
                        help='Minimum number of rows in any aggregate')
     parser.add_argument('--vals_per_qi', type=int, default=None,
                        help='Number of distinct values per QI column')
+    parser.add_argument('--known_qi_fraction', type=float, default=None,
+                       help='Fraction of rows with known QI values (0.0-1.0)')
     parser.add_argument('--max_samples', type=int, default=None,
                        help='Maximum number of samples to use before quitting')
     parser.add_argument('--seed', type=int, default=None,
@@ -590,6 +633,7 @@ def main():
         'nqi': 0,
         'min_num_rows': 5,
         'vals_per_qi': 0,
+        'known_qi_fraction': 0.0,
         'max_samples': max_samples,
         'seed': None,
     }
@@ -604,6 +648,7 @@ def main():
         args.nqi is not None,
         args.min_num_rows is not None,
         args.vals_per_qi is not None,
+        args.known_qi_fraction is not None,
         args.max_samples is not None,
         args.seed is not None
     ])
@@ -619,6 +664,7 @@ def main():
             'nqi': args.nqi if args.nqi is not None else defaults['nqi'],
             'min_num_rows': args.min_num_rows if args.min_num_rows is not None else defaults['min_num_rows'],
             'vals_per_qi': args.vals_per_qi if args.vals_per_qi is not None else defaults['vals_per_qi'],
+            'known_qi_fraction': args.known_qi_fraction if args.known_qi_fraction is not None else defaults['known_qi_fraction'],
             'max_samples': args.max_samples if args.max_samples is not None else defaults['max_samples'],
             'seed': args.seed if args.seed is not None else defaults['seed'],
         }
@@ -637,6 +683,7 @@ def main():
         
         # Run attack_loop
         print(f"Running with parameters: {params}")
+        quit()
         
         attack_loop(
             nrows=params['nrows'],
@@ -648,6 +695,7 @@ def main():
             target_accuracy=target_accuracy,
             min_num_rows=params['min_num_rows'],
             vals_per_qi=params['vals_per_qi'],
+            known_qi_fraction=params['known_qi_fraction'],
             solve_type=params['solve_type'],
             seed=params['seed'],
             output_file=file_path,
@@ -677,6 +725,8 @@ def main():
             continue
         # Get seed list from experiment, default to [None] if not specified
         seed_list = exp.get('seed', [None])
+        # Get known_qi_fraction list from experiment, default to [0.0] if not specified
+        known_qi_fraction_list = exp.get('known_qi_fraction', [0.0])
         for nrows in exp['nrows']:
             for mask_size in exp['mask_size']:
                 for nunique in exp['nunique']:
@@ -684,23 +734,25 @@ def main():
                         for nqi in exp['nqi']:
                             for min_num_rows in exp['min_num_rows']:
                                 for vals_per_qi in exp['vals_per_qi']:
-                                    for seed in seed_list:
-                                        params = {
-                                            'nrows': nrows,
-                                            'solve_type': exp['solve_type'],
-                                            'mask_size': mask_size,
-                                            'nunique': nunique,
-                                            'noise': noise,
-                                            'nqi': nqi,
-                                            'min_num_rows': min_num_rows,
-                                            'vals_per_qi': vals_per_qi,
-                                            'max_samples': max_samples,
-                                            'seed': seed,
-                                        }
-                                        key = tuple(sorted(params.items()))
-                                        if key not in seen:
-                                            seen.add(key)
-                                            test_params.append(params)
+                                    for known_qi_fraction in known_qi_fraction_list:
+                                        for seed in seed_list:
+                                            params = {
+                                                'nrows': nrows,
+                                                'solve_type': exp['solve_type'],
+                                                'mask_size': mask_size,
+                                                'nunique': nunique,
+                                                'noise': noise,
+                                                'nqi': nqi,
+                                                'min_num_rows': min_num_rows,
+                                                'vals_per_qi': vals_per_qi,
+                                                'known_qi_fraction': known_qi_fraction,
+                                                'max_samples': max_samples,
+                                                'seed': seed,
+                                            }
+                                            key = tuple(sorted(params.items()))
+                                            if key not in seen:
+                                                seen.add(key)
+                                                test_params.append(params)
     
     # If no job_num, just print all combinations
     if args.job_num is None:
@@ -762,6 +814,7 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
         target_accuracy=target_accuracy,
         min_num_rows=params['min_num_rows'],
         vals_per_qi=params['vals_per_qi'],
+        known_qi_fraction=params['known_qi_fraction'],
         max_samples=params['max_samples'],
         solve_type=params['solve_type'],
         seed=params['seed'],
