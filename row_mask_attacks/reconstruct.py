@@ -1024,6 +1024,7 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
                         vtype=GRB.BINARY,
                         name=f'match_{sample_idx}_{row_idx}_{target_val}'
                     )
+                    print(f'match_{sample_idx}_{row_idx}_{target_val}')
                     
                     # Build list of variables that must all be 1 for a match
                     and_vars = []

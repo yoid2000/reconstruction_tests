@@ -180,10 +180,7 @@ def get_experiment_dataframes(experiments, df):
         
     return result
 
-def group_by_experiment_parameters(df_final):
-    
-    # Group data by key columns before reading experiments
-    grouping_cols = ['solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'min_num_rows']
+def group_by_experiment_parameters(df_final, grouping_cols):
     
     # Filter to only columns that exist in the dataframe
     grouping_cols_present = [col for col in grouping_cols if col in df_final.columns]
@@ -218,6 +215,110 @@ def group_by_experiment_parameters(df_final):
 
     return df_grouped
 
+def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
+    """Check whether each parameter grouping has enough seeds for a tight CI on measure.
+    
+    A "sample" here is a single seed run. We check the number of unique seeds and
+    the width of the 95% confidence interval for measure. Groups that have fewer
+    than the minimum seeds or a confidence interval wider than the target margin
+    are flagged so we know where to collect more runs.
+    """
+    if 'measure' not in df_final.columns:
+        print("\nSkipping seed analysis: 'measure' column missing")
+        return
+    if 'seed' not in df_final.columns:
+        print("\nSkipping seed analysis: 'seed' column missing")
+        return
+
+    # Only use grouping columns that exist in the dataframe
+    grouping_cols_present = [col for col in grouping_cols if col in df_final.columns]
+    if not grouping_cols_present:
+        print("\nSkipping seed analysis: no grouping columns present")
+        return
+
+    # Heuristics for "enough" samples
+    min_seeds = 8  # only consider groups that have at least this many seeds
+    abs_margin = 0.05  # absolute margin for CI half-width
+    rel_margin = 0.1  # or within 10% of the mean
+    alpha = 0.05       # 95% confidence
+
+    print("\nSeed effect / sample adequacy check")
+    print(f"  Grouping columns: {grouping_cols_present}")
+    print(f"  Criteria: >= {min_seeds} seeds and CI half-width <= max({abs_margin}, {rel_margin} * mean)")
+
+    rows = []
+    grouped = df_final.groupby(grouping_cols_present, dropna=False)
+    for keys, g in grouped:
+        # keys is a scalar when grouping by one column
+        if not isinstance(keys, tuple):
+            keys = (keys,)
+        key_dict = dict(zip(grouping_cols_present, keys))
+
+        measures = g['measure'].dropna()
+        n = len(measures)
+        if n == 0:
+            continue
+
+        mean_val = measures.mean()
+        std_val = measures.std(ddof=1) if n > 1 else 0.0
+
+        # 95% CI half-width using t distribution when possible
+        if n > 1:
+            t_val = stats.t.ppf(1 - alpha / 2, df=n - 1)
+            ci_half = t_val * std_val / np.sqrt(n)
+        else:
+            ci_half = np.nan
+
+        target_margin = max(abs_margin, rel_margin * abs(mean_val))
+
+        # Rough estimate of seeds needed to hit target margin (use normal approx)
+        if std_val == 0:
+            seeds_needed = min_seeds
+        else:
+            z_val = stats.norm.ppf(1 - alpha / 2)
+            seeds_needed = int(np.ceil((z_val * std_val / target_margin) ** 2))
+            seeds_needed = max(seeds_needed, min_seeds)
+
+        seed_count = g['seed'].nunique()
+        if seed_count < min_seeds:
+            continue
+
+        enough_samples = (seed_count >= min_seeds) and (not np.isnan(ci_half)) and (ci_half <= target_margin)
+
+        rows.append({
+            **key_dict,
+            'rows': len(g),
+            'unique_seeds': seed_count,
+            'mean_measure': mean_val,
+            'std_measure': std_val,
+            'ci_half_width': ci_half,
+            'target_margin': target_margin,
+            'seeds_needed_est': seeds_needed,
+            'enough_samples': enough_samples,
+        })
+
+    if not rows:
+        print("No data found for seed analysis")
+        return
+
+    summary_df = pd.DataFrame(rows)
+
+    not_enough = summary_df[~summary_df['enough_samples']]
+    print(f"\nTotal groups analyzed: {len(summary_df)}")
+    print(f"Groups with enough samples: {len(summary_df) - len(not_enough)}")
+    print(f"Groups needing more seeds: {len(not_enough)}")
+
+    if len(not_enough) > 0:
+        # Show the top 10 groups most in need of more seeds (sorted by margin gap)
+        not_enough = not_enough.copy()
+        not_enough['margin_gap'] = not_enough['ci_half_width'] - not_enough['target_margin']
+        cols_to_show = grouping_cols_present + ['unique_seeds', 'seeds_needed_est', 'mean_measure',
+                                                'std_measure', 'ci_half_width', 'target_margin', 'margin_gap']
+        print("\nGroups needing more samples (top 10):")
+        print(not_enough.sort_values(['margin_gap', 'unique_seeds'], ascending=[False, True])[cols_to_show].head(10).to_string(index=False))
+    else:
+        print("All groups meet the sampling criteria.")
+
 def analyze():
     """Read result.parquet and analyze correlations with num_samples."""
     
@@ -233,11 +334,14 @@ def analyze():
 
     cols_to_fill = [{'col': 'seed', 'value': -1},
                     {'col': 'solver_metrics_skipped_constraints', 'value': -1},
+                    {'col': 'known_qi_fraction', 'value': 1.0},
                    ]
     for item in cols_to_fill:
         col = item['col']
         value = item['value']
-        if col in df_all.columns:
+        if col not in df_all.columns:
+            df_all[col] = value
+        else:
             df_all[col] = df_all[col].fillna(value)
 
     # check if any columns have NaN values, and if so print the column names and quit
@@ -264,7 +368,10 @@ def analyze():
     df_final = df_final[df_final['finished'] == True].copy()
     print(f"Remaining rows: {len(df_final)}")
 
-    df_grouped = group_by_experiment_parameters(df_final)
+    grouping_cols = ['solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'min_num_rows', 'known_qi_fraction']
+    analyze_seed_effect(df_final, grouping_cols)
+    quit()
+    df_grouped = group_by_experiment_parameters(df_final, grouping_cols)
     
     # print first row of df_grouped using to_string to show all columns
     print(f"\nFirst row of grouped dataframe:\n{df_grouped.iloc[0].to_string()}\n")

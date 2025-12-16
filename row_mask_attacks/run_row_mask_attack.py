@@ -324,13 +324,13 @@ def attack_loop(nrows: int,
                 nunique: int, 
                 mask_size: int, 
                 noise: int,
-                nqi: int = 0,
+                nqi: int = 3,
                 target_accuracy: float = 0.99,
                 min_num_rows: int = 5,
-                vals_per_qi: int = 0,
+                vals_per_qi: int = 2,
                 max_samples: int = 20000,
-                solve_type: str = 'agg_row',
-                known_qi_fraction: float = 0.0,
+                solve_type: str = 'agg_known',
+                known_qi_fraction: float = 1.0,
                 seed: int = None,
                 output_file: Path = None,
                 cur_attack_results: List[Dict] = None) -> None:
@@ -409,6 +409,7 @@ def attack_loop(nrows: int,
                 complete_known_qi_rows.append(known_qi_row)
 
     
+    print(f"Total known QI rows: {len(complete_known_qi_rows)}")
     initial_samples = []
     num_masked = None
     qi_index = 0
@@ -481,23 +482,31 @@ def attack_loop(nrows: int,
         elif solve_type == 'agg_known':
             # Filter complete_known_qi_rows to only those appearing in at least one sample
             known_qi_rows = []
-            if len(complete_known_qi_rows) > 0:
-                for known_qi_row in complete_known_qi_rows:
-                    # Check if this known_qi_row matches any sample
-                    for sample in samples:
-                        if 'qi_cols' in sample and 'qi_vals' in sample:
-                            # Check if all qi_cols in the sample match the known_qi_row
-                            match = True
-                            for col, val in zip(sample['qi_cols'], sample['qi_vals']):
-                                if known_qi_row.get(col) != val:
-                                    match = False
-                                    break
-                            if match:
-                                # This known_qi_row is covered by at least one sample
-                                known_qi_rows.append(known_qi_row)
+            for known_qi_row in complete_known_qi_rows:
+                # Check if this known_qi_row matches any sample
+                for sample in samples:
+                    if 'qi_cols' in sample and 'qi_vals' in sample:
+                        # Check if any qi_cols in the sample match the known_qi_row
+                        match = False
+                        for col, val in zip(sample['qi_cols'], sample['qi_vals']):
+                            if known_qi_row.get(col) == val:
+                                match = True
                                 break
+                        if match:
+                            # This known_qi_row is covered by at least one sample
+                            known_qi_rows.append(known_qi_row)
+                            break
             
-            reconstructed, num_equations, solver_metrics = reconstruct_by_aggregate_and_known_qi(samples, noise, nrows, all_qi_cols, known_qi_rows, seed)
+            if (len(known_qi_rows) != len(complete_known_qi_rows)):
+                # throw exception
+                print("Samples:")
+                pp.pprint(samples)
+                print("Complete known QI rows:")
+                pp.pprint(complete_known_qi_rows)
+                print("Filtered known QI rows:")
+                pp.pprint(known_qi_rows)
+                raise ValueError(f"Known QI rows used in reconstruction ({len(known_qi_rows)}) does not match total known QI rows ({len(complete_known_qi_rows)})")
+            reconstructed, num_equations, solver_metrics = reconstruct_by_aggregate_and_known_qi(samples, noise, nrows, all_qi_cols, complete_known_qi_rows, seed)
             accuracy_measure = measure_by_aggregate(df, reconstructed)
             accuracy = accuracy_measure['qi_and_val_match']
             qi_match_accuracy = accuracy_measure['qi_match']
@@ -625,15 +634,15 @@ def main():
     
     # Defaults
     defaults = {
-        'solve_type': 'agg_row',
+        'solve_type': 'agg_known',
         'nrows': 100,
         'mask_size': 20,
         'nunique': 2,
         'noise': 2,
-        'nqi': 0,
+        'nqi': 3,
         'min_num_rows': 5,
-        'vals_per_qi': 0,
-        'known_qi_fraction': 0.0,
+        'vals_per_qi': 2,
+        'known_qi_fraction': 1.0,
         'max_samples': max_samples,
         'seed': None,
     }
@@ -683,7 +692,6 @@ def main():
         
         # Run attack_loop
         print(f"Running with parameters: {params}")
-        quit()
         
         attack_loop(
             nrows=params['nrows'],
