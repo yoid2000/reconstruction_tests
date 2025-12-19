@@ -24,6 +24,7 @@ from plotters import (
     plot_measure_by_nqi,
     plot_by_x_y_lines,
     make_noise_min_num_rows_table,
+    plot_mixing_by_measure,
 )
 
 def analyze_single_parameter_variation(df: pd.DataFrame, experiments: list, exp_group: str):
@@ -237,7 +238,7 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
         return
 
     # Heuristics for "enough" samples
-    min_seeds = 8  # only consider groups that have at least this many seeds
+    min_seeds = 15  # only consider groups that have at least this many seeds
     abs_margin = 0.05  # absolute margin for CI half-width
     rel_margin = 0.1  # or within 10% of the mean
     alpha = 0.05       # 95% confidence
@@ -331,6 +332,9 @@ def analyze():
         return
     
     df_all = pd.read_parquet(parquet_path)
+    if 'known_qi_fraction' in df_all.columns:
+        # for all rows where solver_type != 'agg_known', set known_qi_fraction to 1.0
+        df_all.loc[df_all['solve_type'] != 'agg_known', 'known_qi_fraction'] = 1.0
 
     cols_to_fill = [{'col': 'seed', 'value': -1},
                     {'col': 'solver_metrics_skipped_constraints', 'value': -1},
@@ -357,6 +361,8 @@ def analyze():
 
     # Make df_final, which removes rows where final_attack is False
     df_final = df_all[df_all['final_attack'] == True].copy()
+
+    plot_mixing_by_measure(df_all, Path('./results/plots'))
     
     print(f"Loaded {len(df_all)} rows from {parquet_path}")
     print(f"\nColumns: {list(df_all.columns)}")
@@ -370,7 +376,6 @@ def analyze():
 
     grouping_cols = ['solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'min_num_rows', 'known_qi_fraction']
     analyze_seed_effect(df_final, grouping_cols)
-    quit()
     df_grouped = group_by_experiment_parameters(df_final, grouping_cols)
     
     # print first row of df_grouped using to_string to show all columns
@@ -399,6 +404,10 @@ def analyze():
             do_agg_dinur_explore_vals_per_qi_analysis(exp_df, experiments, exp_group)
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nrows':
             do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', thresh=0.90)
+            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh_direction="highest", thresh=0.9)
+            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='solver_metrics_num_vars', lines_col='nrows', thresh_direction="highest", thresh=0.9)
+            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='num_samples', lines_col='nrows', thresh_direction="highest", thresh=0.9)
+            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='mixing_avg', lines_col='nrows', thresh_direction="highest", thresh=0.9)
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_min_num_rows':
             do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='min_num_rows', thresh=0.90)
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nunique':
@@ -423,10 +432,22 @@ def do_analysis_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col
     print("=" * 80)
     # sort by x_col, then y_col, then lines_col, and display x_col, y_col, lines_col, and measure
     df_sorted = df.sort_values(by=['measure', x_col, y_col, lines_col])
-    print(df_sorted[[x_col, y_col, lines_col, 'measure']].to_string())
+    #print(df_sorted[[x_col, y_col, lines_col, 'measure']].to_string())
+    exit_reasons_map = {'target_accuracy': 'targ', 
+                    'no_more_qi_subsets': 'no_qi', 
+                    'max_samples': 'max', }
+    # make a table with x_col as rows, lines_col as columns, and exit_reason as values
+    # use the exit_reasons_map to shorten the exit_reason values
+    use_noise = 4
+    # select rows where noise == use_noise
+    df_noise = df[df['noise'] == use_noise]
+    table = pd.pivot_table(df_noise, values='exit_reason', index=x_col, columns=lines_col, aggfunc=lambda x: ','.join(sorted(set(exit_reasons_map.get(v, v) for v in x))))
+    print(f"\nExit reasons table when noise = {use_noise} (x={x_col}, lines={lines_col}):")
+    print(table.to_string())
 
-    plot_by_x_y_lines(df, x_col=x_col, y_col=y_col, lines_col=lines_col, thresh_direction="highest", thresh=thresh)
-    plot_by_x_y_lines(df, x_col=x_col, y_col='measure', lines_col=lines_col, thresh_direction="highest", thresh=thresh)
+    for thresh in [0.80, 0.90, 0.95]:
+        plot_by_x_y_lines(df, x_col=x_col, y_col=y_col, lines_col=lines_col, thresh_direction="highest", thresh=thresh)
+    plot_by_x_y_lines(df, x_col=x_col, y_col='measure', lines_col=lines_col, thresh_direction="highest", thresh=0.9)
 
 
 def do_pure_dinur_basic_analysis(df, experiments=None, exp_group=None):

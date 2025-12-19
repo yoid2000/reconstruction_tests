@@ -943,6 +943,10 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
         if seed is not None:
             model.setParam('Seed', seed)
         
+        # Track auxiliary variable counts (created later)
+        match_aux_vars = 0
+        match_and_constraints = 0
+
         # Step 3: Create binary variables
         x = {}  # x[row_idx][qi_col][qi_val]
         for row_idx in range(total_rows):
@@ -972,7 +976,7 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
         total_y_vars = len(all_target_vals) * total_rows
         print(f"Binary variables x[row][qi_col][qi_val]: {total_x_vars}")
         print(f"Binary variables y[row][target_val]: {total_y_vars}")
-        print(f"Total variables: {total_x_vars + total_y_vars}")
+        print(f"Total variables (assignment only): {total_x_vars + total_y_vars}")
         
         print("\n=== MODEL CONSTRAINTS ===")
         
@@ -1024,7 +1028,7 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
                         vtype=GRB.BINARY,
                         name=f'match_{sample_idx}_{row_idx}_{target_val}'
                     )
-                    print(f'match_{sample_idx}_{row_idx}_{target_val}')
+                    match_aux_vars += 1
                     
                     # Build list of variables that must all be 1 for a match
                     and_vars = []
@@ -1034,6 +1038,7 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
                     
                     # Add AND constraint
                     model.addGenConstrAnd(match_var, and_vars)
+                    match_and_constraints += 1
                     num_equations += 1  # Count the AND constraint
                     
                     match_vars.append(match_var)
@@ -1050,42 +1055,42 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
         if skipped_constraints > 0:
             print(f"  Skipped: {skipped_constraints} redundant constraints (covering entire range)")
         
-        # Step 6: Add known QI row constraints
-        print(f"\n4. Known QI row constraints ({len(known_qi_rows)} known rows):")
-        known_constraints_count = 0
-        
-        for known_idx, known_row in enumerate(known_qi_rows):
-            # Create auxiliary match variables for each row
-            known_match_vars = []
-            for row_idx in range(total_rows):
-                known_match_var = model.addVar(
-                    vtype=GRB.BINARY,
-                    name=f'known_match_{known_idx}_{row_idx}'
-                )
-                
-                # Build list of variables that must all be 1 for a match
-                and_vars = []
-                for qi_col in all_qi_cols:
-                    qi_val = known_row[qi_col]
-                    and_vars.append(x[row_idx][qi_col][qi_val])
-                
-                # Add AND constraint
-                model.addGenConstrAnd(known_match_var, and_vars)
-                num_equations += 1  # Count the AND constraint
-                
-                known_match_vars.append(known_match_var)
-            
-            # At least one row must match this known QI combination
-            model.addConstr(gp.quicksum(known_match_vars) >= 1)
-            num_equations += 1
-            known_constraints_count += 1
-        
+        # Step 6: Fix known QI rows directly (no auxiliaries)
+        print(f"\n4. Known QI rows fixed directly ({len(known_qi_rows)} known rows):")
         if len(known_qi_rows) > 0:
-            print(f"  Auxiliary match variables created for each known-row-row combination")
-            print(f"  At-least-one constraints: {known_constraints_count}")
+            for known_idx, known_row in enumerate(known_qi_rows):
+                row_idx = known_idx  # assign known rows to the first indices
+                for qi_col in all_qi_cols:
+                    target_val = known_row[qi_col]
+                    for qi_val in qi_domains[qi_col]:
+                        var = x[row_idx][qi_col][qi_val]
+                        if qi_val == target_val:
+                            var.LB = 1
+                            var.UB = 1
+                        else:
+                            var.LB = 0
+                            var.UB = 0
+            print("  Applied fixed assignments to x[row][qi_col][qi_val] for known rows")
         else:
-            print(f"  No known QI rows provided, skipping these constraints")
-        
+            print("  No known QI rows provided, skipping fixed assignments")
+
+        # Ensure Gurobi updates its internal counts to include newly added variables
+        model.update()
+
+        # Show full variable/constraint totals (including auxiliaries)
+        total_assign_vars = total_x_vars + total_y_vars
+        total_expected_vars = total_assign_vars + match_aux_vars
+        print("\n=== VARIABLE COUNTS (including auxiliaries) ===")
+        print(f"  Assignment vars (x/y): {total_assign_vars}")
+        print(f"  match_* auxiliaries   : {match_aux_vars}")
+        print(f"  Total expected vars   : {total_expected_vars}")
+        print(f"  Gurobi NumVars        : {model.NumVars}")
+
+        print("\n=== CONSTRAINT COUNTS ===")
+        print(f"  AND constraints (match_*): {match_and_constraints}")
+        print(f"  Counted equations (num_equations): {num_equations}")
+        print(f"  Gurobi NumConstrs                 : {model.NumConstrs}")
+
         print(f"\n=== TOTAL EQUATIONS: {num_equations} ===\n")
         
         # Step 7: Solve and extract solution
@@ -1146,6 +1151,9 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
         print("Using OR-Tools CP-SAT solver")
         model = cp_model.CpModel()
         
+        # Track auxiliary variable counts (created later)
+        match_aux_vars = 0
+
         # Step 3: Create binary variables
         x = {}  # x[row_idx][qi_col][qi_val]
         for row_idx in range(total_rows):
@@ -1171,7 +1179,7 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
         total_y_vars = len(all_target_vals) * total_rows
         print(f"Binary variables x[row][qi_col][qi_val]: {total_x_vars}")
         print(f"Binary variables y[row][target_val]: {total_y_vars}")
-        print(f"Total variables: {total_x_vars + total_y_vars}")
+        print(f"Total variables (assignment only): {total_x_vars + total_y_vars}")
         
         print("\n=== MODEL CONSTRAINTS ===")
         
@@ -1222,6 +1230,7 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
                     match_var = model.NewBoolVar(
                         f'match_{sample_idx}_{row_idx}_{target_val}'
                     )
+                    match_aux_vars += 1
                     
                     # Build list of variables that must all be 1 for a match
                     and_vars = []
@@ -1248,42 +1257,35 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
         if skipped_constraints > 0:
             print(f"  Skipped: {skipped_constraints} redundant constraints (covering entire range)")
         
-        # Step 6: Add known QI row constraints
-        print(f"\n4. Known QI row constraints ({len(known_qi_rows)} known rows):")
-        known_constraints_count = 0
-        
-        for known_idx, known_row in enumerate(known_qi_rows):
-            # Create auxiliary match variables for each row
-            known_match_vars = []
-            for row_idx in range(total_rows):
-                known_match_var = model.NewBoolVar(
-                    f'known_match_{known_idx}_{row_idx}'
-                )
-                
-                # Build list of variables that must all be 1 for a match
-                and_vars = []
-                for qi_col in all_qi_cols:
-                    qi_val = known_row[qi_col]
-                    and_vars.append(x[row_idx][qi_col][qi_val])
-                
-                # Add AND constraint using AddBoolAnd
-                model.AddBoolAnd(and_vars).OnlyEnforceIf(known_match_var)
-                model.AddBoolOr([v.Not() for v in and_vars]).OnlyEnforceIf(known_match_var.Not())
-                num_equations += 2  # Count both implications
-                
-                known_match_vars.append(known_match_var)
-            
-            # At least one row must match this known QI combination
-            model.Add(sum(known_match_vars) >= 1)
-            num_equations += 1
-            known_constraints_count += 1
-        
+        # Step 6: Fix known QI rows directly (no auxiliaries)
+        print(f"\n4. Known QI rows fixed directly ({len(known_qi_rows)} known rows):")
         if len(known_qi_rows) > 0:
-            print(f"  Auxiliary match variables created for each known-row-row combination")
-            print(f"  At-least-one constraints: {known_constraints_count}")
+            for known_idx, known_row in enumerate(known_qi_rows):
+                row_idx = known_idx  # assign known rows to the first indices
+                for qi_col in all_qi_cols:
+                    target_val = known_row[qi_col]
+                    for qi_val in qi_domains[qi_col]:
+                        var = x[row_idx][qi_col][qi_val]
+                        if qi_val == target_val:
+                            model.Add(var == 1)
+                        else:
+                            model.Add(var == 0)
+                        num_equations += 1
+            print("  Applied fixed assignments to x[row][qi_col][qi_val] for known rows")
         else:
-            print(f"  No known QI rows provided, skipping these constraints")
+            print("  No known QI rows provided, skipping fixed assignments")
         
+        # Show full variable/constraint totals (including auxiliaries)
+        total_assign_vars = total_x_vars + total_y_vars
+        total_expected_vars = total_assign_vars + match_aux_vars
+        print("\n=== VARIABLE COUNTS (including auxiliaries) ===")
+        print(f"  Assignment vars (x/y): {total_assign_vars}")
+        print(f"  match_* auxiliaries   : {match_aux_vars}")
+        print(f"  Total expected vars   : {total_expected_vars}")
+
+        print("\n=== CONSTRAINT COUNTS ===")
+        print(f"  Counted equations (num_equations): {num_equations}")
+
         print(f"\n=== TOTAL EQUATIONS: {num_equations} ===\n")
         
         # Step 7: Solve and extract solution

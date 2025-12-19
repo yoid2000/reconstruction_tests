@@ -733,8 +733,8 @@ def main():
             continue
         # Get seed list from experiment, default to [None] if not specified
         seed_list = exp.get('seed', [None])
-        # Get known_qi_fraction list from experiment, default to [0.0] if not specified
-        known_qi_fraction_list = exp.get('known_qi_fraction', [0.0])
+        # Get known_qi_fraction list from experiment, default to [1.0] if not specified
+        known_qi_fraction_list = exp.get('known_qi_fraction', [1.0])
         for nrows in exp['nrows']:
             for mask_size in exp['mask_size']:
                 for nunique in exp['nunique']:
