@@ -12,6 +12,7 @@ experiments = [
         'nqi': [3,6,9],
         'min_num_rows': [3],
         'vals_per_qi': [0],   # auto-select
+        'known_qi_fraction': [0.0, 0.25],
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=nrows
         'dont_run': True,
