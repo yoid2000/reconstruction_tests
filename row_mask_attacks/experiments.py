@@ -4,7 +4,7 @@ experiments = [
         'dont_run': False,
         'experiment_group': 'agg_dinur_nrows_low_nqi',
         'solve_type': 'agg_row',
-        'seed': [0],
+        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
         'nrows': [25, 50, 100, 200, 400, 800, 1600],
         'mask_size': [0],
         'nunique': [2],
