@@ -1,7 +1,20 @@
 # Define parameter ranges
 experiments = [
-    {   # Agg known probe overall
+    {   # Agg Dinur-style, test effect of nrows on low-nqi
         'dont_run': False,
+        'experiment_group': 'agg_dinur_nrows_low_nqi',
+        'solve_type': 'agg_row',
+        'seed': [0],
+        'nrows': [25, 50, 100, 200, 400, 800, 1600],
+        'mask_size': [0],
+        'nunique': [2],
+        'noise': [4],
+        'nqi': [4],
+        'min_num_rows': [3],
+        'vals_per_qi': [0],
+    },
+    {   # Agg known probe overall
+        'dont_run': True,
         'experiment_group': 'probe_agg_known',
         'solve_type': 'agg_known',
         'seed': [1],

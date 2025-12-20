@@ -3,6 +3,8 @@ import numpy as np
 from pathlib import Path
 from scipy import stats
 import sys
+import pprint as pp
+pp = pp.PrettyPrinter(indent=2)
 
 # Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
@@ -64,6 +66,7 @@ def analyze_single_parameter_variation(df: pd.DataFrame, experiments: list, exp_
     print(f"SINGLE PARAMETER VARIATION ANALYSIS: {varying_param}")
     print(f"{'='*80}")
     print(f"\nParameter '{varying_param}' varies across values: {param_values}")
+    pp.pprint(exp_def)
     
     # Result columns to analyze
     result_cols = ['num_samples', 'num_equations', 'measure', 'num_suppressed',
