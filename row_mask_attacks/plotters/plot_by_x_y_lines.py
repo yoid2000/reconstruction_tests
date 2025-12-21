@@ -93,6 +93,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
             if y_col != 'noise' and x_col != 'noise':
                 if len(subset) != 1:
                     # throw exception
+                    print(subset.to_string())
                     raise ValueError(f"Expected exactly one row for {x_col}={x_val}, {lines_col}={line_val}, got {len(subset)} rows")
                 row_used = subset.iloc[0]
                 y_val = row_used[y_col]
@@ -353,7 +354,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
     
     # Save plot
     for plottype in ['png', 'pdf']:
-        filename = f'x_{x_col}_y_{y_col}_l_{lines_col}_{thresh_str}_{dir_str}.{plottype}'
+        filename = f'x_{x_col}_y_{y_col}_l_{lines_col}_{thresh_str}_{dir_str}_{tag}.{plottype}'
         filepath = output_dir / filename
         plt.savefig(filepath)
     plt.close()

@@ -173,11 +173,14 @@ def get_experiment_dataframes(experiments, df):
         
         # Filter by each parameter
         for param, values in exp.items():
-            if param in ['experiment_group', 'solve_type', 'dont_run', 'seed', ]:
+            if param in ['experiment_group', 'dont_run', 'seed', ]:
                 continue
             
             if param in df.columns:
                 # Row must have value in the experiment's value list
+                # check if values is not a list, and if so convert to list
+                if not isinstance(values, list):
+                    values = [values]
                 mask = mask & df[param].isin(values)
         
         result[exp_group] = df[mask].copy()
@@ -411,6 +414,8 @@ def analyze():
             plot_by_x_y_lines(exp_df, x_col='nqi', y_col='solver_metrics_num_vars', lines_col='nrows', thresh_direction="highest", thresh=0.9)
             plot_by_x_y_lines(exp_df, x_col='nqi', y_col='num_samples', lines_col='nrows', thresh_direction="highest", thresh=0.9)
             plot_by_x_y_lines(exp_df, x_col='nqi', y_col='mixing_avg', lines_col='nrows', thresh_direction="highest", thresh=0.9)
+        elif exp_group == 'agg_dinur_nrows_low_nqi':
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', thresh=0.90, tag="low_nqi")
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_min_num_rows':
             do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='min_num_rows', thresh=0.90)
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nunique':
@@ -430,7 +435,7 @@ def analyze():
             print(f"{'='*80}")
             analyze_single_parameter_variation(exp_df, experiments, exp_group)
 
-def do_analysis_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, thresh: float = 0.95):
+def do_analysis_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, thresh: float = 0.95, tag: str = ""):
     print(f"\n\nANALYSIS BY X={x_col}, Y={y_col}, LINES={lines_col}, THRESH={thresh}")
     print("=" * 80)
     # sort by x_col, then y_col, then lines_col, and display x_col, y_col, lines_col, and measure
@@ -449,8 +454,8 @@ def do_analysis_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col
     print(table.to_string())
 
     for thresh in [0.80, 0.90, 0.95]:
-        plot_by_x_y_lines(df, x_col=x_col, y_col=y_col, lines_col=lines_col, thresh_direction="highest", thresh=thresh)
-    plot_by_x_y_lines(df, x_col=x_col, y_col='measure', lines_col=lines_col, thresh_direction="highest", thresh=0.9)
+        plot_by_x_y_lines(df, x_col=x_col, y_col=y_col, lines_col=lines_col, thresh_direction="highest", thresh=thresh, tag=tag)
+    plot_by_x_y_lines(df, x_col=x_col, y_col='measure', lines_col=lines_col, thresh_direction="highest", thresh=0.9, tag=tag)
 
 
 def do_pure_dinur_basic_analysis(df, experiments=None, exp_group=None):

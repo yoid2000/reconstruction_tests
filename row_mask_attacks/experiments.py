@@ -2,7 +2,7 @@
 experiments = [
     {   # Agg Dinur-style, test effect of nrows on low-nqi
         'dont_run': True,
-        'experiment_group': 'agg_dinur_nrows_low_nqi',
+        'experiment_group': 'temp',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
         'nrows': [25, 50, 100, 200, 400, 800, 1600],
@@ -41,7 +41,7 @@ experiments = [
         'known_qi_fraction': [0.0, 0.25],
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=nrows
-        'dont_run': False,
+        'dont_run': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_nrows',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -80,20 +80,7 @@ experiments = [
         'vals_per_qi': [0],      # auto-select
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=vals_per_qi
-        'dont_run': True,
-        'experiment_group': 'temp',
-        'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
-        'nrows': [150],
-        'mask_size': [0],
-        'nunique': [2],
-        'noise': [0,1,2,4,6,8,10,12,14,16,18,20,22,24],
-        'nqi': [3,4,5,6,7,9,11],
-        'min_num_rows': [3],
-        'vals_per_qi': [2],
-    },
-    {   # Agg Dinur-style, x=nqi, y=noise, lines=vals_per_qi
-        'dont_run': True,
+        'dont_run': False,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_vals_per_qi',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
