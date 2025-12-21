@@ -4,7 +4,7 @@ from matplotlib.patches import Rectangle
 from pathlib import Path
 
 
-def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, thresh: float = 0.95, thresh_direction: str = 'lowest'):
+def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, thresh: float = 0.95, thresh_direction: str = 'lowest', tag = ''):
     """Plot lowest/highest y value where measure >= threshold for each (x, lines) pair.
     
     For each pair of values (x, l) in x_col and lines_col, find the lowest or highest value y 
@@ -39,6 +39,8 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                       'min_num_rows': 5,
                       'actual_vals_per_qi': 2,
                    }
+    thresh_str = ''
+    dir_str = ''
     reportable_columns = ['nrows', 'nunique', 'noise', 'nqi', 'min_num_rows', 'actual_vals_per_qi','known_qi_fraction']
     output_dir = Path('./results/plots')
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -104,6 +106,8 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                 })
                 has_any_valid_data = True
             else:
+                thresh_str = f"{thresh:.3f}"
+                dir_str = thresh_direction
                 ylabel_note = f' (accuracy >= {thresh})'
                 # Original threshold-based logic for other y columns
                 # Find rows where measure >= thresh
@@ -349,7 +353,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
     
     # Save plot
     for plottype in ['png', 'pdf']:
-        filename = f'plot_by_x_{x_col}_y_{y_col}_l_{lines_col}_thr_{thresh}_{thresh_direction}.{plottype}'
+        filename = f'x_{x_col}_y_{y_col}_l_{lines_col}_{thresh_str}_{dir_str}.{plottype}'
         filepath = output_dir / filename
         plt.savefig(filepath)
     plt.close()
