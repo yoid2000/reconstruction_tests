@@ -93,7 +93,7 @@ experiments = [
         'vals_per_qi': [2,3,4,5,6,10,15],
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=nunique
-        'dont_run': False,
+        'dont_run': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_nunique',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -106,7 +106,7 @@ experiments = [
         'vals_per_qi': [0],   # auto-select
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=min_num_rows
-        'dont_run': True,
+        'dont_run': False,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_min_num_rows',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],

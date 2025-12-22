@@ -1,0 +1,1416 @@
+[
+  {
+    "attribute": "Age in years",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["34", "57"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Age group",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["30-34", "65-69"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Full date of birth",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["1990-04-12", "1975-11-30"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Year of birth",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["1990", "1965"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Month and day of birth",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["04-12", "11-30"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Sex or gender",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["female", "male"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Assigned sex at birth",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["female", "male"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Marital status",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["married", "divorced"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Number of marriages",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["1", "3"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Number of children",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["0", "2"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Household size",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["1", "4"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Citizenship or nationality",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["French", "Canadian"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Second citizenship",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["Italian", "Brazilian"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Country of birth",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["India", "Germany"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "City or town of birth",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["Chicago", "Osaka"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Ethnicity or race",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["Hispanic", "Asian"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Native language",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["English", "Mandarin Chinese"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Other languages spoken",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["Spanish", "Arabic"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Religion or faith tradition",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["Christianity", "Buddhism"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Religious denomination",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["Roman Catholic", "Sunni Muslim"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Political party membership",
+    "category": "demographic",
+    "naturally_binary": true,
+    "examples": ["member of Democratic Party", "member of Conservative Party"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "General political leaning",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["left-leaning", "right-leaning"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Union membership status",
+    "category": "demographic",
+    "naturally_binary": true,
+    "examples": ["union member", "not a union member"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Veteran or active-duty military status",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["veteran", "active duty"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Immigration status",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["permanent resident", "on work visa"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Rural / suburban / urban residence indicator",
+    "category": "demographic",
+    "naturally_binary": false,
+    "examples": ["urban", "suburban"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Household composition",
+    "category": "household",
+    "naturally_binary": false,
+    "examples": ["couple with children", "single adult"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Living arrangement",
+    "category": "household",
+    "naturally_binary": false,
+    "examples": ["with roommates", "with parents"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Presence of minors in household",
+    "category": "household",
+    "naturally_binary": true,
+    "examples": ["minors present", "no minors"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Relationship to head of household",
+    "category": "household",
+    "naturally_binary": false,
+    "examples": ["spouse", "child"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Primary language spoken at home",
+    "category": "household",
+    "naturally_binary": false,
+    "examples": ["English", "Spanish"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Presence of elderly dependents in household",
+    "category": "household",
+    "naturally_binary": true,
+    "examples": ["elderly dependent present", "none"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Pet ownership",
+    "category": "household",
+    "naturally_binary": true,
+    "examples": ["owns a dog", "no pets"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Number of vehicles owned by household",
+    "category": "household",
+    "naturally_binary": false,
+    "examples": ["0", "2"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Home internet provider",
+    "category": "household",
+    "naturally_binary": false,
+    "examples": ["Comcast", "Orange"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Country of residence",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["United States", "Japan"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "State, province or region of residence",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["California", "Bavaria"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "County or district of residence",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["King County", "Hackney"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "City or town of residence",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["London", "Toronto"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Neighborhood or suburb name",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["Brooklyn", "Gangnam"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Full ZIP or postal code",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["94107", "10115"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "ZIP or postal code prefix",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["941", "101"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Street name (without house number)",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["Main Street", "High Street"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Full home street address",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["123 Main Street", "45B High Road"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Type of housing",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["apartment", "detached house"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "GPS coordinates of home",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["37.7749,-122.4194", "51.5074,-0.1278"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Time at current address (years)",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["1", "10"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Time living in current city (years)",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["2", "15"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Home in urban core vs outskirts",
+    "category": "location",
+    "naturally_binary": true,
+    "examples": ["urban core", "outer suburb"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Work location city",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["New York", "Singapore"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Worksite full address",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["500 Market St", "12 Science Park Rd"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Typical commuting origin–destination pair",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["home ZIP 94107 to work ZIP 94016", "Brooklyn to Midtown"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "School district",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["Los Angeles Unified", "Camden School District"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Local voting precinct or ward",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["Precinct 17", "Ward 4"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Highest education level attained",
+    "category": "education",
+    "naturally_binary": false,
+    "examples": ["Bachelor's degree", "high school diploma"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Field or major of highest degree",
+    "category": "education",
+    "naturally_binary": false,
+    "examples": ["Computer Science", "Economics"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Name of university or college attended",
+    "category": "education",
+    "naturally_binary": false,
+    "examples": ["MIT", "University of Lagos"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Name of high school",
+    "category": "education",
+    "naturally_binary": false,
+    "examples": ["Lincoln High School", "St. Mary's Secondary School"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Graduation year (university or college)",
+    "category": "education",
+    "naturally_binary": false,
+    "examples": ["2012", "1998"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Graduation year (high school)",
+    "category": "education",
+    "naturally_binary": false,
+    "examples": ["2005", "2010"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "GPA or overall grade",
+    "category": "education",
+    "naturally_binary": false,
+    "examples": ["3.8", "2.5"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Honors or awards in education",
+    "category": "education",
+    "naturally_binary": false,
+    "examples": ["summa cum laude", "Dean's List"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Study-abroad country",
+    "category": "education",
+    "naturally_binary": false,
+    "examples": ["France", "Australia"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Student ID number",
+    "category": "education",
+    "naturally_binary": false,
+    "examples": ["S12345678", "A98765432"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Membership in academic honor societies",
+    "category": "education",
+    "naturally_binary": true,
+    "examples": ["Phi Beta Kappa member", "not a member"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Current employer name",
+    "category": "employment",
+    "naturally_binary": false,
+    "examples": ["Google", "National Health Service"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Current employer industry or sector",
+    "category": "employment",
+    "naturally_binary": false,
+    "examples": ["technology", "healthcare"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Current job title",
+    "category": "employment",
+    "naturally_binary": false,
+    "examples": ["Senior Data Scientist", "Primary School Teacher"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Current job level or seniority",
+    "category": "employment",
+    "naturally_binary": false,
+    "examples": ["Manager", "Director"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Employment type",
+    "category": "employment",
+    "naturally_binary": false,
+    "examples": ["full-time", "contractor"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Work schedule pattern",
+    "category": "employment",
+    "naturally_binary": false,
+    "examples": ["night shifts", "9-to-5 weekdays"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Past employer names",
+    "category": "employment",
+    "naturally_binary": false,
+    "examples": ["IBM", "Starbucks"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Past job titles",
+    "category": "employment",
+    "naturally_binary": false,
+    "examples": ["Research Assistant", "Barista"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Professional license type",
+    "category": "employment",
+    "naturally_binary": false,
+    "examples": ["licensed architect", "registered nurse"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Professional license issuing region",
+    "category": "employment",
+    "naturally_binary": false,
+    "examples": ["California", "Ontario"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Professional membership organizations",
+    "category": "employment",
+    "naturally_binary": true,
+    "examples": ["State Bar Association member", "IEEE member"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Union or collective bargaining unit name",
+    "category": "employment",
+    "naturally_binary": false,
+    "examples": ["Teamsters Local 70", "Teachers' Union"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Typical workplace size",
+    "category": "employment",
+    "naturally_binary": false,
+    "examples": ["10-50 employees", "1000+ employees"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Self-employment or freelancer status",
+    "category": "employment",
+    "naturally_binary": true,
+    "examples": ["self-employed", "not self-employed"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Primary work location type",
+    "category": "employment",
+    "naturally_binary": false,
+    "examples": ["remote", "on-site"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Industry or sector classification code",
+    "category": "employment",
+    "naturally_binary": false,
+    "examples": ["541512", "622110"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Company-specific employee ID",
+    "category": "employment",
+    "naturally_binary": false,
+    "examples": ["E12345", "900876"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Approximate personal income bracket",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["$50k-$75k", "$150k-$200k"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Household income bracket",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["$25k-$50k", "$200k-$250k"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Primary bank or credit union name",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["Bank of America", "ING"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Credit-card issuer",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["Chase", "American Express"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Credit-card network",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["Visa", "Mastercard"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Home ownership vs renting",
+    "category": "financial",
+    "naturally_binary": true,
+    "examples": ["owns home", "rents home"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Mortgage provider name",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["Wells Fargo", "Nationwide"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Car ownership status",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["no car", "two cars"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Primary car make",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["Toyota", "BMW"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Primary car model and year",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["Toyota Corolla 2018", "Ford F-150 2022"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Leasing vs owning primary car",
+    "category": "financial",
+    "naturally_binary": true,
+    "examples": ["leases car", "owns car"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Health-insurance provider",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["Blue Cross", "Aetna"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Auto-insurance provider",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["GEICO", "Allstate"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Home-insurance provider",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["State Farm", "AXA"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Participation in government benefits programs",
+    "category": "financial",
+    "naturally_binary": true,
+    "examples": ["receives SNAP", "no benefits"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Frequent-flyer programs joined",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["United MileagePlus", "Delta SkyMiles"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Hotel loyalty programs joined",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["Marriott Bonvoy", "Hilton Honors"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Retail loyalty programs joined",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["Tesco Clubcard", "Nectar"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Subscription services",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["Netflix subscriber", "Spotify subscriber"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Average online spending per month",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["$0-$100", "$500-$1000"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Typical supermarket chain used",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["Walmart", "Carrefour"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Primary mobile-phone carrier",
+    "category": "financial",
+    "naturally_binary": false,
+    "examples": ["Verizon", "Vodafone"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Primary email domain",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["gmail.com", "yahoo.com"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Corporate email domain",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["openai.com", "company.co.uk"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Common online username or handle",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["dataNerd87", "catlover42"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Other known usernames or aliases",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["alt_account_1", "gameTag99"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Public IP address",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["203.0.113.4", "198.51.100.22"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "IP subnet or autonomous-system number",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["203.0.113.0/24", "AS15169"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Cookie identifiers",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["abc123xyz", "f93b7d9e"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Mobile advertising ID",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["AEBE52E7-03EE-455A-B3C4-E57283966239", "38400000-8cf0-11bd-b23e-10b96e40000d"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Device ID",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["9774d56d682e549c", "dd2c1f1a9c4e3f74"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Device type",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["smartphone", "laptop"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Device brand",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["Apple", "Samsung"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Device model",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["iPhone 14", "Galaxy S23"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Operating-system family",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["Android", "Windows"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Operating-system version",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["iOS 17.1", "Windows 11"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Browser family",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["Chrome", "Firefox"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Browser version",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["Chrome 125", "Firefox 118"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Installed fonts list",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["Arial, Times New Roman", "Roboto, Open Sans"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Screen resolution",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["1920x1080", "1280x720"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Timezone",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["UTC-5", "UTC+1"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Preferred language or locale setting",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["en-US", "fr-FR"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Browser plugins or extensions installed",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["uBlock Origin", "LastPass"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Wi-Fi SSID typically used at home",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["MyHomeWiFi", "SmithFamilyNet"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Wi-Fi BSSID or router MAC address",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["00:11:22:33:44:55", "AA:BB:CC:DD:EE:FF"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Nearby Bluetooth device names",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["John's AirPods", "Car Audio"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Social-media friend or follower graph structure",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["500 mutual Facebook friends", "10k Twitter followers mostly in UK"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Phone or email contact list",
+    "category": "digital",
+    "naturally_binary": false,
+    "examples": ["contacts: Alice, Bob, Carol", "email contacts: hr@company.com, mom@example.com"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Primary mode of transport for commute",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["drives car", "takes subway"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Typical commute distance or time",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["10 km", "45 minutes"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Regular commuting route",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["home to downtown via Highway 101", "home to campus via bus line 7"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Workday start and end time",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["09:00–17:30", "07:00–15:00"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Typical sleep schedule",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["23:00–07:00", "01:00–09:00"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Favorite sports",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["basketball", "tennis"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Favorite sports teams",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["FC Barcelona", "New York Yankees"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Participation in amateur sports leagues",
+    "category": "behavioral",
+    "naturally_binary": true,
+    "examples": ["plays in local soccer league", "does not participate"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Favorite music genres",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["hip hop", "classical"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Favorite bands or artists",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["BTS", "Taylor Swift"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Favorite movie genres",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["horror", "romantic comedy"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Favorite TV shows",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["Game of Thrones", "Breaking Bad"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Gaming platforms used",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["PlayStation", "PC"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Specific games played regularly",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["League of Legends", "Fortnite"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Hobbies",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["rock climbing", "knitting"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Gym membership and gym chain",
+    "category": "behavioral",
+    "naturally_binary": true,
+    "examples": ["member of Planet Fitness", "no gym membership"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Religious congregation",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["St. Peter's Church", "Masjid Al-Noor"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Volunteer organizations or NGOs involved with",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["local food bank volunteer", "Red Cross volunteer"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Clubs or societies",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["university chess club", "book club"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Typical cuisine preferences",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["vegan", "halal"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Smoking status",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["current smoker", "never smoked"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Alcohol consumption frequency",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["drinks weekly", "never drinks"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Dietary restrictions",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["gluten-free", "kosher"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Typical vacation destinations",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["Mediterranean beaches", "Alpine ski resorts"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Travel frequency",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["1–2 flights per year", "10+ flights per year"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Conference attendance patterns",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["annual tech conference attendee", "regular medical conferences"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Events attended",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["ran Boston Marathon", "attends Coachella"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Shopping habits",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["mostly online", "mostly in-store"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Preferred e-commerce platforms",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["Amazon", "Alibaba"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Social-media platforms used regularly",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["Instagram", "LinkedIn"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Messaging apps used regularly",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["WhatsApp", "Telegram"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "News sources commonly read",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["The Guardian", "CNN"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "YouTube or Twitch channels followed",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["Linus Tech Tips", "Pokimane"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Typical wake or sleep times on weekdays or weekends",
+    "category": "behavioral",
+    "naturally_binary": false,
+    "examples": ["wakes 06:30, bed 22:30", "wakes 10:00 on weekends"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Height",
+    "category": "health",
+    "naturally_binary": false,
+    "examples": ["170 cm", "6 ft 2 in"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Weight range or BMI category",
+    "category": "health",
+    "naturally_binary": false,
+    "examples": ["70–80 kg", "BMI 30–35"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Body build",
+    "category": "health",
+    "naturally_binary": false,
+    "examples": ["slim", "heavyset"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Eye color",
+    "category": "health",
+    "naturally_binary": false,
+    "examples": ["brown", "green"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Hair color",
+    "category": "health",
+    "naturally_binary": false,
+    "examples": ["black", "blond"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Natural hair color",
+    "category": "health",
+    "naturally_binary": false,
+    "examples": ["naturally brown", "naturally red"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Facial hair style",
+    "category": "health",
+    "naturally_binary": false,
+    "examples": ["full beard", "clean shaven"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Handedness",
+    "category": "health",
+    "naturally_binary": false,
+    "examples": ["left-handed", "right-handed"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Use of glasses or contact lenses",
+    "category": "health",
+    "naturally_binary": true,
+    "examples": ["wears glasses", "does not use correction"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Use of hearing aid",
+    "category": "health",
+    "naturally_binary": true,
+    "examples": ["uses hearing aid", "does not use hearing aid"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Visible tattoos",
+    "category": "health",
+    "naturally_binary": true,
+    "examples": ["tattoo on forearm", "no visible tattoos"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Visible piercings",
+    "category": "health",
+    "naturally_binary": true,
+    "examples": ["ear piercings", "no visible piercings"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Distinctive visible scars or birthmarks",
+    "category": "health",
+    "naturally_binary": true,
+    "examples": ["scar on cheek", "no notable marks"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Self-described fitness level",
+    "category": "health",
+    "naturally_binary": false,
+    "examples": ["sedentary", "very active"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Participation in specific athletic events",
+    "category": "health",
+    "naturally_binary": false,
+    "examples": ["completed Boston Marathon", "competed in Ironman"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Disability status",
+    "category": "health",
+    "naturally_binary": true,
+    "examples": ["has mobility impairment", "no reported disability"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Chronic condition status",
+    "category": "health",
+    "naturally_binary": false,
+    "examples": ["has type 2 diabetes", "has asthma"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Blood type",
+    "category": "health",
+    "naturally_binary": false,
+    "examples": ["O+", "AB-"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Pregnancy history",
+    "category": "health",
+    "naturally_binary": true,
+    "examples": ["has been pregnant", "never been pregnant"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Mental-health diagnosis",
+    "category": "health",
+    "naturally_binary": false,
+    "examples": ["diagnosed with depression", "diagnosed with anxiety"],
+    "typically_public": "no"
+  },
+  {
+    "attribute": "Use of wheelchair or other mobility device",
+    "category": "health",
+    "naturally_binary": true,
+    "examples": ["uses wheelchair", "does not use mobility device"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Criminal conviction history",
+    "category": "public_records",
+    "naturally_binary": true,
+    "examples": ["convicted of DUI in 2018", "no criminal convictions"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Criminal charge or arrest records",
+    "category": "public_records",
+    "naturally_binary": true,
+    "examples": ["arrested for protest in 2020", "never arrested"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Civil court cases involved in",
+    "category": "public_records",
+    "naturally_binary": true,
+    "examples": ["filed for bankruptcy", "party to civil lawsuit"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Marriage records",
+    "category": "public_records",
+    "naturally_binary": false,
+    "examples": ["married to Alex in 2015", "married to Jordan in 2008"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Divorce records",
+    "category": "public_records",
+    "naturally_binary": false,
+    "examples": ["divorced in 2019", "no divorce records"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Property ownership history",
+    "category": "public_records",
+    "naturally_binary": false,
+    "examples": ["owned condo at 5 Oak St 2010–2015", "owns house at 10 Pine Ave since 2018"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Business ownership or directorship roles",
+    "category": "public_records",
+    "naturally_binary": true,
+    "examples": ["director of ABC Ltd", "owner of XYZ LLC"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Patent filings as inventor or assignee",
+    "category": "public_records",
+    "naturally_binary": true,
+    "examples": ["inventor on US1234567", "assignee on EP2345678"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Academic publications as author",
+    "category": "public_records",
+    "naturally_binary": true,
+    "examples": ["author of 'Privacy in Big Data' (2019)", "co-author on 'Machine Learning Methods'"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Professional conference talks given",
+    "category": "public_records",
+    "naturally_binary": true,
+    "examples": ["speaker at NeurIPS 2021", "presenter at RSA Conference 2022"],
+    "typically_public": "yes"
+  },
+  {
+    "attribute": "Awards or prizes received",
+    "category": "public_records",
+    "naturally_binary": true,
+    "examples": ["recipient of Best Paper Award", "employee of the month"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Political donations made",
+    "category": "public_records",
+    "naturally_binary": true,
+    "examples": ["donated to Party A in 2020", "no recorded political donations"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Voter registration details",
+    "category": "public_records",
+    "naturally_binary": true,
+    "examples": ["registered Democrat in Precinct 12", "unaffiliated voter in Ward 3"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Participation in public petitions or open letters",
+    "category": "public_records",
+    "naturally_binary": true,
+    "examples": ["signed climate action petition", "signed open letter on AI safety"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Membership in professional associations",
+    "category": "public_records",
+    "naturally_binary": true,
+    "examples": ["member of ACM", "member of AMA"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Membership in hobby clubs or associations",
+    "category": "public_records",
+    "naturally_binary": true,
+    "examples": ["member of local cycling club", "member of photography society"],
+    "typically_public": "sometimes"
+  },
+  {
+    "attribute": "Past addresses",
+    "category": "location",
+    "naturally_binary": false,
+    "examples": ["lived at 12 Oak Street 2010–2013", "lived at 5 River Road 2013–2018"],
+    "typically_public": "sometimes"
+  }
+]
