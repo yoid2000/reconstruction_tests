@@ -825,7 +825,7 @@ def main():
         num_jobs = len(test_params) - 1  # Array range is 0 to num_jobs-1
         slurm_content = f"""#!/bin/bash
 #SBATCH --job-name=recon_test
-#SBATCH --output=/INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/slurm_out/out.%a.out
+#SBATCH --output=/INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/slurm_out/job_%A_%a.out
 #SBATCH --time=7-00:00:00
 #SBATCH --mem=10G
 #SBATCH --cpus-per-task=1
