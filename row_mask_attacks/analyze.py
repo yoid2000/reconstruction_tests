@@ -171,6 +171,8 @@ def get_experiment_dataframes(experiments, df):
         
         # Start with all rows - use df.index to ensure alignment
         mask = pd.Series([True] * len(df), index=df.index)
+        print(f"\nFiltering for experiment group '{exp_group}'")
+        print(f"Initial mask has {mask.sum()} rows (or {len(df) - mask.sum()} excluded)")
         
         # Filter by each parameter
         for param, values in exp.items():
@@ -180,9 +182,11 @@ def get_experiment_dataframes(experiments, df):
             if param in df.columns:
                 # Row must have value in the experiment's value list
                 # check if values is not a list, and if so convert to list
+                print(f"  Filtering by parameter '{param}' with values: {values}")
                 if not isinstance(values, list):
                     values = [values]
                 mask = mask & df[param].isin(values)
+                print(f"    Mask now has {mask.sum()} rows (or {len(df) - mask.sum()} excluded)")
         
         result[exp_group] = df[mask].copy()
         
@@ -339,15 +343,19 @@ def analyze():
         return
     
     df_all = pd.read_parquet(parquet_path)
+    # show count of all values for known_qi_fraction column
+    print("\nKnown_qi_fraction value counts:")
+    print(df_all['known_qi_fraction'].value_counts(dropna=False))
     if 'min_num_rows' in df_all.columns:
         df_all['min_num_rows'] = df_all['min_num_rows'] - 1
     if 'known_qi_fraction' in df_all.columns:
         # for all rows where solver_type != 'agg_known', set known_qi_fraction to 1.0
         df_all.loc[df_all['solve_type'] != 'agg_known', 'known_qi_fraction'] = 1.0
+    print("\nKnown_qi_fraction value counts:")
+    print(df_all['known_qi_fraction'].value_counts(dropna=False))
 
     cols_to_fill = [{'col': 'seed', 'value': -1},
                     {'col': 'solver_metrics_skipped_constraints', 'value': -1},
-                    {'col': 'known_qi_fraction', 'value': 1.0},
                    ]
     for item in cols_to_fill:
         col = item['col']
@@ -370,9 +378,8 @@ def analyze():
 
     # Make df_final, which removes rows where final_attack is False
     df_final = df_all[df_all['final_attack'] == True].copy()
+    print(f"\nFiltered to final_attack==True: {len(df_all)} rows -> {len(df_final)} rows")
 
-    plot_mixing_by_measure(df_all, Path('./results/plots'))
-    
     print(f"Loaded {len(df_all)} rows from {parquet_path}")
     print(f"\nColumns: {list(df_all.columns)}")
     print(f"\nDataFrame shape: {df_all.shape}")
@@ -386,12 +393,14 @@ def analyze():
     grouping_cols = ['solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'min_num_rows', 'known_qi_fraction']
     analyze_seed_effect(df_final, grouping_cols)
     df_grouped = group_by_experiment_parameters(df_final, grouping_cols)
+    print("\n nrows value counts:")
+    print(df_grouped['nrows'].value_counts(dropna=False))
     
     # print first row of df_grouped using to_string to show all columns
     print(f"\nFirst row of grouped dataframe:\n{df_grouped.iloc[0].to_string()}\n")
 
     # Read experiments and group dataframes
-    experiments = read_experiments()
+    experiments = read_experiments(tweak_min_num_rows=True)
     exp_dataframes = get_experiment_dataframes(experiments, df_grouped)
 
     x_y_group = ['measure', 'num_samples', 'mixing_avg', 'num_suppressed', 'solver_metrics_simplex_iterations', 'solver_metrics_runtime']
@@ -465,6 +474,7 @@ def analyze():
             print(f"ANALYSIS FOR {exp_group} EXPERIMENT GROUP")
             print(f"{'='*80}")
             analyze_single_parameter_variation(exp_df, experiments, exp_group)
+    plot_mixing_by_measure(df_all, Path('./results/plots'))
 
 def do_analysis_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, thresh: float = 0.95, tag: str = ""):
     print(f"\n\nANALYSIS BY X={x_col}, Y={y_col}, LINES={lines_col}, THRESH={thresh}")
@@ -590,7 +600,19 @@ def do_pure_dinur_basic_analysis(df, experiments=None, exp_group=None):
         })
     
     # Create correlation dataframe and sort by absolute Pearson correlation
-    corr_df = pd.DataFrame(correlations).sort_values('abs_pearson_r', ascending=False)
+    if not correlations:
+        corr_df = pd.DataFrame(columns=[
+            'column',
+            'pearson_r',
+            'pearson_p',
+            'spearman_r',
+            'spearman_p',
+            'abs_pearson_r',
+            'abs_spearman_r',
+            'n_samples',
+        ])
+    else:
+        corr_df = pd.DataFrame(correlations).sort_values('abs_pearson_r', ascending=False)
     
     # Print strong correlations (|r| > 0.3)
     print("\n\nSTRONG CORRELATIONS (|Pearson r| > 0.3):")
@@ -769,7 +791,19 @@ def do_agg_dinur_basic_analysis(df, experiments=None, exp_group=None):
         })
     
     # Create correlation dataframe and sort by absolute Pearson correlation
-    corr_df = pd.DataFrame(correlations).sort_values('abs_pearson_r', ascending=False)
+    if not correlations:
+        corr_df = pd.DataFrame(columns=[
+            'column',
+            'pearson_r',
+            'pearson_p',
+            'spearman_r',
+            'spearman_p',
+            'abs_pearson_r',
+            'abs_spearman_r',
+            'n_samples',
+        ])
+    else:
+        corr_df = pd.DataFrame(correlations).sort_values('abs_pearson_r', ascending=False)
     
     # Print strong correlations (|r| > 0.3)
     print("\n\nSTRONG CORRELATIONS (|Pearson r| > 0.3):")

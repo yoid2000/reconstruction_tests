@@ -3,7 +3,7 @@ import copy
 # Define parameter ranges
 experiments = [
     {   # Agg Dinur-style, test effect of nrows on low-nqi
-        'dont_run': False,
+        'dont_run': True,
         'experiment_group': 'temp',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -45,7 +45,7 @@ experiments = [
         'known_qi_fraction': [0.0, 0.25],
     },
     {   # Aggregated Dinur-style, best-case nqi=4
-        'dont_run': True,
+        'dont_run': False,
         'experiment_group': 'agg_dinur_best_case_nrows_nqi4',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -306,11 +306,13 @@ experiments = [
     },
 ]
 
-def read_experiments():
+def read_experiments(tweak_min_num_rows: bool = False):
     adjusted_experiments = copy.deepcopy(experiments)
-    for exp in adjusted_experiments:
-        if 'min_num_rows' in exp:
-            values = exp['min_num_rows']
-            if not isinstance(values, list):
-                values = [values]
+    if tweak_min_num_rows:
+        for exp in adjusted_experiments:
+            if 'min_num_rows' in exp:
+                values = exp['min_num_rows']
+                if not isinstance(values, list):
+                    values = [values]
+                exp['min_num_rows'] = [value - 1 for value in values]
     return adjusted_experiments
