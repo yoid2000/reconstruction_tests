@@ -4,7 +4,7 @@ from matplotlib.patches import Rectangle
 from pathlib import Path
 
 
-def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, thresh: float = 0.95, thresh_direction: str = 'lowest', tag = ''):
+def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, thresh: float = 0.95, thresh_direction: str = 'lowest', do_thresh: bool = True, show_defaults: bool = False, tag = ''):
     """Plot lowest/highest y value where measure >= threshold for each (x, lines) pair.
     
     For each pair of values (x, l) in x_col and lines_col, find the lowest or highest value y 
@@ -21,6 +21,19 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
         output_dir: Directory to save plot (default: results/plots)
     """
 
+    output_dir = Path('./results/plots')
+    output_dir.mkdir(parents=True, exist_ok=True)
+    thresh_str = ''
+    dir_str = ''
+    if y_col == 'noise' or x_col == 'noise':
+        thresh_str = f"{thresh:.3f}"
+        dir_str = thresh_direction
+    filename = f'x_{x_col}_y_{y_col}_l_{lines_col}_{thresh_str}_{dir_str}_{tag}.png'
+    filepath = output_dir / filename
+    if filepath.exists():
+        print(f"plot_by_x_y_lines: plot already exists: {filepath}; skipping plot")
+        return
+
     maps = {          'nrows': "Number rows",
                       'nunique': "Target values",
                       'noise': "Noise",
@@ -31,19 +44,18 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                       'known_qi_fraction': "Known QI fraction",
                       'measure': "Reconstruction accuracy",
                       'num_samples': "Number of samples",
+                      'mixing_avg': "Mixing average",
+                      'num_suppressed': "Number suppressed",
+                      'solver_metrics_runtime': "Solver runtime (s)",
                    }
     dashed_columns = {'nrows': 150,
                       'nunique': 2,
-                      'noise': 4,
+                      'noise': 2,
                       'nqi': 6,
-                      'min_num_rows': 5,
+                      'min_num_rows': 2,
                       'actual_vals_per_qi': 2,
                    }
-    thresh_str = ''
-    dir_str = ''
     reportable_columns = ['nrows', 'nunique', 'noise', 'nqi', 'min_num_rows', 'actual_vals_per_qi','known_qi_fraction']
-    output_dir = Path('./results/plots')
-    output_dir.mkdir(parents=True, exist_ok=True)
     
     if thresh_direction not in ['lowest', 'highest']:
         raise ValueError(f"thresh_direction must be 'lowest' or 'highest', got '{thresh_direction}'")
@@ -52,7 +64,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
     used_cols = {x_col, y_col, lines_col}
     display_cols = [col for col in reportable_columns if col not in used_cols and col in df.columns]
 
-    if y_col != 'noise' and x_col != 'noise':
+    if lines_col != 'noise' and y_col != 'noise' and x_col != 'noise':
         default_noise = dashed_columns.get('noise')
         df = df[df['noise'] == default_noise]
     
@@ -90,7 +102,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                 continue
             
             ylabel_note = ''
-            if y_col != 'noise' and x_col != 'noise':
+            if lines_col == 'noise' or (y_col != 'noise' and x_col != 'noise'):
                 if len(subset) != 1:
                     # throw exception
                     print(subset.to_string())
@@ -107,8 +119,6 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                 })
                 has_any_valid_data = True
             else:
-                thresh_str = f"{thresh:.3f}"
-                dir_str = thresh_direction
                 ylabel_note = f' (accuracy >= {thresh})'
                 # Original threshold-based logic for other y columns
                 # Find rows where measure >= thresh
@@ -146,7 +156,8 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
     markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x']
     
     # Color palette to avoid cycling repeats when there are many lines
-    cmap = plt.get_cmap('tab20')
+    #cmap = plt.get_cmap('tab20')        # has dark/light pairs
+    cmap = plt.get_cmap('tab10')
     reserved_dashed_color = '#444444'
     reserved_dashed_marker = 'X'
     color_idx = 0  # for non-dashed lines
@@ -162,8 +173,12 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
             
             x_vals = [p['x'] for p in line_data]
             y_vals = [p['y'] for p in line_data]
+            linestyle = 'solid'
+            linewidth = 2
             is_dashed_line = lines_col in dashed_columns and line_val == dashed_columns[lines_col]
             if is_dashed_line:
+                linestyle = 'dashed'
+                linewidth = 3
                 color = reserved_dashed_color
                 marker = reserved_dashed_marker
             else:
@@ -171,13 +186,6 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                 marker = markers[marker_idx % len(markers)]
                 color_idx += 1
                 marker_idx += 1
-            
-            # Determine if this line should be dashed
-            linestyle = 'solid'
-            linewidth = 2
-            if is_dashed_line:
-                linestyle = 'dashed'
-                linewidth = 2
             
             # Get display name for lines_col
             lines_display = maps.get(lines_col, lines_col)
@@ -197,6 +205,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                 linestyle=linestyle,
                 label=f'{lines_display}={display_line_val}',
                 color=color,
+                alpha=1.0,
             )
             
             # Highlight points that reached target_accuracy with a white dot overlay
@@ -208,7 +217,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                     ta_y,
                     marker=marker,
                     linestyle='none',
-                    markersize=5.5,
+                    markersize=8.0,
                     markerfacecolor='white',
                     markeredgecolor=color,
                     markeredgewidth=1.2,
@@ -224,7 +233,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
         none_y_pos = y_min_data
         
         # Check if we should use log scale
-        if all(y > 0 for y in y_values) and y_max_data / y_min_data > 10:
+        if all(y > 0 for y in y_values) and y_max_data / y_min_data > 30:
             ax.set_yscale('log')
     else:
         # No valid data points, only "None" labels
@@ -238,7 +247,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                 style='italic', color='red', fontweight='bold')
     
     # Add text box with reportable values
-    if reportable_values:
+    if show_defaults and reportable_values:
         text_lines = [f'{col}: {val}' for col, val in reportable_values.items()]
         text_str = '\n'.join(text_lines)
         
@@ -294,17 +303,25 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                               fontsize=8,
                               family='monospace')
 
-        # Draw an invisible rectangle around the text to discourage the legend from overlapping it
+        # Draw an invisible rectangle around the text unless it covers >=2 points
         fig.canvas.draw()
         renderer = fig.canvas.get_renderer()
         bbox_disp = text_artist.get_window_extent(renderer=renderer)
-        bbox_axes = bbox_disp.transformed(ax.transAxes.inverted())
-        reserve_patch = Rectangle((bbox_axes.x0, bbox_axes.y0),
-                                  bbox_axes.width, bbox_axes.height,
-                                  transform=ax.transAxes,
-                                  facecolor='none', edgecolor='none')
-        reserve_patch.set_in_layout(False)
-        ax.add_patch(reserve_patch)
+        bbox_data = bbox_disp.transformed(ax.transData.inverted())
+        overlap_count = sum(
+            1 for p in plot_data
+            if bbox_data.x0 <= p['x'] <= bbox_data.x1 and bbox_data.y0 <= p['y'] <= bbox_data.y1
+        )
+        if overlap_count >= 2:
+            text_artist.remove()
+        else:
+            bbox_axes = bbox_disp.transformed(ax.transAxes.inverted())
+            reserve_patch = Rectangle((bbox_axes.x0, bbox_axes.y0),
+                                      bbox_axes.width, bbox_axes.height,
+                                      transform=ax.transAxes,
+                                      facecolor='none', edgecolor='none')
+            reserve_patch.set_in_layout(False)
+            ax.add_patch(reserve_patch)
     
     # Set x-axis to show all x values and add margin on the left
     ax.set_xticks(x_values)
@@ -348,6 +365,18 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
     #ax.set_title(f'{thresh_direction.capitalize()} {y_display} (measure ≥ {thresh}) by {x_display} and {lines_display}')
     # Smaller, tighter legend to reduce footprint
     ax.legend(fontsize=9, framealpha=0.85, labelspacing=0.35, handlelength=1.8, borderpad=0.4)
+
+    # If using log scale on y, ensure the highest tick mark has a label
+    if ax.get_yscale() == 'log':
+        fig.canvas.draw()
+        yticks = ax.get_yticks()
+        formatter = ax.yaxis.get_major_formatter()
+        labels = [formatter(tick, idx) for idx, tick in enumerate(yticks)]
+        if labels and (labels[-1] is None or str(labels[-1]).strip() == ''):
+            labels[-1] = f"{yticks[-1]:g}"
+            ax.set_yticks(yticks)
+            ax.set_yticklabels(labels)
+
     ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
@@ -357,5 +386,5 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
         filename = f'x_{x_col}_y_{y_col}_l_{lines_col}_{thresh_str}_{dir_str}_{tag}.{plottype}'
         filepath = output_dir / filename
         plt.savefig(filepath)
+        print(f"Saved: {filepath}")
     plt.close()
-    print(f"Saved: {filepath}")

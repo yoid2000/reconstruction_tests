@@ -43,9 +43,8 @@ def generate_filename(params, target_accuracy) -> str:
 
 def mixing_stats(samples: List[Dict]) -> Dict:
     """ Computes mixing statistics for IDs across samples.
-    
-    For each ID pair that shares at least one sample, counts how many times they share a sample.
-    Returns min, max, avg, stddev, and median of these counts.
+
+    Mixing is a measure of how many times each pair of IDs appears together in the samples.
     
     Args:
         samples: List of dicts, each containing 'ids' (set of integer IDs)
@@ -326,7 +325,7 @@ def attack_loop(nrows: int,
                 noise: int,
                 nqi: int = 3,
                 target_accuracy: float = 0.99,
-                min_num_rows: int = 5,
+                min_num_rows: int = 3,
                 vals_per_qi: int = 2,
                 max_samples: int = 20000,
                 solve_type: str = 'agg_known',
@@ -344,7 +343,7 @@ def attack_loop(nrows: int,
         nqi: Number of quasi-identifier columns
         vals_per_qi: Number of distinct values per QI column (default: 0, means auto compute)
         target_accuracy: Target accuracy to stop early (default: 0.99)
-        min_num_rows: Minimum number of rows in any aggregate (default: 5)
+        min_num_rows: Minimum number of rows in any aggregate (default: 3)
         known_qi_fraction: Fraction of rows with known QI values (default: 0.0, range: 0.0-1.0)
         seed: Random seed for reproducibility (default: None)
         output_file: Path to JSON file to save results incrementally (default: None)
@@ -640,7 +639,7 @@ def main():
         'nunique': 2,
         'noise': 2,
         'nqi': 3,
-        'min_num_rows': 5,
+        'min_num_rows': 3,
         'vals_per_qi': 2,
         'known_qi_fraction': 1.0,
         'max_samples': max_samples,
@@ -727,7 +726,59 @@ def main():
     test_params = []
     
     seen = set()
+
+    finished_param_keys = set()
+    result_parquet = Path('./results/result.parquet')
+    if result_parquet.exists():
+        try:
+            results_df = pd.read_parquet(result_parquet)
+        except Exception as e:
+            print(f"Warning: could not read {result_parquet}: {e}")
+        else:
+            param_cols = [
+                'nrows',
+                'solve_type',
+                'mask_size',
+                'nunique',
+                'noise',
+                'nqi',
+                'min_num_rows',
+                'vals_per_qi',
+                'known_qi_fraction',
+                'max_samples',
+                'seed',
+            ]
+            missing_cols = [col for col in param_cols + ['finished'] if col not in results_df.columns]
+            if missing_cols:
+                print(f"Warning: {result_parquet} missing columns {missing_cols}; skipping finished filter.")
+            else:
+                int_cols = {
+                    'nrows',
+                    'mask_size',
+                    'nunique',
+                    'noise',
+                    'nqi',
+                    'min_num_rows',
+                    'vals_per_qi',
+                    'max_samples',
+                    'seed',
+                }
+                finished_df = results_df[results_df['finished'] == True]
+                for _, row in finished_df.iterrows():
+                    row_params = {}
+                    for col in param_cols:
+                        val = row[col]
+                        if pd.isna(val):
+                            row_params[col] = defaults.get(col)
+                        elif col in int_cols:
+                            row_params[col] = int(val)
+                        elif col == 'known_qi_fraction':
+                            row_params[col] = float(val)
+                        else:
+                            row_params[col] = val
+                    finished_param_keys.add(tuple(sorted(row_params.items())))
     
+    num_finished_jobs = 0
     for exp in experiments:
         if exp['dont_run'] is True:
             continue
@@ -758,6 +809,10 @@ def main():
                                                 'seed': seed,
                                             }
                                             key = tuple(sorted(params.items()))
+                                            if key in finished_param_keys:
+                                                num_finished_jobs += 1
+                                                print(key)
+                                                continue
                                             if key not in seen:
                                                 seen.add(key)
                                                 test_params.append(params)
@@ -772,7 +827,7 @@ def main():
         slurm_content = f"""#!/bin/bash
 #SBATCH --job-name=recon_test
 #SBATCH --output=/INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/slurm_out/out.%a.out
-#SBATCH --time=1-00:00:00
+#SBATCH --time=7-00:00:00
 #SBATCH --mem=10G
 #SBATCH --cpus-per-task=1
 #SBATCH --array=0-{num_jobs}
@@ -786,7 +841,7 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
             f.write(slurm_content)
         
         print(f"\nSLURM file created: {slurm_file}")
-        print(f"Total jobs: {len(test_params)} (array: 0-{num_jobs})")
+        print(f"Total jobs: {len(test_params)} (array: 0-{num_jobs}) out of which {num_finished_jobs} are already finished.")
         return
     
     # Check if job_num is valid

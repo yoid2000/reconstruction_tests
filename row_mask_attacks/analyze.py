@@ -27,6 +27,7 @@ from plotters import (
     plot_by_x_y_lines,
     make_noise_min_num_rows_table,
     plot_mixing_by_measure,
+    plot_mixing_by_param,
 )
 
 def analyze_single_parameter_variation(df: pd.DataFrame, experiments: list, exp_group: str):
@@ -338,6 +339,8 @@ def analyze():
         return
     
     df_all = pd.read_parquet(parquet_path)
+    if 'min_num_rows' in df_all.columns:
+        df_all['min_num_rows'] = df_all['min_num_rows'] - 1
     if 'known_qi_fraction' in df_all.columns:
         # for all rows where solver_type != 'agg_known', set known_qi_fraction to 1.0
         df_all.loc[df_all['solve_type'] != 'agg_known', 'known_qi_fraction'] = 1.0
@@ -390,6 +393,8 @@ def analyze():
     # Read experiments and group dataframes
     experiments = read_experiments()
     exp_dataframes = get_experiment_dataframes(experiments, df_grouped)
+
+    x_y_group = ['measure', 'num_samples', 'mixing_avg', 'num_suppressed', 'solver_metrics_simplex_iterations', 'solver_metrics_runtime']
     
     print(f"\nExperiment groups:")
     for exp_group, exp_df in exp_dataframes.items():
@@ -408,20 +413,46 @@ def analyze():
             do_agg_dinur_basic_analysis(exp_df, experiments, exp_group)
         elif exp_group == 'agg_dinur_explore_vals_per_qi_nrows':
             do_agg_dinur_explore_vals_per_qi_analysis(exp_df, experiments, exp_group)
-        elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nrows':
-            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', thresh=0.90)
-            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh_direction="highest", thresh=0.9)
-            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='solver_metrics_num_vars', lines_col='nrows', thresh_direction="highest", thresh=0.9)
-            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='num_samples', lines_col='nrows', thresh_direction="highest", thresh=0.9)
-            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='mixing_avg', lines_col='nrows', thresh_direction="highest", thresh=0.9)
         elif exp_group == 'agg_dinur_nrows_low_nqi':
             do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', thresh=0.90, tag="low_nqi")
+            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="low_nqi", do_thresh=False)
+            for ycol in x_y_group:
+                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="low_nqi", do_thresh=False)
+        elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nrows_mnr5':
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', thresh=0.90, tag="mnr5")
+            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr5")
+            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr5")
+            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='num_samples', lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr5")
+            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='mixing_avg', lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr5")
+        elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nunique_mnr5':
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nunique', thresh=0.90, tag="mnr5")
+        elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_vals_per_qi_mnr5':
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='actual_vals_per_qi', thresh=0.90, tag="mnr5")
+        elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nrows_mnr3':
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', thresh=0.90, tag="mnr3")
+            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr3")
+            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr3")
+            for ycol in x_y_group:
+                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr3", do_thresh=False)
+            plot_mixing_by_param(exp_df, param_col='nrows', tag="mnr3")
+        elif exp_group == 'agg_dinur_x_nqi_y_stuff_lines_noise_mnr3':
+            for ycol in x_y_group:
+                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='noise', thresh_direction="highest", thresh=0.9, tag="mnr3", do_thresh=False)
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_min_num_rows':
             do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='min_num_rows', thresh=0.90)
-        elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nunique':
-            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nunique', thresh=0.90)
-        elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_vals_per_qi':
-            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='actual_vals_per_qi', thresh=0.90)
+            for ycol in x_y_group:
+                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='min_num_rows', thresh_direction="highest", thresh=0.9, tag="", do_thresh=False)
+            plot_mixing_by_param(exp_df, param_col='min_num_rows', tag="")
+        elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nunique_mnr3':
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nunique', thresh=0.90, tag="mnr3")
+            for ycol in x_y_group:
+                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='nunique', thresh_direction="highest", thresh=0.9, tag="mnr3", do_thresh=False)
+            plot_mixing_by_param(exp_df, param_col='nunique', tag="mnr3")
+        elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_vals_per_qi_mnr3':
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='actual_vals_per_qi', thresh=0.90, tag="mnr3")
+            for ycol in x_y_group:
+                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='actual_vals_per_qi', thresh_direction="highest", thresh=0.9, tag="mnr3", do_thresh=False)
+            plot_mixing_by_param(exp_df, param_col='actual_vals_per_qi', tag="mnr3")
         elif exp_group == 'agg_dinur_best_case_nrows_nqi3':
             do_analysis_by_x_y_lines(exp_df, x_col='min_num_rows', y_col='noise', lines_col='nrows', thresh=0.90)
             make_noise_min_num_rows_table(exp_df, "nqi3")
