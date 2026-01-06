@@ -811,7 +811,6 @@ def main():
                                             key = tuple(sorted(params.items()))
                                             if key in finished_param_keys:
                                                 num_finished_jobs += 1
-                                                print(key)
                                                 continue
                                             if key not in seen:
                                                 seen.add(key)
