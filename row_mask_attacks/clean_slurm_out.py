@@ -18,7 +18,7 @@ def main() -> None:
 
     deleted = 0
     scanned = 0
-    for path in slurm_out_dir.glob("*.txt"):
+    for path in slurm_out_dir.glob("*.out"):
         scanned += 1
         try:
             text = path.read_text(errors="ignore")
