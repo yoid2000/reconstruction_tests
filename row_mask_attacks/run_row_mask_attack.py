@@ -747,6 +747,7 @@ def main():
                 'known_qi_fraction',
                 'max_samples',
                 'seed',
+                'target_accuracy',
             ]
             missing_cols = [col for col in param_cols + ['finished'] if col not in results_df.columns]
             if missing_cols:
@@ -773,13 +774,17 @@ def main():
                             row_params[col] = defaults.get(col)
                         elif col in int_cols:
                             row_params[col] = int(val)
-                        elif col == 'known_qi_fraction':
+                        elif col in ['known_qi_fraction', 'target_accuracy']:
                             row_params[col] = float(val)
                         else:
                             row_params[col] = val
-                    finished_param_keys.add(tuple(sorted(row_params.items())))
+                    file_name = generate_filename(row_params, row_params['target_accuracy'])
+                    finished_param_keys.add(file_name)
     
     num_finished_jobs = 0
+    for key in finished_param_keys:
+        #print(f"Finished: {key}")
+        pass
     for exp in experiments:
         if exp['dont_run'] is True:
             continue
@@ -809,12 +814,14 @@ def main():
                                                 'max_samples': max_samples,
                                                 'seed': seed,
                                             }
-                                            key = tuple(sorted(params.items()))
+                                            key = generate_filename(params, target_accuracy)
                                             if key in finished_param_keys:
                                                 num_finished_jobs += 1
+                                                #print(f"Matched: {key}")
                                                 continue
                                             if key not in seen:
                                                 seen.add(key)
+                                                #print(f"Adding: {key}")
                                                 test_params.append(params)
     
     # If no job_num, just print all combinations

@@ -162,5 +162,6 @@ def expected_mixing_M(
 
 # Example usage:
 if __name__ == "__main__":
-    R, C, D, T = 1000, 6, 10, 3
+    R, C, D, T = 8000, 3, 2, 2
+    print(f"Expected mixing M for rows={R}, columns={C}, distinct={D}, suppress={T}:")
     print(expected_mixing_M(R, C, D, T))
