@@ -764,6 +764,7 @@ def main():
                     'seed',
                 }
                 finished_df = results_df[results_df['finished'] == True]
+                finished_df.loc[finished_df['solve_type'] != 'agg_known', 'known_qi_fraction'] = 1.0
                 for _, row in finished_df.iterrows():
                     row_params = {}
                     for col in param_cols:
