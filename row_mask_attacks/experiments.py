@@ -45,7 +45,7 @@ experiments = [
         'known_qi_fraction': [0.0, 0.25],
     },
     {   # Aggregated Dinur-style, best-case nqi=4
-        'dont_run': False,
+        'dont_run': True,
         'experiment_group': 'agg_dinur_best_case_nrows_nqi4',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -58,7 +58,7 @@ experiments = [
         'vals_per_qi': [0],      # auto-select
     },
     {   # Aggregated Dinur-style, best-case nqi=3
-        'dont_run': True,
+        'dont_run': False,
         'experiment_group': 'agg_dinur_best_case_nrows_nqi3',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
