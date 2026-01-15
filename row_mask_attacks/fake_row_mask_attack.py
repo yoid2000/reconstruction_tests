@@ -493,7 +493,7 @@ def attack_loop(nrows: int,
             if not isinstance(result_entry, dict):
                 raise ValueError(f"attack_results entry {result_index} is not a dict.")
             expected_num_samples = result_entry.get('num_samples')
-            if expected_num_samples is None:
+            if seed is not None and expected_num_samples is None:
                 raise ValueError(f"attack_results entry {result_index} missing num_samples.")
             if len(samples) != expected_num_samples:
                 raise ValueError(f"Sample count mismatch at entry {result_index}: expected {expected_num_samples}, got {len(samples)}.")
@@ -666,6 +666,9 @@ def main():
         if 'known_qi_fraction' not in save_dict:
             # For backward compatibility, set to 0.0 if missing
             save_dict['known_qi_fraction'] = 0.0
+        if 'seed' not in save_dict:
+            # For backward compatibility, set to None if missing
+            save_dict['seed'] = None
         missing_keys = [key for key in required_keys if key not in save_dict]
         if missing_keys:
             raise ValueError(f"{file_path} missing required keys: {missing_keys}")
