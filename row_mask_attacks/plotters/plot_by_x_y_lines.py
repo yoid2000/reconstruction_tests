@@ -4,7 +4,7 @@ from matplotlib.patches import Rectangle
 from pathlib import Path
 
 
-def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, thresh: float = 0.95, thresh_direction: str = 'lowest', do_thresh: bool = True, show_defaults: bool = False, tag = ''):
+def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, thresh: float = 0.95, thresh_direction: str = 'lowest', show_defaults: bool = False, tag = '', extra_y_cols: list = []):
     """Plot lowest/highest y value where measure >= threshold for each (x, lines) pair.
     
     For each pair of values (x, l) in x_col and lines_col, find the lowest or highest value y 
@@ -89,6 +89,8 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
     
     # For each (x, line) pair, find the lowest/highest y value where measure >= thresh
     plot_data = []
+    extra_plot_datas = [[] for _ in extra_y_cols]
+    print('extra_plot_datas:', extra_plot_datas)
     x_values_with_none = set()  # Track x values where ALL lines have no valid data
     
     for x_val in x_values:
@@ -96,18 +98,18 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
         
         for line_val in line_values:
             # Filter to this (x, line) combination
-            subset = df[(df[x_col] == x_val) & (df[lines_col] == line_val)]
+            df_subset = df[(df[x_col] == x_val) & (df[lines_col] == line_val)]
             
-            if len(subset) == 0:
+            if len(df_subset) == 0:
                 continue
             
             ylabel_note = ''
             if lines_col == 'noise' or (y_col != 'noise' and x_col != 'noise'):
-                if len(subset) != 1:
+                if len(df_subset) != 1:
                     # throw exception
-                    print(subset.to_string())
-                    raise ValueError(f"Expected exactly one row for {x_col}={x_val}, {lines_col}={line_val}, got {len(subset)} rows")
-                row_used = subset.iloc[0]
+                    print(df_subset.to_string())
+                    raise ValueError(f"Expected exactly one row for {x_col}={x_val}, {lines_col}={line_val}, got {len(df_subset)} rows")
+                row_used = df_subset.iloc[0]
                 y_val = row_used[y_col]
                 target_accuracy = row_used.get('exit_reason') == 'target_accuracy'
                 
@@ -122,16 +124,16 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                 ylabel_note = f' (accuracy >= {thresh})'
                 # Original threshold-based logic for other y columns
                 # Find rows where measure >= thresh
-                valid_rows = subset[subset['measure'] >= thresh]
+                df_valid_rows = df_subset[df_subset['measure'] >= thresh]
                 
-                if len(valid_rows) > 0:
+                if len(df_valid_rows) > 0:
                     # Get the lowest or highest y value from rows that meet threshold
                     if thresh_direction == 'lowest':
-                        row_used = valid_rows.loc[valid_rows[y_col].idxmin()]
+                        row_used = df_valid_rows.loc[df_valid_rows[y_col].idxmin()]
                     elif thresh_direction == 'highest':
-                        row_used = valid_rows.loc[valid_rows[y_col].idxmax()]
+                        row_used = df_valid_rows.loc[df_valid_rows[y_col].idxmax()]
                     else:
-                        row_used = valid_rows.iloc[0]
+                        row_used = df_valid_rows.iloc[0]
                     y_val = row_used[y_col]
                     target_accuracy = row_used.get('exit_reason') == 'target_accuracy'
                     
@@ -141,6 +143,15 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                         'target_accuracy': False,
                         'line': line_val
                     })
+                    for extra_plot_data, extra_y_col in zip(extra_plot_datas, extra_y_cols):
+                        extra_y_val = row_used[extra_y_col]
+                        extra_plot_data.append({
+                            'x': x_val,
+                            'y': extra_y_val,
+                            'target_accuracy': target_accuracy,
+                            'line': line_val
+                        })
+                        print(f"Extra plot data added: x={x_val}, y={extra_y_val}, line={line_val}")
                     has_any_valid_data = True
         
         # If no line had valid data for this x value, mark it
@@ -151,6 +162,11 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
         print(f"No data points found")
         return
     
+    do_x_y_plot(df, plot_data, line_values, x_values, x_col, y_col, lines_col, ylabel_note, thresh_str, dir_str, output_dir, show_defaults, reportable_values, tag, dashed_columns, maps, x_values_with_none)
+    for extra_y_col, extra_plot_data in zip(extra_y_cols, extra_plot_datas):
+        do_x_y_plot(df, extra_plot_data, line_values, x_values, x_col, extra_y_col, lines_col, ylabel_note, thresh_str, dir_str, output_dir, show_defaults, reportable_values, f"{tag}_extra", dashed_columns, maps, x_values_with_none)
+
+def do_x_y_plot(df, plot_data, line_values, x_values, x_col, y_col, lines_col, ylabel_note, thresh_str, dir_str, output_dir, show_defaults, reportable_values, tag, dashed_columns, maps, x_values_with_none):
     # Create plot
     fig, ax = plt.subplots(figsize=(5, 4))
     markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x']
@@ -332,9 +348,9 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
         tick_labels = []
         for x_val in x_values:
             # Get actual_vals_per_qi for this nqi value
-            subset = df[df[x_col] == x_val]
-            if 'actual_vals_per_qi' in df.columns and len(subset) > 0:
-                actual_vals = subset['actual_vals_per_qi'].unique()
+            df_subset = df[df[x_col] == x_val]
+            if 'actual_vals_per_qi' in df.columns and len(df_subset) > 0:
+                actual_vals = df_subset['actual_vals_per_qi'].unique()
                 if len(actual_vals) == 1:
                     actual_val = int(actual_vals[0])  # Convert to integer
                     tick_labels.append(f'{x_val} ({actual_val})')

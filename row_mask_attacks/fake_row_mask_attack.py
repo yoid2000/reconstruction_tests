@@ -2,12 +2,10 @@ import pandas as pd
 from typing import List, Dict, Set
 import numpy as np
 import json
-import os
 import sys
 import time
 from pathlib import Path
 import pprint
-import argparse
 pp = pprint.PrettyPrinter(indent=2)
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -333,7 +331,8 @@ def attack_loop(nrows: int,
                 known_qi_fraction: float = 1.0,
                 seed: int = None,
                 output_file: Path = None,
-                cur_attack_results: List[Dict] = None) -> dict:
+                cur_attack_results: List[Dict] = None,
+                update_separation_only: bool = False) -> dict:
     """ Runs an iterative attack loop to reconstruct values from noisy samples.
     
     Args:
@@ -349,16 +348,25 @@ def attack_loop(nrows: int,
         seed: Random seed for reproducibility (default: None)
         output_file: Path to JSON file to save results incrementally (default: None)
         cur_attack_results: Previous attack results to resume from (default: None)
+        update_separation_only: When True, reuse cur_attack_results for metrics and
+            only compute and add separation to each entry (default: False)
     
     Returns:
-        dict
+        dict or List[Dict]
     """
     # Set random seed if provided
     if seed is not None:
         np.random.seed(seed)
     
-    # Check if we're resuming from prior results
-    if cur_attack_results is not None and len(cur_attack_results) > 0:
+    result_index = None
+    # Check if we're updating separation only
+    if update_separation_only:
+        if cur_attack_results is None or len(cur_attack_results) == 0:
+            raise ValueError("cur_attack_results is required when update_separation_only is True.")
+        results = cur_attack_results
+        current_num_samples = 10
+        result_index = 0
+    elif cur_attack_results is not None and len(cur_attack_results) > 0:
         last_result = cur_attack_results[-1]
         
         # If already achieved target accuracy, do nothing
@@ -427,6 +435,8 @@ def attack_loop(nrows: int,
     
     num_suppressed = 0
     while True:
+        if update_separation_only and result_index >= len(results):
+            raise ValueError(f"Loop produced more iterations than attack_results ({len(results)}).")
         # Start with initial binned samples, if any
         samples = initial_samples.copy()
         avg_num_masked = 0
@@ -475,63 +485,86 @@ def attack_loop(nrows: int,
             })
         
         # Reconstruct and measure
-        print(f"Begin {solve_type} reconstruction with {len(samples)} samples\n    (current_num_samples={current_num_samples}, initial_samples={len(initial_samples)}, qi_index={qi_index}, num_suppressed={num_suppressed})")
+        action = "separation update" if update_separation_only else "reconstruction"
+        print(f"Begin {solve_type} {action} with {len(samples)} samples\n    (current_num_samples={current_num_samples}, initial_samples={len(initial_samples)}, qi_index={qi_index}, num_suppressed={num_suppressed})")
         qi_match_accuracy = 0.0
-        if solve_type in ['pure_row', 'agg_row']:
-            reconstructed, num_equations, solver_metrics = reconstruct_by_row(samples, noise, seed)
-            accuracy = measure_by_row(df, reconstructed)
-        elif solve_type == 'agg_known':
-            # Filter complete_known_qi_rows to only those appearing in at least one sample
-            known_qi_rows = []
-            for known_qi_row in complete_known_qi_rows:
-                # Check if this known_qi_row matches any sample
-                for sample in samples:
-                    if 'qi_cols' in sample and 'qi_vals' in sample:
-                        # Check if any qi_cols in the sample match the known_qi_row
-                        match = False
-                        for col, val in zip(sample['qi_cols'], sample['qi_vals']):
-                            if known_qi_row.get(col) == val:
-                                match = True
-                                break
-                        if match:
-                            # This known_qi_row is covered by at least one sample
-                            known_qi_rows.append(known_qi_row)
-                            break
-            
-            if (len(known_qi_rows) != len(complete_known_qi_rows)):
-                # throw exception
-                print("Samples:")
-                pp.pprint(samples)
-                print("Complete known QI rows:")
-                pp.pprint(complete_known_qi_rows)
-                print("Filtered known QI rows:")
-                pp.pprint(known_qi_rows)
-                raise ValueError(f"Known QI rows used in reconstruction ({len(known_qi_rows)}) does not match total known QI rows ({len(complete_known_qi_rows)})")
-            reconstructed, num_equations, solver_metrics = reconstruct_by_aggregate_and_known_qi(samples, noise, nrows, all_qi_cols, complete_known_qi_rows, seed)
-            accuracy_measure = measure_by_aggregate(df, reconstructed)
-            accuracy = accuracy_measure['qi_and_val_match']
-            qi_match_accuracy = accuracy_measure['qi_match']
+        if update_separation_only:
+            result_entry = results[result_index]
+            if not isinstance(result_entry, dict):
+                raise ValueError(f"attack_results entry {result_index} is not a dict.")
+            expected_num_samples = result_entry.get('num_samples')
+            if expected_num_samples is None:
+                raise ValueError(f"attack_results entry {result_index} missing num_samples.")
+            if len(samples) != expected_num_samples:
+                raise ValueError(f"Sample count mismatch at entry {result_index}: expected {expected_num_samples}, got {len(samples)}.")
+            num_equations = result_entry['num_equations']
+            accuracy = result_entry['measure']
+            qi_match_accuracy = result_entry['qi_match_measure']
+            mixing = result_entry['mixing']
+            actual_num_rows = result_entry['actual_num_rows']
+            solver_metrics = result_entry['solver_metrics']
+            sep = compute_separation_metrics(samples)
         else:
-            raise ValueError(f"Unsupported solve_type: {solve_type}")
-        mixing = mixing_stats(samples)
-        sep = compute_separation_metrics(samples)
+            if solve_type in ['pure_row', 'agg_row']:
+                reconstructed, num_equations, solver_metrics = reconstruct_by_row(samples, noise, seed)
+                accuracy = measure_by_row(df, reconstructed)
+            elif solve_type == 'agg_known':
+                # Filter complete_known_qi_rows to only those appearing in at least one sample
+                known_qi_rows = []
+                for known_qi_row in complete_known_qi_rows:
+                    # Check if this known_qi_row matches any sample
+                    for sample in samples:
+                        if 'qi_cols' in sample and 'qi_vals' in sample:
+                            # Check if any qi_cols in the sample match the known_qi_row
+                            match = False
+                            for col, val in zip(sample['qi_cols'], sample['qi_vals']):
+                                if known_qi_row.get(col) == val:
+                                    match = True
+                                    break
+                            if match:
+                                # This known_qi_row is covered by at least one sample
+                                known_qi_rows.append(known_qi_row)
+                                break
+                
+                if (len(known_qi_rows) != len(complete_known_qi_rows)):
+                    # throw exception
+                    print("Samples:")
+                    pp.pprint(samples)
+                    print("Complete known QI rows:")
+                    pp.pprint(complete_known_qi_rows)
+                    print("Filtered known QI rows:")
+                    pp.pprint(known_qi_rows)
+                    raise ValueError(f"Known QI rows used in reconstruction ({len(known_qi_rows)}) does not match total known QI rows ({len(complete_known_qi_rows)})")
+                reconstructed, num_equations, solver_metrics = reconstruct_by_aggregate_and_known_qi(samples, noise, nrows, all_qi_cols, complete_known_qi_rows, seed)
+                accuracy_measure = measure_by_aggregate(df, reconstructed)
+                accuracy = accuracy_measure['qi_and_val_match']
+                qi_match_accuracy = accuracy_measure['qi_match']
+            else:
+                raise ValueError(f"Unsupported solve_type: {solve_type}")
+            mixing = mixing_stats(samples)
+            sep = compute_separation_metrics(samples)
 
         if solve_type in ['agg_row', 'agg_known']:
             num_masked = int(avg_num_masked / (len(samples) - len(initial_samples))) if (len(samples) - len(initial_samples)) > 0 else 0
             initial_samples = samples.copy()
         
         # Record results
-        results.append({
-            'num_samples': len(samples),
-            'num_equations': num_equations,
-            'measure': accuracy,
-            'qi_match_measure': qi_match_accuracy,
-            'mixing': mixing,
-            'actual_num_rows': num_masked,
-            'solver_metrics': solver_metrics,
-            'separation': sep,
-        })
-        pp.pprint(results[-1])
+        if update_separation_only:
+            results[result_index]['separation'] = sep
+            pp.pprint(results[result_index])
+            result_index += 1
+        else:
+            results.append({
+                'num_samples': len(samples),
+                'num_equations': num_equations,
+                'measure': accuracy,
+                'qi_match_measure': qi_match_accuracy,
+                'mixing': mixing,
+                'actual_num_rows': num_masked,
+                'solver_metrics': solver_metrics,
+                'separation': sep,
+            })
+            pp.pprint(results[-1])
         
         # Calculate elapsed time
         elapsed_time = time.time() - start_time
@@ -560,353 +593,114 @@ def attack_loop(nrows: int,
             finished = True
 
         # Save results incrementally if output file is provided
-        save_dict = {
-            'solve_type': solve_type,
-            'nrows': nrows,
-            'mask_size': mask_size,
-            'nunique': nunique,
-            'noise': noise,
-            'nqi': nqi,
-            'vals_per_qi': vals_per_qi,
-            'actual_vals_per_qi': actual_vals_per_qi,
-            'known_qi_fraction': known_qi_fraction,
-            'seed': seed,
-            'max_samples': max_samples,
-            'target_accuracy': target_accuracy,
-            'min_num_rows': min_num_rows,
-            'elapsed_time': elapsed_time,
-            'finished': finished,
-            'exit_reason': exit_reason,
-            'num_suppressed': num_suppressed,
-            'attack_results': results,
-        }
-        if output_file is not None:
-            with open(output_file, 'w') as f:
-                json.dump(save_dict, f, indent=2)
+        if not update_separation_only:
+            save_dict = {
+                'solve_type': solve_type,
+                'nrows': nrows,
+                'mask_size': mask_size,
+                'nunique': nunique,
+                'noise': noise,
+                'nqi': nqi,
+                'vals_per_qi': vals_per_qi,
+                'actual_vals_per_qi': actual_vals_per_qi,
+                'known_qi_fraction': known_qi_fraction,
+                'seed': seed,
+                'max_samples': max_samples,
+                'target_accuracy': target_accuracy,
+                'min_num_rows': min_num_rows,
+                'elapsed_time': elapsed_time,
+                'finished': finished,
+                'exit_reason': exit_reason,
+                'num_suppressed': num_suppressed,
+                'attack_results': results,
+            }
+            if output_file is not None:
+                with open(output_file, 'w') as f:
+                    json.dump(save_dict, f, indent=2)
             
         if finished:
             break
+    if update_separation_only and result_index != len(results):
+        raise ValueError(f"Loop ended after {result_index} iterations, expected {len(results)}.")
+    if update_separation_only:
+        return results
     return save_dict
         
 
 def main():
-    """Main function to run parameter sweep experiments."""
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Run row mask attack experiments')
-    parser.add_argument('job_num', type=int, nargs='?', default=None,
-                       help='Job number to run from parameter combinations')
-    parser.add_argument('--solve_type', type=str, default=None,
-                       help='Type of solve: pure_row, agg_row, agg_known')
-    parser.add_argument('--nrows', type=int, default=None,
-                       help='Number of rows')
-    parser.add_argument('--mask_size', type=int, default=None,
-                       help='Number of rows in each random sample')
-    parser.add_argument('--nunique', type=int, default=None,
-                       help='Number of unique values')
-    parser.add_argument('--noise', type=int, default=None,
-                       help='Noise bound')
-    parser.add_argument('--nqi', type=int, default=None,
-                       help='Number of quasi-identifier columns')
-    parser.add_argument('--min_num_rows', type=int, default=None,
-                       help='Minimum number of rows in any aggregate')
-    parser.add_argument('--vals_per_qi', type=int, default=None,
-                       help='Number of distinct values per QI column')
-    parser.add_argument('--known_qi_fraction', type=float, default=None,
-                       help='Fraction of rows with known QI values (0.0-1.0)')
-    parser.add_argument('--max_samples', type=int, default=None,
-                       help='Maximum number of samples to use before quitting')
-    parser.add_argument('--seed', type=int, default=None,
-                       help='Random seed for reproducibility')
-    
-    args = parser.parse_args()
-    
-    # Create directories
+    """Update separation metrics for existing results files."""
     results_dir = Path('./results/files')
-    attack_results_dir = results_dir
-    slurm_out_dir = Path('./slurm_out')
-    results_dir.mkdir(exist_ok=True)
-    attack_results_dir.mkdir(exist_ok=True)
-    slurm_out_dir.mkdir(exist_ok=True)
-    
-    # Read in the experiments data structure from experiments.py
-    from experiments import read_experiments
-    experiments = read_experiments()
-    
-    # Fixed parameters
-    max_samples = 20000
-    target_accuracy = 0.99
-    
-    # Defaults
-    defaults = {
-        'solve_type': 'agg_known',
-        'nrows': 100,
-        'mask_size': 20,
-        'nunique': 2,
-        'noise': 2,
-        'nqi': 3,
-        'min_num_rows': 3,
-        'vals_per_qi': 2,
-        'known_qi_fraction': 1.0,
-        'max_samples': max_samples,
-        'seed': None,
-    }
-    
-    # Check if any individual parameters were provided
-    individual_params_provided = any([
-        args.solve_type is not None,
-        args.nrows is not None,
-        args.mask_size is not None,
-        args.nunique is not None,
-        args.noise is not None,
-        args.nqi is not None,
-        args.min_num_rows is not None,
-        args.vals_per_qi is not None,
-        args.known_qi_fraction is not None,
-        args.max_samples is not None,
-        args.seed is not None
-    ])
-    
-    if individual_params_provided:
-        # Use command line parameters, falling back to defaults
-        params = {
-            'nrows': args.nrows if args.nrows is not None else defaults['nrows'],
-            'solve_type': args.solve_type if args.solve_type is not None else defaults['solve_type'],
-            'mask_size': args.mask_size if args.mask_size is not None else defaults['mask_size'],
-            'nunique': args.nunique if args.nunique is not None else defaults['nunique'],
-            'noise': args.noise if args.noise is not None else defaults['noise'],
-            'nqi': args.nqi if args.nqi is not None else defaults['nqi'],
-            'min_num_rows': args.min_num_rows if args.min_num_rows is not None else defaults['min_num_rows'],
-            'vals_per_qi': args.vals_per_qi if args.vals_per_qi is not None else defaults['vals_per_qi'],
-            'known_qi_fraction': args.known_qi_fraction if args.known_qi_fraction is not None else defaults['known_qi_fraction'],
-            'max_samples': args.max_samples if args.max_samples is not None else defaults['max_samples'],
-            'seed': args.seed if args.seed is not None else defaults['seed'],
-        }
-
-        file_name = generate_filename(params, target_accuracy)
-        file_path = attack_results_dir / f"{file_name}.json"
-        
-        # Load prior results if they exist
-        cur_attack_results = prior_job_results(file_path)
-        cur_attack_results_list = None
-        if cur_attack_results is not None:
-            cur_attack_results_list = cur_attack_results['attack_results']
-            if cur_attack_results['finished'] is True:
-                print(f"Attack already finished for parameters: {params}. Results in {file_path}")
-                return
-        
-        # Run attack_loop
-        print(f"Running with parameters: {params}")
-        
-        attack_loop(
-            nrows=params['nrows'],
-            nunique=params['nunique'],
-            mask_size=params['mask_size'],
-            noise=params['noise'],
-            nqi=params['nqi'],
-            max_samples=max_samples,
-            target_accuracy=target_accuracy,
-            min_num_rows=params['min_num_rows'],
-            vals_per_qi=params['vals_per_qi'],
-            known_qi_fraction=params['known_qi_fraction'],
-            solve_type=params['solve_type'],
-            seed=params['seed'],
-            output_file=file_path,
-            cur_attack_results=cur_attack_results_list,
-        )
-        
-        # Read back the saved file to get the final elapsed time
-        with open(file_path, 'r') as f:
-            final_results = json.load(f)
-        
-        print("Parameters:")
-        pp.pprint(params)
-        print(f"Results saved to {file_path}")
-        print(f"Elapsed time: {final_results['elapsed_time']:.2f} seconds")
-        print(f"Final accuracy: {final_results['attack_results'][-1]['measure']:.4f}")
-        print(f"Samples used: {final_results['attack_results'][-1]['num_samples']}")
-        
+    if not results_dir.exists():
+        print(f"Results directory not found: {results_dir}")
         return
-    
-    # Generate test parameter combinations
-    test_params = []
-    
-    seen = set()
 
-    finished_param_keys = set()
-    result_parquet = Path('./results/result.parquet')
-    if result_parquet.exists():
+    json_files = sorted(results_dir.glob('*.json'))
+    if not json_files:
+        print(f"No results files found under {results_dir}")
+        return
+
+    required_keys = [
+        'solve_type',
+        'nrows',
+        'mask_size',
+        'nunique',
+        'noise',
+        'nqi',
+        'vals_per_qi',
+        'known_qi_fraction',
+        'max_samples',
+        'target_accuracy',
+        'min_num_rows',
+        'seed',
+        'attack_results',
+    ]
+
+    for file_path in json_files:
         try:
-            results_df = pd.read_parquet(result_parquet)
+            with open(file_path, 'r') as f:
+                save_dict = json.load(f)
         except Exception as e:
-            print(f"Warning: could not read {result_parquet}: {e}")
-        else:
-            param_cols = [
-                'nrows',
-                'solve_type',
-                'mask_size',
-                'nunique',
-                'noise',
-                'nqi',
-                'min_num_rows',
-                'vals_per_qi',
-                'known_qi_fraction',
-                'max_samples',
-                'seed',
-                'target_accuracy',
-            ]
-            missing_cols = [col for col in param_cols + ['finished'] if col not in results_df.columns]
-            if missing_cols:
-                print(f"Warning: {result_parquet} missing columns {missing_cols}; skipping finished filter.")
-            else:
-                int_cols = {
-                    'nrows',
-                    'mask_size',
-                    'nunique',
-                    'noise',
-                    'nqi',
-                    'min_num_rows',
-                    'vals_per_qi',
-                    'max_samples',
-                    'seed',
-                }
-                finished_df = results_df[results_df['finished'] == True]
-                finished_df.loc[finished_df['solve_type'] != 'agg_known', 'known_qi_fraction'] = 1.0
-                for _, row in finished_df.iterrows():
-                    row_params = {}
-                    for col in param_cols:
-                        val = row[col]
-                        if pd.isna(val):
-                            row_params[col] = defaults.get(col)
-                        elif col in int_cols:
-                            row_params[col] = int(val)
-                        elif col in ['known_qi_fraction', 'target_accuracy']:
-                            row_params[col] = float(val)
-                        else:
-                            row_params[col] = val
-                    file_name = generate_filename(row_params, row_params['target_accuracy'])
-                    finished_param_keys.add(file_name)
-    
-    num_finished_jobs = 0
-    for key in finished_param_keys:
-        #print(f"Finished: {key}")
-        pass
-    for exp in experiments:
-        if exp['dont_run'] is True:
+            print(f"Error reading {file_path}: {e}")
             continue
-        # Get seed list from experiment, default to [None] if not specified
-        seed_list = exp.get('seed', [None])
-        # Get known_qi_fraction list from experiment, default to [1.0] if not specified
-        known_qi_fraction_list = exp.get('known_qi_fraction', [1.0])
-        for nrows in exp['nrows']:
-            for mask_size in exp['mask_size']:
-                for nunique in exp['nunique']:
-                    for noise in exp['noise']:
-                        for nqi in exp['nqi']:
-                            for min_num_rows in exp['min_num_rows']:
-                                for vals_per_qi in exp['vals_per_qi']:
-                                    for known_qi_fraction in known_qi_fraction_list:
-                                        for seed in seed_list:
-                                            params = {
-                                                'nrows': nrows,
-                                                'solve_type': exp['solve_type'],
-                                                'mask_size': mask_size,
-                                                'nunique': nunique,
-                                                'noise': noise,
-                                                'nqi': nqi,
-                                                'min_num_rows': min_num_rows,
-                                                'vals_per_qi': vals_per_qi,
-                                                'known_qi_fraction': known_qi_fraction,
-                                                'max_samples': max_samples,
-                                                'seed': seed,
-                                            }
-                                            key = generate_filename(params, target_accuracy)
-                                            if key in finished_param_keys:
-                                                num_finished_jobs += 1
-                                                #print(f"Matched: {key}")
-                                                continue
-                                            if key not in seen:
-                                                seen.add(key)
-                                                #print(f"Adding: {key}")
-                                                test_params.append(params)
-    
-    # If no job_num, just print all combinations
-    if args.job_num is None:
-        for i, params in enumerate(test_params):
-            print(f"Job {i}: {params}")
-        
-        # Create run.slurm file
-        num_jobs = len(test_params) - 1  # Array range is 0 to num_jobs-1
-        slurm_content = f"""#!/bin/bash
-#SBATCH --job-name=recon_test
-#SBATCH --output=/INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/slurm_out/job_%A_%a.out
-#SBATCH --time=7-00:00:00
-#SBATCH --mem=10G
-#SBATCH --cpus-per-task=1
-#SBATCH --array=0-{num_jobs}
-arrayNum="${{SLURM_ARRAY_TASK_ID}}"
-source /INS/syndiffix/work/paul/github/reconstruction_tests/.venv/bin/activate
-python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run_row_mask_attack.py $arrayNum
-"""
-        
-        slurm_file = Path(__file__).parent / 'run.slurm'
-        with open(slurm_file, 'w') as f:
-            f.write(slurm_content)
-        
-        print(f"\nSLURM file created: {slurm_file}")
-        print(f"Total jobs: {len(test_params)} (array: 0-{num_jobs}) out of which {num_finished_jobs} are already finished.")
-        return
-    
-    # Check if job_num is valid
-    if args.job_num < 0 or args.job_num >= len(test_params):
-        print(f"Error: job_num {args.job_num} out of range [0, {len(test_params)-1}]")
-        return
-    
-    # Get parameters for this job
-    params = test_params[args.job_num]
-    
-    # Generate filename
-    file_name = generate_filename(params, target_accuracy)
-    file_path = attack_results_dir / f"{file_name}.json"
-    
-    # Load prior results if they exist
-    cur_attack_results = prior_job_results(file_path)
-    cur_attack_results_list = None
-    if cur_attack_results is not None:
-        cur_attack_results_list = cur_attack_results['attack_results']
-        if cur_attack_results['finished'] is True:
-            print(f"Attack already finished for parameters: {params}. Results in {file_path}")
-            return
-    
-    # Run attack_loop
-    print(f"Running job {args.job_num}: {params}")
-    
-    attack_loop(
-        nrows=params['nrows'],
-        nunique=params['nunique'],
-        mask_size=params['mask_size'],
-        noise=params['noise'],
-        nqi=params['nqi'],
-        target_accuracy=target_accuracy,
-        min_num_rows=params['min_num_rows'],
-        vals_per_qi=params['vals_per_qi'],
-        known_qi_fraction=params['known_qi_fraction'],
-        max_samples=params['max_samples'],
-        solve_type=params['solve_type'],
-        seed=params['seed'],
-        output_file=file_path,
-        cur_attack_results=cur_attack_results_list,
-    )
-    
-    # Read back the saved file to get the final elapsed time
-    with open(file_path, 'r') as f:
-        final_results = json.load(f)
-    
-    print("Parmeters:")
-    pp.pprint(params)
-    print(f"Results saved to {file_path}")
-    print(f"Elapsed time: {final_results['elapsed_time']:.2f} seconds")
-    print(f"Final accuracy: {final_results['attack_results'][-1]['measure']:.4f}")
-    print(f"Samples used: {final_results['attack_results'][-1]['num_samples']}")
+
+        if 'known_qi_fraction' not in save_dict:
+            # For backward compatibility, set to 0.0 if missing
+            save_dict['known_qi_fraction'] = 0.0
+        missing_keys = [key for key in required_keys if key not in save_dict]
+        if missing_keys:
+            raise ValueError(f"{file_path} missing required keys: {missing_keys}")
+
+        attack_results = save_dict['attack_results']
+        if not isinstance(attack_results, list) or len(attack_results) == 0:
+            raise ValueError(f"{file_path} has no attack_results to update.")
+
+        if any(isinstance(entry, dict) and 'separation' in entry for entry in attack_results):
+            print(f"{file_path}: separation already present; doing nothing.")
+            continue
+
+        print(f"Updating separation for {file_path}")
+        updated_results = attack_loop(
+            nrows=save_dict['nrows'],
+            nunique=save_dict['nunique'],
+            mask_size=save_dict['mask_size'],
+            noise=save_dict['noise'],
+            nqi=save_dict['nqi'],
+            target_accuracy=save_dict['target_accuracy'],
+            min_num_rows=save_dict['min_num_rows'],
+            vals_per_qi=save_dict['vals_per_qi'],
+            known_qi_fraction=save_dict['known_qi_fraction'],
+            max_samples=save_dict['max_samples'],
+            solve_type=save_dict['solve_type'],
+            seed=save_dict['seed'],
+            cur_attack_results=attack_results,
+            update_separation_only=True,
+        )
+
+        save_dict['attack_results'] = updated_results
+        with open(file_path, 'w') as f:
+            json.dump(save_dict, f, indent=2)
+
+        print(f"Updated {file_path}")
 
 if __name__ == '__main__':
     main()
