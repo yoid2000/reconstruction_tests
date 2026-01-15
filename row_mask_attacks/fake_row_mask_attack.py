@@ -1,16 +1,15 @@
 import pandas as pd
 from typing import List, Dict, Set
 import numpy as np
+import argparse
 import json
 import sys
-import time
 from pathlib import Path
 import pprint
 pp = pprint.PrettyPrinter(indent=2)
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from df_builds.build_row_masks import build_row_masks, build_row_masks_qi, get_required_num_distinct
-from reconstruct import reconstruct_by_row, measure_by_row, reconstruct_by_aggregate, measure_by_aggregate, reconstruct_by_aggregate_and_known_qi
 from compute_separation import compute_separation_metrics
 
 solve_type_map = {
@@ -39,50 +38,6 @@ def generate_filename(params, target_accuracy) -> str:
                 f"st{solve_type_map[params['solve_type']]}_"
                 f"ms{params['max_samples']}_ta{int(target_accuracy*100)}{kqf_str}{seed_str}")
     return file_name
-
-def mixing_stats(samples: List[Dict]) -> Dict:
-    """ Computes mixing statistics for IDs across samples.
-
-    Mixing is a measure of how many times each pair of IDs appears together in the samples.
-    
-    Args:
-        samples: List of dicts, each containing 'ids' (set of integer IDs)
-    
-    Returns:
-        Dict with 'min', 'max', 'avg', 'stddev', 'median' statistics
-    """
-    # Track how many times each pair of IDs appears together
-    from collections import defaultdict
-    pair_counts = defaultdict(int)
-    
-    for sample in samples:
-        ids = list(sample['ids'])
-        # Count each unique pair in this sample
-        for i, id1 in enumerate(ids):
-            for id2 in ids[i+1:]:
-                # Use sorted tuple to ensure consistent pair representation
-                pair = tuple(sorted([id1, id2]))
-                pair_counts[pair] += 1
-    
-    # Get all count values
-    counts = list(pair_counts.values())
-    
-    if len(counts) == 0:
-        return {
-            'min': 0,
-            'max': 0,
-            'avg': 0.0,
-            'stddev': 0.0,
-            'median': 0.0
-        }
-    
-    return {
-        'min': int(np.min(counts)),
-        'max': int(np.max(counts)),
-        'avg': float(np.mean(counts)),
-        'stddev': float(np.std(counts)),
-        'median': float(np.median(counts))
-    }
 
 def get_qi_subset_list(df: pd.DataFrame, min_num_rows: int, target_num_rows: int) -> List[Dict]:
     """ Generates list of QI column subsets grouped by qi_cols.
@@ -330,10 +285,8 @@ def attack_loop(nrows: int,
                 solve_type: str = 'agg_known',
                 known_qi_fraction: float = 1.0,
                 seed: int = None,
-                output_file: Path = None,
-                cur_attack_results: List[Dict] = None,
-                update_separation_only: bool = False) -> dict:
-    """ Runs an iterative attack loop to reconstruct values from noisy samples.
+                cur_attack_results: List[Dict] = None) -> List[Dict]:
+    """ Runs an iterative attack loop to compute separation from noisy samples.
     
     Args:
         nrows: Number of rows in the dataframe
@@ -346,48 +299,20 @@ def attack_loop(nrows: int,
         min_num_rows: Minimum number of rows in any aggregate (default: 3)
         known_qi_fraction: Fraction of rows with known QI values (default: 0.0, range: 0.0-1.0)
         seed: Random seed for reproducibility (default: None)
-        output_file: Path to JSON file to save results incrementally (default: None)
-        cur_attack_results: Previous attack results to resume from (default: None)
-        update_separation_only: When True, reuse cur_attack_results for metrics and
-            only compute and add separation to each entry (default: False)
+        cur_attack_results: Previous attack results to update (required)
     
     Returns:
-        dict or List[Dict]
+        List[Dict]
     """
     # Set random seed if provided
     if seed is not None:
         np.random.seed(seed)
     
-    result_index = None
-    # Check if we're updating separation only
-    if update_separation_only:
-        if cur_attack_results is None or len(cur_attack_results) == 0:
-            raise ValueError("cur_attack_results is required when update_separation_only is True.")
-        results = cur_attack_results
-        current_num_samples = 10
-        result_index = 0
-    elif cur_attack_results is not None and len(cur_attack_results) > 0:
-        last_result = cur_attack_results[-1]
-        
-        # If already achieved target accuracy, do nothing
-        if last_result['measure'] >= target_accuracy:
-            print(f"Prior results already achieved target accuracy: {last_result['measure']:.4f}")
-            return {}
-
-        # Resume from prior results
-        print(f"Resuming from prior results with {last_result['num_samples']} samples, accuracy: {last_result['measure']:.4f}")
-        results = cur_attack_results
-        current_num_samples = last_result['num_samples'] - 1  # -1 for the all-IDs sample
-    else:
-        # Starting fresh
-        results = []
-        current_num_samples = 10
-    
-    save_dict = {}
-    # Start timing
-    start_time = time.time()
-    
-    actual_vals_per_qi = None
+    if cur_attack_results is None or len(cur_attack_results) == 0:
+        raise ValueError("cur_attack_results is required.")
+    results = cur_attack_results
+    current_num_samples = 10
+    result_index = 0
     # Build the ground truth dataframe
     if solve_type == 'pure_row':
         df = build_row_masks(nrows=nrows, nunique=nunique)
@@ -397,9 +322,6 @@ def attack_loop(nrows: int,
         # then we pretend that we are on auto-select so that we don't run extra jobs.
         if min_vals_per_qi > vals_per_qi:
             vals_per_qi = 0
-            actual_vals_per_qi = min_vals_per_qi
-        else:
-            actual_vals_per_qi = vals_per_qi
         df = build_row_masks_qi(nrows=nrows, nunique=nunique, nqi=nqi, vals_per_qi=vals_per_qi)
     
     # Generate complete_known_qi_rows if known_qi_fraction > 0
@@ -435,7 +357,7 @@ def attack_loop(nrows: int,
     
     num_suppressed = 0
     while True:
-        if update_separation_only and result_index >= len(results):
+        if result_index >= len(results):
             raise ValueError(f"Loop produced more iterations than attack_results ({len(results)}).")
         # Start with initial binned samples, if any
         samples = initial_samples.copy()
@@ -484,90 +406,37 @@ def attack_loop(nrows: int,
                 'noisy_counts': noisy_counts
             })
         
-        # Reconstruct and measure
-        action = "separation update" if update_separation_only else "reconstruction"
-        print(f"Begin {solve_type} {action} with {len(samples)} samples\n    (current_num_samples={current_num_samples}, initial_samples={len(initial_samples)}, qi_index={qi_index}, num_suppressed={num_suppressed})")
-        qi_match_accuracy = 0.0
-        if update_separation_only:
-            result_entry = results[result_index]
-            if not isinstance(result_entry, dict):
-                raise ValueError(f"attack_results entry {result_index} is not a dict.")
-            expected_num_samples = result_entry.get('num_samples')
-            if seed is not None and expected_num_samples is None:
-                raise ValueError(f"attack_results entry {result_index} missing num_samples.")
-            if len(samples) != expected_num_samples:
-                raise ValueError(f"Sample count mismatch at entry {result_index}: expected {expected_num_samples}, got {len(samples)}.")
-            num_equations = result_entry['num_equations']
-            accuracy = result_entry['measure']
-            qi_match_accuracy = result_entry['qi_match_measure']
-            mixing = result_entry['mixing']
-            actual_num_rows = result_entry['actual_num_rows']
-            solver_metrics = result_entry['solver_metrics']
-            sep = compute_separation_metrics(samples)
-        else:
-            if solve_type in ['pure_row', 'agg_row']:
-                reconstructed, num_equations, solver_metrics = reconstruct_by_row(samples, noise, seed)
-                accuracy = measure_by_row(df, reconstructed)
-            elif solve_type == 'agg_known':
-                # Filter complete_known_qi_rows to only those appearing in at least one sample
-                known_qi_rows = []
-                for known_qi_row in complete_known_qi_rows:
-                    # Check if this known_qi_row matches any sample
-                    for sample in samples:
-                        if 'qi_cols' in sample and 'qi_vals' in sample:
-                            # Check if any qi_cols in the sample match the known_qi_row
-                            match = False
-                            for col, val in zip(sample['qi_cols'], sample['qi_vals']):
-                                if known_qi_row.get(col) == val:
-                                    match = True
-                                    break
-                            if match:
-                                # This known_qi_row is covered by at least one sample
-                                known_qi_rows.append(known_qi_row)
-                                break
-                
-                if (len(known_qi_rows) != len(complete_known_qi_rows)):
-                    # throw exception
-                    print("Samples:")
-                    pp.pprint(samples)
-                    print("Complete known QI rows:")
-                    pp.pprint(complete_known_qi_rows)
-                    print("Filtered known QI rows:")
-                    pp.pprint(known_qi_rows)
-                    raise ValueError(f"Known QI rows used in reconstruction ({len(known_qi_rows)}) does not match total known QI rows ({len(complete_known_qi_rows)})")
-                reconstructed, num_equations, solver_metrics = reconstruct_by_aggregate_and_known_qi(samples, noise, nrows, all_qi_cols, complete_known_qi_rows, seed)
-                accuracy_measure = measure_by_aggregate(df, reconstructed)
-                accuracy = accuracy_measure['qi_and_val_match']
-                qi_match_accuracy = accuracy_measure['qi_match']
-            else:
-                raise ValueError(f"Unsupported solve_type: {solve_type}")
-            mixing = mixing_stats(samples)
-            sep = compute_separation_metrics(samples)
+        # Compute separation using stored metrics
+        print(f"Begin {solve_type} separation update with {len(samples)} samples\n    (current_num_samples={current_num_samples}, initial_samples={len(initial_samples)}, qi_index={qi_index}, num_suppressed={num_suppressed})")
+        result_entry = results[result_index]
+        if not isinstance(result_entry, dict):
+            raise ValueError(f"attack_results entry {result_index} is not a dict.")
+        expected_keys = [
+            'num_samples',
+            'num_equations',
+            'measure',
+            'qi_match_measure',
+            'mixing',
+            'actual_num_rows',
+            'solver_metrics',
+        ]
+        missing_keys = [key for key in expected_keys if key not in result_entry]
+        if missing_keys:
+            raise ValueError(f"attack_results entry {result_index} missing keys: {missing_keys}")
+        expected_num_samples = result_entry['num_samples']
+        if len(samples) != expected_num_samples:
+            raise ValueError(f"Sample count mismatch at entry {result_index}: expected {expected_num_samples}, got {len(samples)}.")
+        accuracy = result_entry['measure']
+        sep = compute_separation_metrics(samples)
 
         if solve_type in ['agg_row', 'agg_known']:
             num_masked = int(avg_num_masked / (len(samples) - len(initial_samples))) if (len(samples) - len(initial_samples)) > 0 else 0
             initial_samples = samples.copy()
         
         # Record results
-        if update_separation_only:
-            results[result_index]['separation'] = sep
-            pp.pprint(results[result_index])
-            result_index += 1
-        else:
-            results.append({
-                'num_samples': len(samples),
-                'num_equations': num_equations,
-                'measure': accuracy,
-                'qi_match_measure': qi_match_accuracy,
-                'mixing': mixing,
-                'actual_num_rows': num_masked,
-                'solver_metrics': solver_metrics,
-                'separation': sep,
-            })
-            pp.pprint(results[-1])
-        
-        # Calculate elapsed time
-        elapsed_time = time.time() - start_time
+        results[result_index]['separation'] = sep
+        pp.pprint(results[result_index])
+        result_index += 1
         
         finished = False
         exit_reason = ''
@@ -592,49 +461,49 @@ def attack_loop(nrows: int,
             exit_reason = 'max_samples'
             finished = True
 
-        # Save results incrementally if output file is provided
-        if not update_separation_only:
-            save_dict = {
-                'solve_type': solve_type,
-                'nrows': nrows,
-                'mask_size': mask_size,
-                'nunique': nunique,
-                'noise': noise,
-                'nqi': nqi,
-                'vals_per_qi': vals_per_qi,
-                'actual_vals_per_qi': actual_vals_per_qi,
-                'known_qi_fraction': known_qi_fraction,
-                'seed': seed,
-                'max_samples': max_samples,
-                'target_accuracy': target_accuracy,
-                'min_num_rows': min_num_rows,
-                'elapsed_time': elapsed_time,
-                'finished': finished,
-                'exit_reason': exit_reason,
-                'num_suppressed': num_suppressed,
-                'attack_results': results,
-            }
-            if output_file is not None:
-                with open(output_file, 'w') as f:
-                    json.dump(save_dict, f, indent=2)
-            
         if finished:
             break
-    if update_separation_only and result_index != len(results):
+    if result_index != len(results):
         raise ValueError(f"Loop ended after {result_index} iterations, expected {len(results)}.")
-    if update_separation_only:
-        return results
-    return save_dict
+    return results
         
 
 def main():
     """Update separation metrics for existing results files."""
+    parser = argparse.ArgumentParser(description='Update separation metrics for results files')
+    parser.add_argument('file_index', type=int, nargs='?', default=None,
+                       help='Index into all_files.json to process a single file')
+    args = parser.parse_args()
+
     results_dir = Path('./results/files')
     if not results_dir.exists():
         print(f"Results directory not found: {results_dir}")
         return
 
-    json_files = sorted(results_dir.glob('*.json'))
+    if args.file_index is not None:
+        all_files_path = Path(__file__).parent / 'all_files.json'
+        if not all_files_path.exists():
+            print(f"Missing all_files.json at {all_files_path}")
+            return
+        try:
+            with open(all_files_path, 'r') as f:
+                all_files = json.load(f)
+        except Exception as e:
+            print(f"Error reading {all_files_path}: {e}")
+            return
+        if not isinstance(all_files, list):
+            print(f"Expected a list in {all_files_path}")
+            return
+        if args.file_index < 0 or args.file_index >= len(all_files):
+            print(f"file_index {args.file_index} out of range [0, {len(all_files) - 1}]")
+            return
+        file_name = all_files[args.file_index]
+        json_files = [results_dir / file_name]
+        if not json_files[0].exists():
+            print(f"Results file not found: {json_files[0]}")
+            return
+    else:
+        json_files = sorted(results_dir.glob('*.json'))
     if not json_files:
         print(f"No results files found under {results_dir}")
         return
@@ -696,7 +565,6 @@ def main():
             solve_type=save_dict['solve_type'],
             seed=save_dict['seed'],
             cur_attack_results=attack_results,
-            update_separation_only=True,
         )
 
         save_dict['attack_results'] = updated_results
