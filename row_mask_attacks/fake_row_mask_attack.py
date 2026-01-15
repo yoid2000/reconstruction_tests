@@ -407,8 +407,10 @@ def attack_loop(nrows: int,
             })
         
         # Compute separation using stored metrics
-        print(f"Begin {solve_type} separation update with {len(samples)} samples\n    (current_num_samples={current_num_samples}, initial_samples={len(initial_samples)}, qi_index={qi_index}, num_suppressed={num_suppressed})")
+        print(f"Begin {solve_type} separation update with {len(samples)} samples\n    (current_num_samples={current_num_samples}, initial_samples={len(initial_samples)}, qi_index={qi_index}, num_suppressed={num_suppressed}, result_index={result_index})")
         result_entry = results[result_index]
+        print("Using result entry:")
+        pp.pprint(result_entry)
         if not isinstance(result_entry, dict):
             raise ValueError(f"attack_results entry {result_index} is not a dict.")
         expected_keys = [
@@ -435,7 +437,6 @@ def attack_loop(nrows: int,
         
         # Record results
         results[result_index]['separation'] = sep
-        pp.pprint(results[result_index])
         result_index += 1
         
         finished = False
@@ -532,11 +533,16 @@ def main():
             print(f"Error reading {file_path}: {e}")
             continue
 
+        print("====================== read file ======================")
+        pp.pprint(save_dict)
+        print("=======================================================")
         if 'known_qi_fraction' not in save_dict:
             # For backward compatibility, set to 0.0 if missing
+            print(f"{file_path}: adding missing known_qi_fraction=0.0")
             save_dict['known_qi_fraction'] = 0.0
         if 'seed' not in save_dict:
             # For backward compatibility, set to None if missing
+            print(f"{file_path}: adding missing seed=None")
             save_dict['seed'] = None
         missing_keys = [key for key in required_keys if key not in save_dict]
         if missing_keys:
