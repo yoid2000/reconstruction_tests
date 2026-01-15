@@ -58,6 +58,7 @@ def _compare_dicts(old: Any, new: Any) -> List[str]:
 def main() -> None:
     new_dir = Path('results/files')
     old_dir = Path('results/files_bk')
+    failed_files: List[str] = []
 
     if not new_dir.exists():
         print(f"Missing directory: {new_dir}")
@@ -71,6 +72,7 @@ def main() -> None:
         old_path = old_dir / new_path.name
         if not old_path.exists():
             print(f"{new_path.name}: missing backup file in {old_dir}")
+            failed_files.append(new_path.name)
             continue
 
         try:
@@ -78,6 +80,7 @@ def main() -> None:
                 new_data = json.load(f)
         except Exception as exc:
             print(f"{new_path.name}: failed to read new file ({exc})")
+            failed_files.append(new_path.name)
             continue
 
         try:
@@ -85,11 +88,18 @@ def main() -> None:
                 old_data = json.load(f)
         except Exception as exc:
             print(f"{new_path.name}: failed to read backup file ({exc})")
+            failed_files.append(new_path.name)
             continue
 
         reasons.extend(_compare_dicts(old_data, new_data))
         if reasons:
             print(f"{new_path.name}: " + "; ".join(reasons))
+            failed_files.append(new_path.name)
+
+    if failed_files:
+        all_files_path = Path(__file__).parent / 'all_files.json'
+        with open(all_files_path, 'w') as f:
+            json.dump(failed_files, f, indent=2)
 
 
 if __name__ == '__main__':
