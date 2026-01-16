@@ -273,6 +273,48 @@ def initialize_qi_samples(df: pd.DataFrame, nunique: int, noise: int, qi_subsets
     
     return initial_samples, qi_index
 
+def add_additional_samples(samples: List[Dict], df: pd.DataFrame, nunique: int, noise: int, num_new_samples: int, solve_type: str, qi_subsets: List[Dict], qi_index: int, num_masked: int, min_num_rows: int) -> List[Dict]:        
+    for _ in range(num_new_samples):
+        # Select random subset of IDs
+        qi_cols = []
+        qi_vals = []
+        if solve_type == 'pure_row':
+            masked_ids = set(np.random.choice(df['id'].values, size=num_masked, replace=False))
+        else:
+            if qi_index >= len(qi_subsets):
+                break
+            masked_ids = get_qi_subsets_mask(df, qi_subsets, qi_index)
+            qi_cols = qi_subsets[qi_index]['qi_cols']
+            qi_vals = qi_subsets[qi_index]['qi_vals']
+            qi_index += 1
+        
+        # Get exact counts for each value in the masked subset
+        masked_df = df[df['id'].isin(masked_ids)]
+        exact_counts = masked_df['val'].value_counts().to_dict()
+        
+        # Add noise to counts
+        noisy_counts = []
+        for val in range(nunique):
+            exact_count = exact_counts.get(val, 0)
+            if exact_count < min_num_rows:
+                continue
+            noise_delta = np.random.randint(-noise, noise + 1)
+            noisy_count = max(0, exact_count + noise_delta)
+            noisy_counts.append({'val': val, 'count': noisy_count})
+        
+        if len(noisy_counts) == 0:
+            # No counts above min_num_rows, skip this sample
+            continue
+
+        # Add sample
+        samples.append({
+            'ids': masked_ids,
+            'qi_cols': qi_cols,            # for agg_known attacks
+            'qi_vals': qi_vals,            # for agg_known attacks
+            'noisy_counts': noisy_counts
+        })
+    return samples
+        
 def attack_loop(nrows: int, 
                 nunique: int, 
                 mask_size: int, 
@@ -342,7 +384,7 @@ def attack_loop(nrows: int,
     
     print(f"Total known QI rows: {len(complete_known_qi_rows)}")
     initial_samples = []
-    num_masked = None
+    num_masked = 0        # used only with pure_row attacks
     qi_index = 0
     qi_subsets = []
     all_qi_cols = [col for col in df.columns if col.startswith('qi')]
@@ -428,10 +470,16 @@ def attack_loop(nrows: int,
         if missing_keys:
             raise ValueError(f"attack_results entry {result_index} missing keys: {missing_keys}")
         expected_num_samples = result_entry['num_samples']
-        if len(samples) != expected_num_samples:
-            raise ValueError(f"Sample count mismatch at entry {result_index}: expected {expected_num_samples}, got {len(samples)}.")
+
+
+        samples_copy = samples.copy()
+        if len(samples_copy) < expected_num_samples:
+            samples_copy = add_additional_samples(samples_copy, df, nunique, noise, expected_num_samples - len(samples_copy), solve_type, qi_subsets, qi_index, num_masked, min_num_rows)
+        elif len(samples_copy) > expected_num_samples:
+            samples_copy = samples_copy[:expected_num_samples]
         accuracy = result_entry['measure']
-        sep = compute_separation_metrics(samples)
+        # make a deep copy of samples
+        sep = compute_separation_metrics(samples_copy)
 
         if solve_type in ['agg_row', 'agg_known']:
             num_masked = int(avg_num_masked / (len(samples) - len(initial_samples))) if (len(samples) - len(initial_samples)) > 0 else 0
