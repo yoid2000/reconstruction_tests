@@ -358,7 +358,9 @@ def attack_loop(nrows: int,
     num_suppressed = 0
     while True:
         if result_index >= len(results):
-            raise ValueError(f"Loop produced more iterations than attack_results ({len(results)}).")
+            # This can happen when the original attack never finished
+            print(f"Reached end of results at index {result_index}, stopping loop.")
+            return results
         # Start with initial binned samples, if any
         samples = initial_samples.copy()
         avg_num_masked = 0
