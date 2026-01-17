@@ -474,8 +474,10 @@ def attack_loop(nrows: int,
 
         samples_copy = samples.copy()
         if len(samples_copy) < expected_num_samples:
+            print(f"Adding samples to expected {expected_num_samples} samples (currently {len(samples_copy)})")
             samples_copy = add_additional_samples(samples_copy, df, nunique, noise, expected_num_samples - len(samples_copy), solve_type, qi_subsets, qi_index, num_masked, min_num_rows)
         elif len(samples_copy) > expected_num_samples:
+            print(f"Removing samples to expected {expected_num_samples} samples (currently {len(samples_copy)})")
             samples_copy = samples_copy[:expected_num_samples]
         accuracy = result_entry['measure']
         # make a deep copy of samples
