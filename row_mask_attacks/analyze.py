@@ -403,7 +403,7 @@ def analyze():
     experiments = read_experiments(tweak_min_num_rows=True)
     exp_dataframes = get_experiment_dataframes(experiments, df_grouped)
 
-    x_y_group = ['measure', 'num_samples', 'mixing_avg', 'num_suppressed', 'solver_metrics_simplex_iterations', 'solver_metrics_runtime']
+    x_y_group = ['measure', 'num_samples', 'mixing_avg', 'separation_average', 'num_suppressed', 'solver_metrics_simplex_iterations', 'solver_metrics_runtime']
     
     print(f"\nExperiment groups:")
     for exp_group, exp_df in exp_dataframes.items():

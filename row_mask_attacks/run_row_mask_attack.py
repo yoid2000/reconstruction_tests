@@ -35,9 +35,11 @@ def generate_filename(params, target_accuracy) -> str:
     kqf_str = ""
     if params['solve_type'] == 'agg_known':
         kqf_str = f"_kqf{int(params['known_qi_fraction']*100)}"
+    max_qi = params.get('max_qi', 1000)
+    max_qi_str = f"_mq{max_qi}" if max_qi != 1000 else ""
     file_name = (f"nr{params['nrows']}_mf{params['mask_size']}_"
                 f"nu{params['nunique']}_qi{params['nqi']}_n{params['noise']}_"
-                f"mnr{params['min_num_rows']}_vpq{vals_per_qi}_"
+                f"mnr{params['min_num_rows']}_vpq{vals_per_qi}{max_qi_str}_"
                 f"st{solve_type_map[params['solve_type']]}_"
                 f"ms{params['max_samples']}_ta{int(target_accuracy*100)}{kqf_str}{seed_str}")
     return file_name
@@ -86,13 +88,14 @@ def mixing_stats(samples: List[Dict]) -> Dict:
         'median': float(np.median(counts))
     }
 
-def get_qi_subset_list(df: pd.DataFrame, min_num_rows: int, target_num_rows: int) -> List[Dict]:
+def get_qi_subset_list(df: pd.DataFrame, min_num_rows: int, target_num_rows: int, max_qi: int = 1000) -> List[Dict]:
     """ Generates list of QI column subsets grouped by qi_cols.
     
     Args:
         df: DataFrame with QI columns (qi0, qi1, ..., qiN)
         min_num_rows: Minimum number of rows in any aggregate (default: 5)
         target_num_rows: Target rows for sorting subsets
+        max_qi: Maximum subset size to consider
     
     Returns:
         List of subsets sorted by groups
@@ -107,10 +110,13 @@ def get_qi_subset_list(df: pd.DataFrame, min_num_rows: int, target_num_rows: int
     
     qi_subsets = []
     
-    # Iterate through subset sizes from 1 to nqi-1
+    # Iterate through subset sizes from 1 to min(nqi-1, max_qi)
     # (nqi columns would only have 1 row per combination since all combos are unique)
     num_subsets = 0
-    for subset_size in range(1, len(all_qi_cols)):
+    max_subset_size = min(len(all_qi_cols) - 1, max_qi)
+    if max_subset_size < 1:
+        return []
+    for subset_size in range(1, max_subset_size + 1):
         if num_subsets >= 20000:
             break
         # Get all combinations of qi columns of this size
@@ -331,6 +337,7 @@ def attack_loop(nrows: int,
                 max_samples: int = 20000,
                 solve_type: str = 'agg_known',
                 known_qi_fraction: float = 1.0,
+                max_qi: int = 1000,
                 seed: int = None,
                 output_file: Path = None,
                 cur_attack_results: List[Dict] = None) -> dict:
@@ -346,6 +353,7 @@ def attack_loop(nrows: int,
         target_accuracy: Target accuracy to stop early (default: 0.99)
         min_num_rows: Minimum number of rows in any aggregate (default: 3)
         known_qi_fraction: Fraction of rows with known QI values (default: 0.0, range: 0.0-1.0)
+        max_qi: Maximum subset size to consider for aggregate queries (default: 1000)
         seed: Random seed for reproducibility (default: None)
         output_file: Path to JSON file to save results incrementally (default: None)
         cur_attack_results: Previous attack results to resume from (default: None)
@@ -417,7 +425,7 @@ def attack_loop(nrows: int,
     qi_subsets = []
     all_qi_cols = [col for col in df.columns if col.startswith('qi')]
     if solve_type in ['agg_row', 'agg_known']:
-        qi_subsets = get_qi_subset_list(df, min_num_rows, int(round(min_num_rows * nunique * 1.5)))
+        qi_subsets = get_qi_subset_list(df, min_num_rows, int(round(min_num_rows * nunique * 1.5)), max_qi)
         initial_samples, qi_index = initialize_qi_samples(df, nunique, noise, qi_subsets)
         print(f"Total QI subsets available: {len(qi_subsets)}. qi_index {qi_index}.")
     else:
@@ -570,6 +578,7 @@ def attack_loop(nrows: int,
             'vals_per_qi': vals_per_qi,
             'actual_vals_per_qi': actual_vals_per_qi,
             'known_qi_fraction': known_qi_fraction,
+            'max_qi': max_qi,
             'seed': seed,
             'max_samples': max_samples,
             'target_accuracy': target_accuracy,
@@ -613,6 +622,8 @@ def main():
                        help='Number of distinct values per QI column')
     parser.add_argument('--known_qi_fraction', type=float, default=None,
                        help='Fraction of rows with known QI values (0.0-1.0)')
+    parser.add_argument('--max_qi', type=int, default=None,
+                       help='Maximum subset size for aggregate queries')
     parser.add_argument('--max_samples', type=int, default=None,
                        help='Maximum number of samples to use before quitting')
     parser.add_argument('--seed', type=int, default=None,
@@ -647,6 +658,7 @@ def main():
         'min_num_rows': 3,
         'vals_per_qi': 2,
         'known_qi_fraction': 1.0,
+        'max_qi': 1000,
         'max_samples': max_samples,
         'seed': None,
     }
@@ -662,6 +674,7 @@ def main():
         args.min_num_rows is not None,
         args.vals_per_qi is not None,
         args.known_qi_fraction is not None,
+        args.max_qi is not None,
         args.max_samples is not None,
         args.seed is not None
     ])
@@ -678,6 +691,7 @@ def main():
             'min_num_rows': args.min_num_rows if args.min_num_rows is not None else defaults['min_num_rows'],
             'vals_per_qi': args.vals_per_qi if args.vals_per_qi is not None else defaults['vals_per_qi'],
             'known_qi_fraction': args.known_qi_fraction if args.known_qi_fraction is not None else defaults['known_qi_fraction'],
+            'max_qi': args.max_qi if args.max_qi is not None else defaults['max_qi'],
             'max_samples': args.max_samples if args.max_samples is not None else defaults['max_samples'],
             'seed': args.seed if args.seed is not None else defaults['seed'],
         }
@@ -708,6 +722,7 @@ def main():
             min_num_rows=params['min_num_rows'],
             vals_per_qi=params['vals_per_qi'],
             known_qi_fraction=params['known_qi_fraction'],
+            max_qi=params['max_qi'],
             solve_type=params['solve_type'],
             seed=params['seed'],
             output_file=file_path,
@@ -750,11 +765,15 @@ def main():
                 'min_num_rows',
                 'vals_per_qi',
                 'known_qi_fraction',
+                'max_qi',
                 'max_samples',
                 'seed',
                 'target_accuracy',
             ]
             missing_cols = [col for col in param_cols + ['finished'] if col not in results_df.columns]
+            if 'max_qi' in missing_cols:
+                results_df['max_qi'] = defaults['max_qi']
+                missing_cols.remove('max_qi')
             if missing_cols:
                 print(f"Warning: {result_parquet} missing columns {missing_cols}; skipping finished filter.")
             else:
@@ -766,6 +785,7 @@ def main():
                     'nqi',
                     'min_num_rows',
                     'vals_per_qi',
+                    'max_qi',
                     'max_samples',
                     'seed',
                 }
@@ -797,37 +817,40 @@ def main():
         seed_list = exp.get('seed', [None])
         # Get known_qi_fraction list from experiment, default to [1.0] if not specified
         known_qi_fraction_list = exp.get('known_qi_fraction', [1.0])
+        max_qi_list = exp.get('max_qi', [defaults['max_qi']])
         for nrows in exp['nrows']:
             for mask_size in exp['mask_size']:
                 for nunique in exp['nunique']:
                     for noise in exp['noise']:
                         for nqi in exp['nqi']:
-                            for min_num_rows in exp['min_num_rows']:
-                                for vals_per_qi in exp['vals_per_qi']:
-                                    for known_qi_fraction in known_qi_fraction_list:
-                                        for seed in seed_list:
-                                            params = {
-                                                'nrows': nrows,
-                                                'solve_type': exp['solve_type'],
-                                                'mask_size': mask_size,
-                                                'nunique': nunique,
-                                                'noise': noise,
-                                                'nqi': nqi,
-                                                'min_num_rows': min_num_rows,
-                                                'vals_per_qi': vals_per_qi,
-                                                'known_qi_fraction': known_qi_fraction,
-                                                'max_samples': max_samples,
-                                                'seed': seed,
-                                            }
-                                            key = generate_filename(params, target_accuracy)
-                                            if key in finished_param_keys:
-                                                num_finished_jobs += 1
-                                                #print(f"Matched: {key}")
-                                                continue
-                                            if key not in seen:
-                                                seen.add(key)
-                                                #print(f"Adding: {key}")
-                                                test_params.append(params)
+                            for max_qi in max_qi_list:
+                                for min_num_rows in exp['min_num_rows']:
+                                    for vals_per_qi in exp['vals_per_qi']:
+                                        for known_qi_fraction in known_qi_fraction_list:
+                                            for seed in seed_list:
+                                                params = {
+                                                    'nrows': nrows,
+                                                    'solve_type': exp['solve_type'],
+                                                    'mask_size': mask_size,
+                                                    'nunique': nunique,
+                                                    'noise': noise,
+                                                    'nqi': nqi,
+                                                    'min_num_rows': min_num_rows,
+                                                    'vals_per_qi': vals_per_qi,
+                                                    'known_qi_fraction': known_qi_fraction,
+                                                    'max_qi': max_qi,
+                                                    'max_samples': max_samples,
+                                                    'seed': seed,
+                                                }
+                                                key = generate_filename(params, target_accuracy)
+                                                if key in finished_param_keys:
+                                                    num_finished_jobs += 1
+                                                    #print(f"Matched: {key}")
+                                                    continue
+                                                if key not in seen:
+                                                    seen.add(key)
+                                                    #print(f"Adding: {key}")
+                                                    test_params.append(params)
     
     # If no job_num, just print all combinations
     if args.job_num is None:
@@ -890,6 +913,7 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
         min_num_rows=params['min_num_rows'],
         vals_per_qi=params['vals_per_qi'],
         known_qi_fraction=params['known_qi_fraction'],
+        max_qi=params['max_qi'],
         max_samples=params['max_samples'],
         solve_type=params['solve_type'],
         seed=params['seed'],

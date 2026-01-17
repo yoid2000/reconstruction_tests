@@ -45,6 +45,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                       'measure': "Reconstruction accuracy",
                       'num_samples': "Number of samples",
                       'mixing_avg': "Mixing average",
+                      'separation_average': "Separation average",
                       'num_suppressed': "Number suppressed",
                       'solver_metrics_runtime': "Solver runtime (s)",
                    }

@@ -40,6 +40,8 @@ def gather_results() -> pd.DataFrame:
                 else:
                     actual_vals_per_qi = result['vals_per_qi']
                 result['actual_vals_per_qi'] = actual_vals_per_qi
+            if 'max_qi' not in result:
+                result['max_qi'] = 1000
             
             # Get top-level metadata (everything except attack_results)
             base_data = {'filename': json_file.name}
