@@ -326,6 +326,14 @@ def initialize_qi_samples(df: pd.DataFrame, nunique: int, noise: int, qi_subsets
     
     return initial_samples, qi_index
 
+def get_best_refine(attack_results: List[Dict]) -> int:
+    """Returns the highest integer refine value from attack_results."""
+    best_refine = -1
+    for entry in attack_results:
+        refine = entry.get('refine')
+        if isinstance(refine, int) and refine > best_refine:
+            best_refine = refine
+    return best_refine
 
 def attack_loop(nrows: int, 
                 nunique: int, 
@@ -373,24 +381,42 @@ def attack_loop(nrows: int,
         last_result = cur_attack_results[-1]
         
         # If already achieved target accuracy, do nothing
-        if last_result['measure'] >= target_accuracy:
+        refine_count = get_best_refine(cur_attack_results)
+        if refine_count >= max_refine:
             print(f"Prior results already achieved target accuracy: {last_result['measure']:.4f}")
             return {}
 
         # Resume from prior results
         print(f"Resuming from prior results with {last_result['num_samples']} samples, accuracy: {last_result['measure']:.4f}")
         results = cur_attack_results
-        current_num_samples = last_result['num_samples'] - 1  # -1 for the all-IDs sample
+        if last_result['measure'] >= target_accuracy:
+            current_num_samples = last_result['num_samples'] -1  # -1 for the all-IDs sample
+        else:
+            current_num_samples = last_result['num_samples'] * 2
     else:
         # Starting fresh
         results = []
-        current_num_samples = 10
+        current_num_samples = 0
+        refine_count = 0
     
     save_dict = {}
     # Start timing
     start_time = time.time()
     has_target_accuracy = False
-    refine_count = 0
+
+    def get_refine_bounds():
+        success_entries = [entry for entry in results if entry['measure'] >= target_accuracy]
+        if not success_entries:
+            return None, None
+        best_success = min(success_entries, key=lambda entry: entry['num_samples'])
+        failure_entries = [
+            entry for entry in results
+            if entry['measure'] < target_accuracy and entry['num_samples'] < best_success['num_samples']
+        ]
+        if not failure_entries:
+            return None, None
+        best_failure = max(failure_entries, key=lambda entry: entry['num_samples'])
+        return best_failure, best_success
     
     actual_vals_per_qi = None
     # Build the ground truth dataframe
@@ -424,72 +450,77 @@ def attack_loop(nrows: int,
 
     
     print(f"Total known QI rows: {len(complete_known_qi_rows)}")
-    initial_samples = []
+    working_samples = []
     num_masked = None
     qi_index = 0
     qi_subsets = []
     all_qi_cols = [col for col in df.columns if col.startswith('qi')]
     if solve_type in ['agg_row', 'agg_known']:
         qi_subsets = get_qi_subset_list(df, min_num_rows, int(round(min_num_rows * nunique * 1.5)), max_qi)
-        initial_samples, qi_index = initialize_qi_samples(df, nunique, noise, qi_subsets)
+        working_samples, qi_index = initialize_qi_samples(df, nunique, noise, qi_subsets)
         print(f"Total QI subsets available: {len(qi_subsets)}. qi_index {qi_index}.")
     else:
-        initial_samples = initialize_samples(df, mask_size, nunique, noise)
-        print(f"start with {len(initial_samples)} initial samples")
+        working_samples = initialize_samples(df, mask_size, nunique, noise)
+        print(f"start with {len(working_samples)} initial samples")
         num_masked = mask_size
+    if current_num_samples == 0:
+        current_num_samples = len(working_samples)
     
     num_suppressed = 0
     while True:
         current_refine = refine_count
         # Start with initial binned samples, if any
-        samples = initial_samples.copy()
+        samples = working_samples.copy()
         avg_num_masked = 0
-        
-        for _ in range(current_num_samples):
-            # Select random subset of IDs
-            qi_cols = []
-            qi_vals = []
-            if solve_type == 'pure_row':
-                masked_ids = set(np.random.choice(df['id'].values, size=num_masked, replace=False))
-            else:
-                if qi_index >= len(qi_subsets):
-                    print(f"Exhausted QI subsets at index {qi_index}")
-                    break
-                masked_ids = get_qi_subsets_mask(df, qi_subsets, qi_index)
-                avg_num_masked += len(masked_ids)
-                qi_cols = qi_subsets[qi_index]['qi_cols']
-                qi_vals = qi_subsets[qi_index]['qi_vals']
-                qi_index += 1
-            
-            # Get exact counts for each value in the masked subset
-            masked_df = df[df['id'].isin(masked_ids)]
-            exact_counts = masked_df['val'].value_counts().to_dict()
-            
-            # Add noise to counts
-            noisy_counts = []
-            for val in range(nunique):
-                exact_count = exact_counts.get(val, 0)
-                if exact_count < min_num_rows:
-                    num_suppressed += 1
-                    continue
-                noise_delta = np.random.randint(-noise, noise + 1)
-                noisy_count = max(0, exact_count + noise_delta)
-                noisy_counts.append({'val': val, 'count': noisy_count})
-            
-            if len(noisy_counts) == 0:
-                # No counts above min_num_rows, skip this sample
-                continue
 
-            # Add sample
-            samples.append({
-                'ids': masked_ids,
-                'qi_cols': qi_cols,            # for agg_known attacks
-                'qi_vals': qi_vals,            # for agg_known attacks
-                'noisy_counts': noisy_counts
-            })
+        if current_num_samples < len(working_samples):
+            samples = working_samples[:current_num_samples]
+        else:
+            for _ in range(current_num_samples - len(working_samples)):
+                # Select random subset of IDs
+                qi_cols = []
+                qi_vals = []
+                if solve_type == 'pure_row':
+                    masked_ids = set(np.random.choice(df['id'].values, size=num_masked, replace=False))
+                else:
+                    if qi_index >= len(qi_subsets):
+                        print(f"Exhausted QI subsets at index {qi_index}")
+                        break
+                    masked_ids = get_qi_subsets_mask(df, qi_subsets, qi_index)
+                    avg_num_masked += len(masked_ids)
+                    qi_cols = qi_subsets[qi_index]['qi_cols']
+                    qi_vals = qi_subsets[qi_index]['qi_vals']
+                    qi_index += 1
+                
+                # Get exact counts for each value in the masked subset
+                masked_df = df[df['id'].isin(masked_ids)]
+                exact_counts = masked_df['val'].value_counts().to_dict()
+                
+                # Add noise to counts
+                noisy_counts = []
+                for val in range(nunique):
+                    exact_count = exact_counts.get(val, 0)
+                    if exact_count < min_num_rows:
+                        num_suppressed += 1
+                        continue
+                    noise_delta = np.random.randint(-noise, noise + 1)
+                    noisy_count = max(0, exact_count + noise_delta)
+                    noisy_counts.append({'val': val, 'count': noisy_count})
+                
+                if len(noisy_counts) == 0:
+                    # No counts above min_num_rows, skip this sample
+                    continue
+
+                # Add sample
+                samples.append({
+                    'ids': masked_ids,
+                    'qi_cols': qi_cols,            # for agg_known attacks
+                    'qi_vals': qi_vals,            # for agg_known attacks
+                    'noisy_counts': noisy_counts
+                })
         
         # Reconstruct and measure
-        print(f"Begin {solve_type} reconstruction with {len(samples)} samples\n    (current_num_samples={current_num_samples}, initial_samples={len(initial_samples)}, qi_index={qi_index}, num_suppressed={num_suppressed})")
+        print(f"Begin {solve_type} reconstruction with {len(samples)} samples\n    (current_num_samples={current_num_samples}, working_samples={len(working_samples)}, qi_index={qi_index}, num_suppressed={num_suppressed})")
         qi_match_accuracy = 0.0
         if solve_type in ['pure_row', 'agg_row']:
             reconstructed, num_equations, solver_metrics = reconstruct_by_row(samples, noise, seed)
@@ -533,8 +564,8 @@ def attack_loop(nrows: int,
             has_target_accuracy = True
 
         if solve_type in ['agg_row', 'agg_known']:
-            num_masked = int(avg_num_masked / (len(samples) - len(initial_samples))) if (len(samples) - len(initial_samples)) > 0 else 0
-            initial_samples = samples.copy()
+            num_masked = int(avg_num_masked / (len(samples) - len(working_samples))) if (len(samples) - len(working_samples)) > 0 else 0
+            working_samples = samples.copy()
         
         # Record results
         current_result = {
@@ -550,17 +581,11 @@ def attack_loop(nrows: int,
         }
         results.append(current_result)
         if current_refine > 0:
-            if len(results) < 3:
-                raise ValueError("Refinement requires at least three results entries.")
-            last_three = results[-3:]
-            success_entries = [entry for entry in last_three if entry['measure'] >= target_accuracy]
-            failure_entries = [entry for entry in last_three if entry['measure'] < target_accuracy]
-            if not success_entries or not failure_entries:
+            best_failure, best_success = get_refine_bounds()
+            if best_failure is None or best_success is None:
                 raise ValueError("Refinement requires both success and failure results.")
-            best_success = min(success_entries, key=lambda entry: entry['num_samples'])
-            best_failure = max(failure_entries, key=lambda entry: entry['num_samples'])
-            remainder = [entry for entry in last_three if entry is not best_success and entry is not best_failure]
-            results[-3:] = remainder + [best_failure, best_success]
+            remainder = [entry for entry in results if entry is not best_failure and entry is not best_success]
+            results[:] = remainder + [best_failure, best_success]
         pp.pprint(current_result)
         
         # Calculate elapsed time
@@ -576,35 +601,42 @@ def attack_loop(nrows: int,
             exit_reason = 'no_more_qi_subsets'
 
         if not finished:
-            can_refine = (
-                has_target_accuracy
-                and len(results) >= 2
-                and results[-1]['measure'] >= target_accuracy
-                and results[-2]['measure'] < target_accuracy
-            )
-            if can_refine and current_refine < max_refine:
-                midpoint = int((results[-1]['num_samples'] + results[-2]['num_samples']) / 2)
-                if nqi == 0 and midpoint + len(initial_samples) > max_samples:
+            if has_target_accuracy:
+                best_failure, best_success = get_refine_bounds()
+                can_refine = (
+                    best_failure is not None
+                    and best_success is not None
+                    and current_refine < max_refine
+                )
+                if can_refine:
+                    if best_failure['num_samples'] >= best_success['num_samples']:
+                        print("Exit loop: Refinement interval invalid (failure >= success)")
+                        finished = True
+                        exit_reason = 'target_accuracy'
+                    else:
+                        midpoint = int((best_failure['num_samples'] + best_success['num_samples']) / 2)
+                        print(f"Refining: New midpoint = {midpoint} (between {best_failure['num_samples']} and {best_success['num_samples']})")
+                        print(f"Initial samples count: {len(working_samples)}")
+                        if midpoint <= best_failure['num_samples'] or midpoint >= best_success['num_samples']:
+                            print("Exit loop: Refinement interval collapsed")
+                            finished = True
+                            exit_reason = 'target_accuracy'
+                        else:
+                            refine_count = current_refine + 1
+                            current_num_samples = midpoint
+                else:
+                    print(f"Exit loop: Target accuracy {target_accuracy} achieved: {accuracy:.4f}")
+                    finished = True
+                    exit_reason = 'target_accuracy'
+            else:
+                next_samples = len(samples) * 2
+                if nqi == 0 and next_samples > max_samples:
                     print(f"Exit loop: Reached max samples limit: {max_samples}")
                     exit_reason = 'max_samples'
                     finished = True
                 else:
-                    refine_count = current_refine + 1
-                    current_num_samples = midpoint
-            else:
-                if has_target_accuracy:
-                    print(f"Exit loop: Target accuracy {target_accuracy} achieved: {accuracy:.4f}")
-                    finished = True
-                    exit_reason = 'target_accuracy'
-                else:
-                    next_samples = current_num_samples * 2
-                    if nqi == 0 and next_samples + len(initial_samples) > max_samples:
-                        print(f"Exit loop: Reached max samples limit: {max_samples}")
-                        exit_reason = 'max_samples'
-                        finished = True
-                    else:
-                        current_num_samples = next_samples
-                        refine_count = 0
+                    current_num_samples = next_samples
+                    refine_count = 0
 
         # Save results incrementally if output file is provided
         save_dict = {
@@ -782,6 +814,9 @@ def main():
         return
     
     # Generate test parameter combinations
+    max_time_minutes = 10     # We'll set slurm to this
+    # 2 minutes for overhead, convert to seconds, then divide by 10 to safely allow for multiple runs
+    time_include_threshold_seconds =  ((max_time_minutes-2) * 60) / 10
     test_params = []
     
     seen = set()
@@ -828,9 +863,17 @@ def main():
                     'max_samples',
                     'seed',
                 }
+                results_df.loc[results_df['solve_type'] != 'agg_known', 'known_qi_fraction'] = 1.0
                 finished_df = results_df[results_df['finished'] == True]
-                finished_df.loc[finished_df['solve_type'] != 'agg_known', 'known_qi_fraction'] = 1.0
-                for _, row in finished_df.iterrows():
+                include_df = pd.DataFrame()
+                if 'final_attack' in results_df.columns and 'solver_metrics_runtime' in results_df.columns:
+                    include_df = results_df[
+                        (results_df['finished'] == False)
+                        & (results_df['final_attack'] == True)
+                        & (results_df['solver_metrics_runtime'] < time_include_threshold_seconds)
+                    ]
+                combined_df = pd.concat([finished_df, include_df], ignore_index=True)
+                for _, row in combined_df.iterrows():
                     row_params = {}
                     for col in param_cols:
                         val = row[col]
@@ -901,7 +944,7 @@ def main():
         slurm_content = f"""#!/bin/bash
 #SBATCH --job-name=recon_test
 #SBATCH --output=/INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/slurm_out/job_%A_%a.out
-#SBATCH --time=7-00:00:00
+#SBATCH --time={max_time_minutes}
 #SBATCH --mem=10G
 #SBATCH --cpus-per-task=1
 #SBATCH --array=0-{num_jobs}
