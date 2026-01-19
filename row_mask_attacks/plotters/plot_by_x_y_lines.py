@@ -46,6 +46,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                       'num_samples': "Number of samples",
                       'mixing_avg': "Mixing average",
                       'separation_average': "Separation average",
+                      'max_qi': "Max QI columns",
                       'num_suppressed': "Number suppressed",
                       'solver_metrics_runtime': "Solver runtime (s)",
                    }
@@ -55,8 +56,9 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                       'nqi': 6,
                       'min_num_rows': 2,
                       'actual_vals_per_qi': 2,
-                   }
-    reportable_columns = ['nrows', 'nunique', 'noise', 'nqi', 'min_num_rows', 'actual_vals_per_qi','known_qi_fraction']
+                      'max_qi': 1000,
+                      }
+    reportable_columns = ['max_qi', 'nrows', 'nunique', 'noise', 'nqi', 'min_num_rows', 'actual_vals_per_qi','known_qi_fraction']
     
     if thresh_direction not in ['lowest', 'highest']:
         raise ValueError(f"thresh_direction must be 'lowest' or 'highest', got '{thresh_direction}'")
@@ -108,7 +110,10 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
             if lines_col == 'noise' or (y_col != 'noise' and x_col != 'noise'):
                 if len(df_subset) != 1:
                     # throw exception
-                    print(df_subset.to_string())
+                    for col in df_subset.columns:
+                        # check if all values in this column are the same
+                        if len(df_subset[col].unique()) > 1:
+                            print(f"Column '{col}' has multiple values for x={x_val}, {lines_col}={line_val}: {df_subset[col].unique()}")
                     raise ValueError(f"Expected exactly one row for {x_col}={x_val}, {lines_col}={line_val}, got {len(df_subset)} rows")
                 row_used = df_subset.iloc[0]
                 y_val = row_used[y_col]

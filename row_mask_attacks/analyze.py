@@ -71,7 +71,9 @@ def analyze_single_parameter_variation(df: pd.DataFrame, experiments: list, exp_
     
     # Result columns to analyze
     result_cols = ['num_samples', 'num_equations', 'measure', 'num_suppressed',
-                   'mixing_avg', 'mixing_min', 'mixing_max', 'mixing_median', 'elapsed_time', 'solver_metrics_runtime', 'solver_metrics_simplex_iterations', 'solver_metrics_num_vars', 'solver_metrics_num_constraints']
+                   'mixing_avg', 'mixing_min', 'mixing_max', 'mixing_median', 'elapsed_time', 'solver_metrics_runtime', 'solver_metrics_simplex_iterations', 'solver_metrics_num_vars', 'solver_metrics_num_constraints',
+                   'mix_times_sep', 'separation_average'
+    ]
     
     # Filter to columns that exist in the dataframe
     result_cols = [col for col in result_cols if col in df.columns]
@@ -173,6 +175,12 @@ def get_experiment_dataframes(experiments, df):
         mask = pd.Series([True] * len(df), index=df.index)
         print(f"\nFiltering for experiment group '{exp_group}'")
         print(f"Initial mask has {mask.sum()} rows (or {len(df) - mask.sum()} excluded)")
+
+        if 'max_qi' in df.columns and 'max_qi' not in exp:
+            default_max_qi = 1000
+            mask = mask & (df['max_qi'] == default_max_qi)
+            print(f"  Filtering by default max_qi={default_max_qi}")
+            print(f"    Mask now has {mask.sum()} rows (or {len(df) - mask.sum()} excluded)")
         
         # Filter by each parameter
         for param, values in exp.items():
@@ -376,6 +384,10 @@ def analyze():
     else:
         print("No NaN values found in dataframe")
 
+    # Make a new column mix_sep which is mixing_avg * separation_average
+    if 'mixing_avg' in df_all.columns and 'separation_average' in df_all.columns:
+        df_all['mix_times_sep'] = df_all['mixing_avg'] * df_all['separation_average']
+
     # Make df_final, which removes rows where final_attack is False
     df_final = df_all[df_all['final_attack'] == True].copy()
     print(f"\nFiltered to final_attack==True: {len(df_all)} rows -> {len(df_final)} rows")
@@ -390,7 +402,7 @@ def analyze():
     df_final = df_final[df_final['finished'] == True].copy()
     print(f"Remaining rows: {len(df_final)}")
 
-    grouping_cols = ['solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'min_num_rows', 'known_qi_fraction']
+    grouping_cols = ['max_qi', 'solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'min_num_rows', 'known_qi_fraction']
     analyze_seed_effect(df_final, grouping_cols)
     df_grouped = group_by_experiment_parameters(df_final, grouping_cols)
     print("\n nrows value counts:")
@@ -403,7 +415,7 @@ def analyze():
     experiments = read_experiments(tweak_min_num_rows=True)
     exp_dataframes = get_experiment_dataframes(experiments, df_grouped)
 
-    x_y_group = ['measure', 'num_samples', 'mixing_avg', 'separation_average', 'num_suppressed', 'solver_metrics_simplex_iterations', 'solver_metrics_runtime']
+    x_y_group = ['measure', 'num_samples', 'mixing_avg', 'separation_average', 'num_suppressed', 'solver_metrics_simplex_iterations', 'solver_metrics_runtime', 'mix_times_sep']
     
     print(f"\nExperiment groups:")
     for exp_group, exp_df in exp_dataframes.items():
@@ -442,6 +454,7 @@ def analyze():
             plot_by_x_y_lines(exp_df, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr3")
             plot_by_x_y_lines(exp_df, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr3")
             for ycol in x_y_group:
+                print(f"\n################## Plotting {ycol} vs nqi with nrows lines for mnr3")
                 plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr3", )
             plot_mixing_by_param(exp_df, param_col='nrows', tag="mnr3")
         elif exp_group == 'agg_dinur_x_nqi_y_stuff_lines_noise_mnr3':
@@ -457,6 +470,11 @@ def analyze():
             for ycol in x_y_group:
                 plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='nunique', thresh_direction="highest", thresh=0.9, tag="mnr3", )
             plot_mixing_by_param(exp_df, param_col='nunique', tag="mnr3")
+        elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_max_qi_mnr3':
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='max_qi', thresh=0.90, tag="mnr3")
+            for ycol in x_y_group:
+                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='max_qi', thresh_direction="highest", thresh=0.9, tag="mnr3", )
+            plot_mixing_by_param(exp_df, param_col='max_qi', tag="mnr3")
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_vals_per_qi_mnr3':
             do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='actual_vals_per_qi', thresh=0.90, tag="mnr3")
             for ycol in x_y_group:

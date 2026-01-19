@@ -56,11 +56,11 @@ experiments = [
         'vals_per_qi': [0],      # auto-select
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=max_qi
-        'dont_run': False,
-        'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_maxqi_mnr3',
+        'dont_run': True,
+        'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_max_qi_mnr3',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
-        'max_qi': [2,3,4,5,6],
+        'max_qi': [2,3,4,5,6,1000],
         'nrows': [150],
         'mask_size': [0],
         'nunique': [2],
