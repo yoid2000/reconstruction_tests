@@ -23,7 +23,7 @@ def update_results_file(file_path: Path) -> bool:
         if not isinstance(entry, dict):
             print(f"{file_path.name}: attack_results[{idx}] is not a dict")
             return False
-        entry['refine'] = None
+        entry['refine'] = 0
 
     if data.get('solve_type') == 'agg_row':
         data['known_qi_fraction'] = 1.0

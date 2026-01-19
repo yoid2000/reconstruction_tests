@@ -339,7 +339,6 @@ def attack_loop(nrows: int,
                 solve_type: str = 'agg_known',
                 known_qi_fraction: float = 1.0,
                 max_qi: int = 1000,
-                max_refine: int = 2,
                 seed: int = None,
                 output_file: Path = None,
                 cur_attack_results: List[Dict] = None) -> dict:
@@ -356,7 +355,6 @@ def attack_loop(nrows: int,
         min_num_rows: Minimum number of rows in any aggregate (default: 3)
         known_qi_fraction: Fraction of rows with known QI values (default: 0.0, range: 0.0-1.0)
         max_qi: Maximum subset size to consider for aggregate queries (default: 1000)
-        max_refine: Maximum number of refinement iterations (default: 2)
         seed: Random seed for reproducibility (default: None)
         output_file: Path to JSON file to save results incrementally (default: None)
         cur_attack_results: Previous attack results to resume from (default: None)
@@ -389,8 +387,6 @@ def attack_loop(nrows: int,
     save_dict = {}
     # Start timing
     start_time = time.time()
-    has_target_accuracy = False
-    refine_count = 0
     
     actual_vals_per_qi = None
     # Build the ground truth dataframe
@@ -440,7 +436,6 @@ def attack_loop(nrows: int,
     
     num_suppressed = 0
     while True:
-        current_refine = refine_count
         # Start with initial binned samples, if any
         samples = initial_samples.copy()
         avg_num_masked = 0
@@ -529,15 +524,13 @@ def attack_loop(nrows: int,
             raise ValueError(f"Unsupported solve_type: {solve_type}")
         mixing = mixing_stats(samples)
         sep = compute_separation_metrics(samples)
-        if accuracy >= target_accuracy:
-            has_target_accuracy = True
 
         if solve_type in ['agg_row', 'agg_known']:
             num_masked = int(avg_num_masked / (len(samples) - len(initial_samples))) if (len(samples) - len(initial_samples)) > 0 else 0
             initial_samples = samples.copy()
         
         # Record results
-        current_result = {
+        results.append({
             'num_samples': len(samples),
             'num_equations': num_equations,
             'measure': accuracy,
@@ -546,22 +539,8 @@ def attack_loop(nrows: int,
             'actual_num_rows': num_masked,
             'solver_metrics': solver_metrics,
             'separation': sep,
-            'refine': current_refine,
-        }
-        results.append(current_result)
-        if current_refine > 0:
-            if len(results) < 3:
-                raise ValueError("Refinement requires at least three results entries.")
-            last_three = results[-3:]
-            success_entries = [entry for entry in last_three if entry['measure'] >= target_accuracy]
-            failure_entries = [entry for entry in last_three if entry['measure'] < target_accuracy]
-            if not success_entries or not failure_entries:
-                raise ValueError("Refinement requires both success and failure results.")
-            best_success = min(success_entries, key=lambda entry: entry['num_samples'])
-            best_failure = max(failure_entries, key=lambda entry: entry['num_samples'])
-            remainder = [entry for entry in last_three if entry is not best_success and entry is not best_failure]
-            results[-3:] = remainder + [best_failure, best_success]
-        pp.pprint(current_result)
+        })
+        pp.pprint(results[-1])
         
         # Calculate elapsed time
         elapsed_time = time.time() - start_time
@@ -570,41 +549,24 @@ def attack_loop(nrows: int,
         exit_reason = ''
 
         # Check stopping conditions
+        if accuracy >= target_accuracy:
+            print(f"Exit loop: Target accuracy {target_accuracy} achieved: {accuracy:.4f}")
+            finished = True
+            exit_reason = 'target_accuracy'
+
         if nqi > 0 and qi_index >= len(qi_subsets):
             print("Exit loop: No more QI subsets to use")
             finished = True
             exit_reason = 'no_more_qi_subsets'
-
-        if not finished:
-            can_refine = (
-                has_target_accuracy
-                and len(results) >= 2
-                and results[-1]['measure'] >= target_accuracy
-                and results[-2]['measure'] < target_accuracy
-            )
-            if can_refine and current_refine < max_refine:
-                midpoint = int((results[-1]['num_samples'] + results[-2]['num_samples']) / 2)
-                if nqi == 0 and midpoint + len(initial_samples) > max_samples:
-                    print(f"Exit loop: Reached max samples limit: {max_samples}")
-                    exit_reason = 'max_samples'
-                    finished = True
-                else:
-                    refine_count = current_refine + 1
-                    current_num_samples = midpoint
-            else:
-                if has_target_accuracy:
-                    print(f"Exit loop: Target accuracy {target_accuracy} achieved: {accuracy:.4f}")
-                    finished = True
-                    exit_reason = 'target_accuracy'
-                else:
-                    next_samples = current_num_samples * 2
-                    if nqi == 0 and next_samples + len(initial_samples) > max_samples:
-                        print(f"Exit loop: Reached max samples limit: {max_samples}")
-                        exit_reason = 'max_samples'
-                        finished = True
-                    else:
-                        current_num_samples = next_samples
-                        refine_count = 0
+        
+        # Double the number of samples for next iteration
+        current_num_samples *= 2
+        
+        # Check if we would exceed max_samples
+        if nqi == 0 and current_num_samples + len(initial_samples) > max_samples:
+            print(f"Exit loop: Reached max samples limit: {max_samples}")
+            exit_reason = 'max_samples'
+            finished = True
 
         # Save results incrementally if output file is provided
         save_dict = {
