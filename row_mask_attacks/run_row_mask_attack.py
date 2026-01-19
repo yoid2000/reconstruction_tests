@@ -865,6 +865,7 @@ def main():
                 }
                 results_df.loc[results_df['solve_type'] != 'agg_known', 'known_qi_fraction'] = 1.0
                 finished_df = results_df[results_df['finished'] == True]
+                print(f"Found {len(finished_df)} finished jobs in prior results.")
                 include_df = pd.DataFrame()
                 if 'final_attack' in results_df.columns and 'solver_metrics_runtime' in results_df.columns:
                     include_df = results_df[
@@ -872,6 +873,7 @@ def main():
                         & (results_df['final_attack'] == True)
                         & (results_df['solver_metrics_runtime'] < time_include_threshold_seconds)
                     ]
+                print(f"Including {len(include_df)} additional jobs based on time threshold of {time_include_threshold_seconds} seconds.")
                 combined_df = pd.concat([finished_df, include_df], ignore_index=True)
                 for _, row in combined_df.iterrows():
                     row_params = {}
