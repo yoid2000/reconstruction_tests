@@ -873,7 +873,7 @@ def main():
                         & (results_df['final_attack'] == True)
                         & (results_df['solver_metrics_runtime'] > time_include_threshold_seconds)
                     ]
-                print(f"Including {len(overtime_df)} additional jobs based on time threshold of {time_include_threshold_seconds} seconds.")
+                print(f"Including {len(overtime_df)} additional jobs to filter based on time threshold of {time_include_threshold_seconds} seconds.")
                 combined_df = pd.concat([finished_df, overtime_df], ignore_index=True)
                 for _, row in combined_df.iterrows():
                     row_params = {}
