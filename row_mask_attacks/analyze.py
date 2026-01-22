@@ -6,6 +6,9 @@ import sys
 import pprint as pp
 pp = pp.PrettyPrinter(indent=2)
 
+grouping_cols = ['max_qi', 'solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'min_num_rows', 'known_qi_fraction']
+grouping_cols_seed = grouping_cols + ['seed']
+
 # Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 from experiments import read_experiments
@@ -339,6 +342,78 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
     else:
         print("All groups meet the sampling criteria.")
 
+
+def analyze_refinement(df_all: pd.DataFrame) -> None:
+    """Validate refinement ordering and report num_samples deltas.
+
+    For each group, if multiple rows reach target_accuracy, the smallest
+    num_samples among those rows must have final_attack == True.
+    """
+    required_cols = {'measure', 'target_accuracy', 'num_samples', 'final_attack', 'filename', 'attack_index', 'refine'}
+    missing_cols = [col for col in required_cols if col not in df_all.columns]
+    if missing_cols:
+        print(f"\nSkipping refinement analysis: missing columns {missing_cols}")
+        return
+
+    grouping_cols_present = [col for col in grouping_cols_seed if col in df_all.columns]
+    if not grouping_cols_present:
+        print("\nSkipping refinement analysis: no grouping columns present")
+        return
+
+    diffs = []
+    num_all_groups = 0
+    num_groups_with_multiple_success = 0
+    num_groups_with_refine_2 = 0
+    num_groups_fixed = 0
+    for group_key, group_df in df_all.groupby(grouping_cols_present, dropna=False):
+        num_all_groups += 1
+        # get the maximum refine value in this group
+        max_refine = group_df['refine'].max()
+        if max_refine == 2:
+            num_groups_with_refine_2 += 1
+        success_rows = group_df[group_df['measure'] >= group_df['target_accuracy']]
+        if len(success_rows) < 2:
+            continue
+        num_groups_with_multiple_success += 1
+
+        min_samples = success_rows['num_samples'].min()
+        max_samples = success_rows['num_samples'].max()
+        diffs.append(max_samples - min_samples)
+
+        min_success = success_rows[success_rows['num_samples'] == min_samples]
+        if not min_success['final_attack'].any():
+            if max_refine == 2:
+                filename = min_success.iloc[0]['filename']
+                print(f"\nRefinement check failed for file {filename}:")
+                # print all values of filename in group_df
+                print(group_df['filename'].unique())
+                print(group_df[['measure', 'num_samples', 'final_attack', 'attack_index', 'refine']])
+                raise ValueError(
+                    f"Refinement check failed for group {filename}: min num_samples success is not final_attack"
+                )
+            else:
+                # This can happen if the experiment ended prematurely
+                # Set final_attack to True for the min_samples row, and False for all others
+                filename = min_success.iloc[0]['filename']
+                group_df.loc[min_success.index, 'final_attack'] = True
+                other_success = success_rows[success_rows['num_samples'] != min_samples]
+                group_df.loc[other_success.index, 'final_attack'] = False
+                num_groups_fixed += 1
+
+    if not diffs:
+        print("\nRefinement analysis: no groups with multiple successful rows")
+        return
+
+    avg_diff = float(np.mean(diffs))
+    std_diff = float(np.std(diffs, ddof=1)) if len(diffs) > 1 else 0.0
+    print(f"\nTotal groups analyzed: {num_all_groups}"  )
+    print(f"Groups with refine==2: {num_groups_with_refine_2}")
+    print(f"Groups with multiple successes: {num_groups_with_multiple_success}")
+    print(f"Groups fixed: {num_groups_fixed}")
+    print(f"\nRefinement analysis: {len(diffs)} groups with multiple successes")
+    print(f"  num_samples diff avg: {avg_diff:.2f}")
+    print(f"  num_samples diff std: {std_diff:.2f}")
+
 def analyze():
     """Read result.parquet and analyze correlations with num_samples."""
     
@@ -388,6 +463,8 @@ def analyze():
     if 'mixing_avg' in df_all.columns and 'separation_average' in df_all.columns:
         df_all['mix_times_sep'] = df_all['mixing_avg'] * df_all['separation_average']
 
+    analyze_refinement(df_all)
+
     # Make df_final, which removes rows where final_attack is False
     df_final = df_all[df_all['final_attack'] == True].copy()
     print(f"\nFiltered to final_attack==True: {len(df_all)} rows -> {len(df_final)} rows")
@@ -402,8 +479,8 @@ def analyze():
     df_final = df_final[df_final['finished'] == True].copy()
     print(f"Remaining rows: {len(df_final)}")
 
-    grouping_cols = ['max_qi', 'solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'min_num_rows', 'known_qi_fraction']
     analyze_seed_effect(df_final, grouping_cols)
+    analyze_refinement(df_all)
     df_grouped = group_by_experiment_parameters(df_final, grouping_cols)
     print("\n nrows value counts:")
     print(df_grouped['nrows'].value_counts(dropna=False))

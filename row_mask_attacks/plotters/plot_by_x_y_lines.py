@@ -255,7 +255,7 @@ def do_x_y_plot(df, plot_data, line_values, x_values, x_col, y_col, lines_col, y
         none_y_pos = y_min_data
         
         # Check if we should use log scale
-        if all(y > 0 for y in y_values) and y_max_data / y_min_data > 30:
+        if all(y > 0 for y in y_values) and y_max_data / y_min_data > 500:
             ax.set_yscale('log')
     else:
         # No valid data points, only "None" labels

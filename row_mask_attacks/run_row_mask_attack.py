@@ -99,6 +99,9 @@ def get_qi_subset_list(df: pd.DataFrame, min_num_rows: int, target_num_rows: int
     
     Returns:
         List of subsets sorted by groups
+
+    Operation:
+    get_qi_subset_list() groups subsets by their qi_cols, then splits those groups into “valid” (every subset in the group has num_rows >= target_num_rows) and “invalid”. It sorts valid groups by max_num_rows ascending, then invalid groups by max_num_rows descending, and concatenates valid then invalid. The effect is: first try the most consistently small-but-acceptable groups, and only after that fall back to larger/less-consistent groups, with the biggest invalid groups first.
     """
     import itertools
     
@@ -814,7 +817,7 @@ def main():
         return
     
     # Generate test parameter combinations
-    max_time_minutes = 60 * 24     # We'll set slurm to this
+    max_time_minutes = 60     # We'll set slurm to this
     # 2 minutes for overhead, convert to seconds, then divide by 20 to safely allow for multiple runs
     time_include_threshold_seconds =  ((max_time_minutes-2) * 60) / 20
     test_params = []

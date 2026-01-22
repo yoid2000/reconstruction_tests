@@ -2,8 +2,21 @@ import copy
 
 # Define parameter ranges
 experiments = [
-    {   # Agg Dinur-style, test effect of nrows on low-nqi
+    {   # Agg Dinur-style, test effect of nrows with higher suppression threshold
         'dont_run': False,
+        'experiment_group': 'agg_dinur_nrows_high_suppression',
+        'solve_type': 'agg_row',
+        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'nrows': [100, 200, 300, 400,],
+        'mask_size': [0],
+        'nunique': [2],
+        'noise': [2],
+        'nqi': [6],
+        'min_num_rows': [6],
+        'vals_per_qi': [0],
+    },
+    {   # Agg Dinur-style, test effect of nrows on low-nqi
+        'dont_run': True,
         'experiment_group': 'agg_dinur_nrows_low_nqi',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -30,7 +43,7 @@ experiments = [
         'known_qi_fraction': [0.0, 0.25],
     },
     {   # Aggregated Dinur-style, best-case nqi=4
-        'dont_run': False,
+        'dont_run': True,
         'experiment_group': 'agg_dinur_best_case_nrows_nqi4',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -43,7 +56,7 @@ experiments = [
         'vals_per_qi': [0],      # auto-select
     },
     {   # Aggregated Dinur-style, best-case nqi=3
-        'dont_run': False,
+        'dont_run': True,
         'experiment_group': 'agg_dinur_best_case_nrows_nqi3',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -56,7 +69,7 @@ experiments = [
         'vals_per_qi': [0],      # auto-select
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=max_qi
-        'dont_run': False,
+        'dont_run': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_max_qi_mnr3',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -70,7 +83,7 @@ experiments = [
         'vals_per_qi': [0],   # auto-select
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=nrows
-        'dont_run': False,
+        'dont_run': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_nrows_mnr3',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -83,7 +96,7 @@ experiments = [
         'vals_per_qi': [0],   # auto-select
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=vals_per_qi
-        'dont_run': False,
+        'dont_run': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_vals_per_qi_mnr3',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -96,7 +109,7 @@ experiments = [
         'vals_per_qi': [2,3,4,5,6,10,15],
     },
     {   # Agg Dinur-style, x=nqi, y=stuff, lines=noise
-        'dont_run': False,
+        'dont_run': True,
         'experiment_group': 'agg_dinur_x_nqi_y_stuff_lines_noise_mnr3',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -109,7 +122,7 @@ experiments = [
         'vals_per_qi': [0],   # auto-select
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=nunique
-        'dont_run': False,
+        'dont_run': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_nunique_mnr3',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -122,7 +135,7 @@ experiments = [
         'vals_per_qi': [0],   # auto-select
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=min_num_rows
-        'dont_run': False,
+        'dont_run': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_min_num_rows',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -135,7 +148,7 @@ experiments = [
         'vals_per_qi': [0],   # auto-select
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=nrows
-        'dont_run': False,
+        'dont_run': True,
         'experiment_group': 'agg_dinur_explore_nrows',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
