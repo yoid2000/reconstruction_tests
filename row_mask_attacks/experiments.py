@@ -2,8 +2,21 @@ import copy
 
 # Define parameter ranges
 experiments = [
-    {   # Agg Dinur-style, test effect of nrows with higher suppression threshold
+    {   # Agg Dinur-style, test effect of nrows with higher unique QI values
         'dont_run': False,
+        'experiment_group': 'agg_dinur_nrows_vals_per_qi',
+        'solve_type': 'agg_row',
+        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'nrows': [100, 200, 300, 400],
+        'mask_size': [0],
+        'nunique': [2],
+        'noise': [2],
+        'nqi': [6],
+        'min_num_rows': [3],
+        'vals_per_qi': [5,10,15],
+    },
+    {   # Agg Dinur-style, test effect of nrows with higher suppression threshold
+        'dont_run': True,
         'experiment_group': 'agg_dinur_nrows_suppression',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],

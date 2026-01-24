@@ -518,10 +518,13 @@ def analyze():
         # Determine analysis type based on experiment group name
         if exp_group == 'pure_dinur_basics':
             do_pure_dinur_basic_analysis(exp_df, experiments, exp_group)
+        elif exp_group == 'agg_dinur_nrows_suppression':
+            # print exp_df for columns measure, min_num_rows, nrows
+            for ycol in x_y_group:
+                plot_by_x_y_lines(exp_df, x_col='min_num_rows', y_col=ycol, lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="big_nrows", )
         elif exp_group == 'agg_dinur_nrows_high_suppression':
             # for each distinct value in min_num_rows, print measure, num_samples, and solver_metrics_runtime
             do_agg_dinur_nrows_high_suppression_analysis(exp_df, exp_group)
-            quit()
         elif exp_group == 'agg_dinur_basics':
             do_agg_dinur_basic_analysis(exp_df, experiments, exp_group)
         elif exp_group == 'agg_dinur_explore_vals_per_qi_nrows':

@@ -117,7 +117,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                     raise ValueError(f"Expected exactly one row for {x_col}={x_val}, {lines_col}={line_val}, got {len(df_subset)} rows")
                 row_used = df_subset.iloc[0]
                 y_val = row_used[y_col]
-                target_accuracy = row_used.get('exit_reason') == 'target_accuracy'
+                target_accuracy = row_used.get('measure', float('nan')) >= row_used.get('target_accuracy', float('inf'))
                 
                 plot_data.append({
                     'x': x_val,
@@ -141,7 +141,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                     else:
                         row_used = df_valid_rows.iloc[0]
                     y_val = row_used[y_col]
-                    target_accuracy = row_used.get('exit_reason') == 'target_accuracy'
+                    target_accuracy = row_used.get('measure', float('nan')) >= row_used.get('target_accuracy', float('inf'))
                     
                     plot_data.append({
                         'x': x_val,
