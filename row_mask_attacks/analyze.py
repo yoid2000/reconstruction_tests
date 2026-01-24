@@ -414,6 +414,17 @@ def analyze_refinement(df_all: pd.DataFrame) -> None:
     print(f"  num_samples diff avg: {avg_diff:.2f}")
     print(f"  num_samples diff std: {std_diff:.2f}")
 
+def do_agg_dinur_nrows_high_suppression_analysis(exp_df, exp_group):
+    print(f"\n\nANALYSIS FOR {exp_group} EXPERIMENT GROUP")
+    print("=" * 80)
+    # For each distinct value in nrows, print measure, num_samples, and solver_metrics_runtime
+    distinct_min_num_rows = sorted(exp_df['min_num_rows'].dropna().unique())
+    distinct_nrows = sorted(exp_df['nrows'].dropna().unique())
+    for nrows in distinct_nrows:
+        df_nrows = exp_df[exp_df['nrows'] == nrows]
+        print(f"\nnrows = {nrows}:")
+        print(df_nrows[['measure', 'num_samples', 'solver_metrics_runtime']].to_string(index=False))
+
 def analyze():
     """Read result.parquet and analyze correlations with num_samples."""
     
@@ -507,6 +518,10 @@ def analyze():
         # Determine analysis type based on experiment group name
         if exp_group == 'pure_dinur_basics':
             do_pure_dinur_basic_analysis(exp_df, experiments, exp_group)
+        elif exp_group == 'agg_dinur_nrows_high_suppression':
+            # for each distinct value in min_num_rows, print measure, num_samples, and solver_metrics_runtime
+            do_agg_dinur_nrows_high_suppression_analysis(exp_df, exp_group)
+            quit()
         elif exp_group == 'agg_dinur_basics':
             do_agg_dinur_basic_analysis(exp_df, experiments, exp_group)
         elif exp_group == 'agg_dinur_explore_vals_per_qi_nrows':
