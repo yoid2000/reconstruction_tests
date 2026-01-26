@@ -1,9 +1,11 @@
 import copy
+from new_experiments import new_experiments
 
 # Define parameter ranges
 experiments = [
     {   # Agg Dinur-style, test effect of nrows with higher unique QI values
-        'dont_run': False,
+        'dont_run': True,
+        'used_in_paper': True,
         'experiment_group': 'agg_dinur_nrows_vals_per_qi',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -17,6 +19,7 @@ experiments = [
     },
     {   # Agg Dinur-style, test effect of nrows with higher suppression threshold
         'dont_run': True,
+        'used_in_paper': True,
         'experiment_group': 'agg_dinur_nrows_suppression',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -30,6 +33,7 @@ experiments = [
     },
     {   # Agg Dinur-style, test effect of nrows with higher suppression threshold
         'dont_run': True,
+        'used_in_paper': False,
         'experiment_group': 'agg_dinur_nrows_high_suppression',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -43,6 +47,7 @@ experiments = [
     },
     {   # Agg Dinur-style, test effect of nrows on low-nqi
         'dont_run': True,
+        'used_in_paper': True,
         'experiment_group': 'agg_dinur_nrows_low_nqi',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -56,6 +61,7 @@ experiments = [
     },
     {   # Agg known probe overall
         'dont_run': True,
+        'used_in_paper': False,
         'experiment_group': 'probe_agg_known',
         'solve_type': 'agg_known',
         'seed': [1],
@@ -70,6 +76,7 @@ experiments = [
     },
     {   # Aggregated Dinur-style, best-case nqi=4
         'dont_run': True,
+        'used_in_paper': True,
         'experiment_group': 'agg_dinur_best_case_nrows_nqi4',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -83,6 +90,7 @@ experiments = [
     },
     {   # Aggregated Dinur-style, best-case nqi=3
         'dont_run': True,
+        'used_in_paper': True,
         'experiment_group': 'agg_dinur_best_case_nrows_nqi3',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -96,6 +104,7 @@ experiments = [
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=max_qi
         'dont_run': True,
+        'used_in_paper': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_max_qi_mnr3',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -110,6 +119,7 @@ experiments = [
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=nrows
         'dont_run': True,
+        'used_in_paper': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_nrows_mnr3',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -123,6 +133,7 @@ experiments = [
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=vals_per_qi
         'dont_run': True,
+        'used_in_paper': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_vals_per_qi_mnr3',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -136,6 +147,7 @@ experiments = [
     },
     {   # Agg Dinur-style, x=nqi, y=stuff, lines=noise
         'dont_run': True,
+        'used_in_paper': True,
         'experiment_group': 'agg_dinur_x_nqi_y_stuff_lines_noise_mnr3',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -149,6 +161,7 @@ experiments = [
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=nunique
         'dont_run': True,
+        'used_in_paper': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_nunique_mnr3',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -162,6 +175,7 @@ experiments = [
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=min_num_rows
         'dont_run': True,
+        'used_in_paper': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_min_num_rows',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -175,6 +189,7 @@ experiments = [
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=nrows
         'dont_run': True,
+        'used_in_paper': True,
         'experiment_group': 'agg_dinur_explore_nrows',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -188,6 +203,7 @@ experiments = [
     },
     {   # Pure Dinur-style (individual selection of rows, binary target)
         'dont_run': True,
+        'used_in_paper': False,
         'experiment_group': 'pure_dinur_basics',
         'solve_type': 'pure_row',
         'seed': [0],
@@ -201,6 +217,7 @@ experiments = [
     },
     {   # Aggregated Dinur-style (aggregate selection of row IDs, binary target)
         'dont_run': True,
+        'used_in_paper': False,
         'experiment_group': 'agg_dinur_basics',
         'solve_type': 'agg_row',
         'seed': [0],
@@ -214,6 +231,7 @@ experiments = [
     },
     {   # Pure Dinur-style, test effect of nunique
         'dont_run': True,
+        'used_in_paper': False,
         'experiment_group': 'pure_dinur_nunique',
         'solve_type': 'pure_row',
         'seed': [0],
@@ -227,6 +245,7 @@ experiments = [
     },
     {   # Pure Dinur-style, test effect of min_num_rows
         'dont_run': True,
+        'used_in_paper': False,
         'experiment_group': 'pure_dinur_min_num_rows',
         'solve_type': 'pure_row',
         'seed': [0],
@@ -240,6 +259,7 @@ experiments = [
     },
     {   # Aggregated Dinur-style, test effect of nunique
         'dont_run': True,
+        'used_in_paper': False,
         'experiment_group': 'agg_dinur_nunique',
         'solve_type': 'agg_row',
         'seed': [0],
@@ -253,6 +273,7 @@ experiments = [
     },
     {   # Aggregated Dinur-style, test effect of min_num_rows
         'dont_run': True,
+        'used_in_paper': False,
         'experiment_group': 'agg_dinur_min_num_rows',
         'solve_type': 'agg_row',
         'seed': [0],
@@ -266,6 +287,7 @@ experiments = [
     },
     {   # Pure Dinur-style, test effect of nrows
         'dont_run': True,
+        'used_in_paper': False,
         'experiment_group': 'pure_dinur_nrows',
         'solve_type': 'pure_row',
         'seed': [0],
@@ -279,6 +301,7 @@ experiments = [
     },
     {   # Pure Dinur-style, test effect of nrows, better granularity
         'dont_run': True,
+        'used_in_paper': False,
         'experiment_group': 'pure_dinur_nrows_granular',
         'solve_type': 'pure_row',
         'seed': [0],
@@ -292,6 +315,7 @@ experiments = [
     },
     {   # Agg Dinur-style, test effect of nrows
         'dont_run': True,
+        'used_in_paper': False,
         'experiment_group': 'agg_dinur_nrows',
         'solve_type': 'agg_row',
         'seed': [0],
@@ -305,6 +329,7 @@ experiments = [
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=nrows
         'dont_run': True,
+        'used_in_paper': False,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_nrows_mnr5',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -318,6 +343,7 @@ experiments = [
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=vals_per_qi
         'dont_run': True,
+        'used_in_paper': False,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_vals_per_qi_mnr5',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -331,6 +357,7 @@ experiments = [
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=nunique
         'dont_run': True,
+        'used_in_paper': False,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_nunique_mnr5',
         'solve_type': 'agg_row',
         'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
@@ -344,8 +371,10 @@ experiments = [
     },
 ]
 
-def read_experiments(tweak_min_num_rows: bool = False):
+def read_experiments(tweak_min_num_rows: bool = False, used_only_in_paper: bool = True, include_new_experiments: bool = False) -> list[dict]:
     adjusted_experiments = copy.deepcopy(experiments)
+    if used_only_in_paper:
+        adjusted_experiments = [exp for exp in adjusted_experiments if exp.get('used_in_paper', False)]
     if tweak_min_num_rows:
         for exp in adjusted_experiments:
             if 'min_num_rows' in exp:
@@ -353,4 +382,6 @@ def read_experiments(tweak_min_num_rows: bool = False):
                 if not isinstance(values, list):
                     values = [values]
                 exp['min_num_rows'] = [value - 1 for value in values]
+    if include_new_experiments:
+        adjusted_experiments.extend(copy.deepcopy(new_experiments))
     return adjusted_experiments

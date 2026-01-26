@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import random
 from pathlib import Path
 from scipy import stats
 import sys
@@ -7,6 +8,8 @@ import pprint as pp
 pp = pp.PrettyPrinter(indent=2)
 
 grouping_cols = ['max_qi', 'solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'min_num_rows', 'known_qi_fraction']
+group_max_cols = ['solver_metrics_runtime']
+group_median_cols = ['solver_metrics_runtime']
 grouping_cols_seed = grouping_cols + ['seed']
 
 # Add current directory to path for imports
@@ -74,7 +77,7 @@ def analyze_single_parameter_variation(df: pd.DataFrame, experiments: list, exp_
     
     # Result columns to analyze
     result_cols = ['num_samples', 'num_equations', 'measure', 'num_suppressed',
-                   'mixing_avg', 'mixing_min', 'mixing_max', 'mixing_median', 'elapsed_time', 'solver_metrics_runtime', 'solver_metrics_simplex_iterations', 'solver_metrics_num_vars', 'solver_metrics_num_constraints',
+                   'mixing_avg', 'mixing_min', 'mixing_max', 'mixing_median', 'elapsed_time', 'med_solver_metrics_runtime', 'solver_metrics_simplex_iterations', 'solver_metrics_num_vars', 'solver_metrics_num_constraints',
                    'mix_times_sep', 'separation_average'
     ]
     
@@ -203,7 +206,7 @@ def get_experiment_dataframes(experiments, df):
         
     return result
 
-def group_by_experiment_parameters(df_final, grouping_cols):
+def group_by_experiment_parameters(df_final):
     
     # Filter to only columns that exist in the dataframe
     grouping_cols_present = [col for col in grouping_cols if col in df_final.columns]
@@ -229,6 +232,36 @@ def group_by_experiment_parameters(df_final, grouping_cols):
     
     # Group and aggregate
     df_grouped = df_final.groupby(grouping_cols_present, dropna=False).agg(agg_dict).reset_index()
+
+    # Add max_* columns for selected group_max_cols
+    group_max_cols_present = [
+        col for col in group_max_cols
+        if col in df_final.columns and col not in grouping_cols_present
+    ]
+    if group_max_cols_present:
+        df_max = (
+            df_final
+            .groupby(grouping_cols_present, dropna=False)[group_max_cols_present]
+            .max()
+            .reset_index()
+            .rename(columns={col: f"max_{col}" for col in group_max_cols_present})
+        )
+        df_grouped = df_grouped.merge(df_max, on=grouping_cols_present, how='left')
+
+    # Add med_* columns for selected group_median_cols
+    group_median_cols_present = [
+        col for col in group_median_cols
+        if col in df_final.columns and col not in grouping_cols_present
+    ]
+    if group_median_cols_present:
+        df_median = (
+            df_final
+            .groupby(grouping_cols_present, dropna=False)[group_median_cols_present]
+            .median()
+            .reset_index()
+            .rename(columns={col: f"med_{col}" for col in group_median_cols_present})
+        )
+        df_grouped = df_grouped.merge(df_median, on=grouping_cols_present, how='left')
 
     print(f"Grouped dataframe shape: {df_grouped.shape}")
     print(f"Original dataframe rows: {len(df_final)}")
@@ -327,18 +360,57 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
     summary_df = pd.DataFrame(rows)
 
     not_enough = summary_df[~summary_df['enough_samples']]
+    new_experiments = []
+    for _, row in not_enough.iterrows():
+        entry = {
+            'dont_run': False,
+            'used_in_paper': False,
+            'experiment_group': 'temp',
+        }
+        for col in grouping_cols_present:
+            if col not in row.index:
+                continue
+            value = row[col]
+            if pd.isna(value):
+                value = None
+            elif hasattr(value, "item"):
+                value = value.item()
+            if col == 'solve_type':
+                entry[col] = value
+            else:
+                entry[col] = [value]
+
+        seeds_needed = int(row['seeds_needed_est'])
+        seed_pool = list(range(10000, 20001))
+        if seeds_needed <= len(seed_pool):
+            entry['seed'] = random.sample(seed_pool, seeds_needed)
+        else:
+            entry['seed'] = [random.randint(10000, 20000) for _ in range(seeds_needed)]
+
+        new_experiments.append(entry)
+
+    output_path = Path(__file__).parent / "new_experiments.py"
+    with output_path.open("w", encoding="utf-8") as handle:
+        handle.write("new_experiments = [\n")
+        for entry in new_experiments:
+            handle.write(f"    {entry},\n")
+        handle.write("]\n")
+    print(f"\nWrote {len(new_experiments)} new experiments to {output_path}")
     print(f"\nTotal groups analyzed: {len(summary_df)}")
     print(f"Groups with enough samples: {len(summary_df) - len(not_enough)}")
     print(f"Groups needing more seeds: {len(not_enough)}")
 
     if len(not_enough) > 0:
-        # Show the top 10 groups most in need of more seeds (sorted by margin gap)
+        # Show the top 100 groups most in need of more seeds (sorted by margin gap)
         not_enough = not_enough.copy()
         not_enough['margin_gap'] = not_enough['ci_half_width'] - not_enough['target_margin']
         cols_to_show = grouping_cols_present + ['unique_seeds', 'seeds_needed_est', 'mean_measure',
                                                 'std_measure', 'ci_half_width', 'target_margin', 'margin_gap']
-        print("\nGroups needing more samples (top 10):")
-        print(not_enough.sort_values(['margin_gap', 'unique_seeds'], ascending=[False, True])[cols_to_show].head(10).to_string(index=False))
+        print("\nGroups needing more samples (top 100):")
+        top_rows = not_enough.sort_values(['margin_gap', 'unique_seeds'], ascending=[False, True])[cols_to_show].head(100)
+        for _, row in top_rows.iterrows():
+            parts = [f"{col}={row[col]}" for col in cols_to_show]
+            print(", ".join(parts))
     else:
         print("All groups meet the sampling criteria.")
 
@@ -417,13 +489,44 @@ def analyze_refinement(df_all: pd.DataFrame) -> None:
 def do_agg_dinur_nrows_high_suppression_analysis(exp_df, exp_group):
     print(f"\n\nANALYSIS FOR {exp_group} EXPERIMENT GROUP")
     print("=" * 80)
-    # For each distinct value in nrows, print measure, num_samples, and solver_metrics_runtime
+    # For each distinct value in nrows, print measure, num_samples, and med_solver_metrics_runtime
     distinct_min_num_rows = sorted(exp_df['min_num_rows'].dropna().unique())
     distinct_nrows = sorted(exp_df['nrows'].dropna().unique())
     for nrows in distinct_nrows:
         df_nrows = exp_df[exp_df['nrows'] == nrows]
         print(f"\nnrows = {nrows}:")
-        print(df_nrows[['measure', 'num_samples', 'solver_metrics_runtime']].to_string(index=False))
+        print(df_nrows[['measure', 'num_samples', 'med_solver_metrics_runtime']].to_string(index=False))
+
+def remove_unused_rows(df: pd.DataFrame) -> pd.DataFrame:
+    experiments = read_experiments(tweak_min_num_rows=True)
+
+    used_mask = pd.Series([False] * len(df), index=df.index)
+    for exp in experiments:
+        mask = pd.Series([True] * len(df), index=df.index)
+
+        if 'max_qi' in df.columns and 'max_qi' not in exp:
+            default_max_qi = 1000
+            mask = mask & (df['max_qi'] == default_max_qi)
+
+        for param, values in exp.items():
+            if param in ['experiment_group', 'dont_run', 'used_in_paper']:
+                continue
+            if param not in df.columns:
+                continue
+            if not isinstance(values, list):
+                values = [values]
+            mask = mask & df[param].isin(values)
+
+        used_mask = used_mask | mask
+
+    df = df.copy()
+    df['used_in_experiment'] = used_mask
+
+    num_used = int(used_mask.sum())
+    num_removed = len(df) - num_used
+    print(f"\nremove_unused_rows: keeping {num_used} rows, removing {num_removed} unused rows")
+
+    return df[df['used_in_experiment']].copy()
 
 def analyze():
     """Read result.parquet and analyze correlations with num_samples."""
@@ -470,6 +573,9 @@ def analyze():
     else:
         print("No NaN values found in dataframe")
 
+    # Remove unused rows from df_all
+    df_all = remove_unused_rows(df_all)
+
     # Make a new column mix_sep which is mixing_avg * separation_average
     if 'mixing_avg' in df_all.columns and 'separation_average' in df_all.columns:
         df_all['mix_times_sep'] = df_all['mixing_avg'] * df_all['separation_average']
@@ -491,19 +597,27 @@ def analyze():
     print(f"Remaining rows: {len(df_final)}")
 
     analyze_seed_effect(df_final, grouping_cols)
-    analyze_refinement(df_all)
-    df_grouped = group_by_experiment_parameters(df_final, grouping_cols)
+    df_grouped = group_by_experiment_parameters(df_final)
     print("\n nrows value counts:")
     print(df_grouped['nrows'].value_counts(dropna=False))
+    print("Columns in df_grouped:")
+    print(list(df_grouped.columns))
     
     # print first row of df_grouped using to_string to show all columns
     print(f"\nFirst row of grouped dataframe:\n{df_grouped.iloc[0].to_string()}\n")
+
+    print(f"\nRelative difference between max_solver_metrics_runtime and med_solver_metrics_runtime where med_solver_metrics_runtime > 60")
+    df_runtime_check = df_grouped[df_grouped['med_solver_metrics_runtime'] > 60]
+    df_runtime_check['rel_diff'] = (df_runtime_check['max_solver_metrics_runtime'] - df_runtime_check['med_solver_metrics_runtime']) / df_runtime_check['med_solver_metrics_runtime']
+    print(df_runtime_check['rel_diff'].describe())
+    print(f"\nTop 5 cases with largest relative difference:")
+    print(df_runtime_check.sort_values('rel_diff', ascending=False).head(5)[['med_solver_metrics_runtime', 'max_solver_metrics_runtime', 'rel_diff']])
 
     # Read experiments and group dataframes
     experiments = read_experiments(tweak_min_num_rows=True)
     exp_dataframes = get_experiment_dataframes(experiments, df_grouped)
 
-    x_y_group = ['measure', 'num_samples', 'mixing_avg', 'separation_average', 'num_suppressed', 'solver_metrics_simplex_iterations', 'solver_metrics_runtime', 'mix_times_sep']
+    x_y_group = ['measure', 'num_samples', 'mixing_avg', 'separation_average', 'num_suppressed', 'solver_metrics_simplex_iterations', 'med_solver_metrics_runtime', 'mix_times_sep', 'solver_metrics_num_vars', 'solver_metrics_num_constrs']
     
     print(f"\nExperiment groups:")
     for exp_group, exp_df in exp_dataframes.items():
@@ -527,7 +641,7 @@ def analyze():
             for ycol in x_y_group:
                 plot_by_x_y_lines(exp_df, x_col='min_num_rows', y_col=ycol, lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="big_nrows", )
         elif exp_group == 'agg_dinur_nrows_high_suppression':
-            # for each distinct value in min_num_rows, print measure, num_samples, and solver_metrics_runtime
+            # for each distinct value in min_num_rows, print measure, num_samples, and med_solver_metrics_runtime
             do_agg_dinur_nrows_high_suppression_analysis(exp_df, exp_group)
         elif exp_group == 'agg_dinur_basics':
             do_agg_dinur_basic_analysis(exp_df, experiments, exp_group)

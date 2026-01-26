@@ -48,7 +48,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                       'separation_average': "Separation average",
                       'max_qi': "Max QI columns",
                       'num_suppressed': "Number suppressed",
-                      'solver_metrics_runtime': "Solver runtime (s)",
+                      'med_solver_metrics_runtime': "Median solver runtime (s)",
                    }
     dashed_columns = {'nrows': 150,
                       'nunique': 2,

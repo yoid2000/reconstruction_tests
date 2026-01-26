@@ -14,6 +14,7 @@ def main() -> None:
     needles = [
         "Attack already finished",
         "Final accuracy",
+        "out of range",
     ]
 
     deleted = 0

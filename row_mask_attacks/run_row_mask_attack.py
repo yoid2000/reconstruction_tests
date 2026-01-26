@@ -715,7 +715,7 @@ def main():
     
     # Read in the experiments data structure from experiments.py
     from experiments import read_experiments
-    experiments = read_experiments()
+    experiments = read_experiments(include_new_experiments=True)
     
     # Fixed parameters
     max_samples = 20000
