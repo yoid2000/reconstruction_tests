@@ -190,7 +190,7 @@ def get_experiment_dataframes(experiments, df):
         
         # Filter by each parameter
         for param, values in exp.items():
-            if param in ['experiment_group', 'dont_run', 'seed', ]:
+            if param in ['experiment_group', 'dont_run', 'seed', 'used_in_paper']:
                 continue
             
             if param in df.columns:
@@ -509,7 +509,7 @@ def remove_unused_rows(df: pd.DataFrame) -> pd.DataFrame:
             mask = mask & (df['max_qi'] == default_max_qi)
 
         for param, values in exp.items():
-            if param in ['experiment_group', 'dont_run', 'used_in_paper']:
+            if param in ['experiment_group', 'dont_run', 'used_in_paper', 'seed']:
                 continue
             if param not in df.columns:
                 continue
