@@ -312,6 +312,9 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
 
         measures = g['measure'].dropna()
         n = len(measures)
+        if n > 20:
+            print(f"boo boo {n}")
+            pp.pprint(key_dict)
         if n == 0:
             continue
 
@@ -340,6 +343,12 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
             continue
 
         enough_samples = (seed_count >= min_seeds) and (not np.isnan(ci_half)) and (ci_half <= target_margin)
+        if n > 20:
+            print(f"boo boo 2 {n}")
+            print(f"enough_samples: {enough_samples}, seeds_needed: {seeds_needed}, seed_count: {seed_count}, ci_half: {ci_half}, target_margin: {target_margin}")
+        if enough_samples == False:
+            print(f"enough_samples is False! ({n})")
+            pp.pprint(key_dict)
 
         rows.append({
             **key_dict,
@@ -353,13 +362,20 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
             'enough_samples': enough_samples,
         })
 
+        print(f"Just appended row with enough_samples={enough_samples} (n={n})")
+
     if not rows:
         print("No data found for seed analysis")
         return
 
     summary_df = pd.DataFrame(rows)
 
-    not_enough = summary_df[~summary_df['enough_samples']]
+    # print count of distinct values in enough_samples column
+    print("\nSummary of enough_samples:")
+    print(summary_df['enough_samples'].value_counts())
+
+    not_enough = summary_df[summary_df['enough_samples'].fillna(False).eq(False)]
+    print(f"summary_df: {len(summary_df)} groups analyzed, {len(not_enough)} need more samples")
     new_experiments = []
     for _, row in not_enough.iterrows():
         entry = {
@@ -386,6 +402,7 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
             entry['seed'] = random.sample(seed_pool, seeds_needed)
         else:
             entry['seed'] = [random.randint(10000, 20000) for _ in range(seeds_needed)]
+        entry['min_num_rows'][0] += 1     # needed cause I shifted down earlier
 
         new_experiments.append(entry)
 
