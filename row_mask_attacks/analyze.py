@@ -529,8 +529,8 @@ def remove_unused_rows(df: pd.DataFrame) -> pd.DataFrame:
 
     return df[df['used_in_experiment']].copy()
 
-def analyze():
-    """Read result.parquet and analyze correlations with num_samples."""
+def prep_data() -> pd.DataFrame:
+    """Read result.parquet and prep"""
     
     # Read the parquet file
     parquet_path = Path('./results/result.parquet')
@@ -538,7 +538,8 @@ def analyze():
     if not parquet_path.exists():
         print(f"File {parquet_path} does not exist")
         print("Please run gather.py first")
-        return
+        # throw exception
+        raise FileNotFoundError(f"File {parquet_path} does not exist")
     
     df_all = pd.read_parquet(parquet_path)
     # show count of all values for known_qi_fraction column
@@ -571,7 +572,7 @@ def analyze():
     if len(nan_columns) > 0:
         print(f"Columns with NaN values: {nan_columns}")
         print("Please clean the data before analysis")
-        return
+        raise ValueError(f"Columns with NaN values: {nan_columns}")
     else:
         print("No NaN values found in dataframe")
 
@@ -582,13 +583,18 @@ def analyze():
     if 'mixing_avg' in df_all.columns and 'separation_average' in df_all.columns:
         df_all['mix_times_sep'] = df_all['mixing_avg'] * df_all['separation_average']
 
+    print(f"Loaded {len(df_all)} rows from {parquet_path}")
+    return df_all
+
+def analyze():
+    """Read result.parquet and analyze correlations with num_samples."""
+    df_all = prep_data()
     analyze_refinement(df_all)
 
     # Make df_final, which removes rows where final_attack is False
     df_final = df_all[df_all['final_attack'] == True].copy()
     print(f"\nFiltered to final_attack==True: {len(df_all)} rows -> {len(df_final)} rows")
 
-    print(f"Loaded {len(df_all)} rows from {parquet_path}")
     print(f"\nColumns: {list(df_all.columns)}")
     print(f"\nDataFrame shape: {df_all.shape}")
     
@@ -602,6 +608,8 @@ def analyze():
     df_grouped = group_by_experiment_parameters(df_final)
     print("\n nrows value counts:")
     print(df_grouped['nrows'].value_counts(dropna=False))
+    print("\n solve_type value counts:")
+    print(df_grouped['solve_type'].value_counts(dropna=False))
     print("Columns in df_grouped:")
     print(list(df_grouped.columns))
     
@@ -701,6 +709,8 @@ def analyze():
         elif exp_group == 'agg_dinur_best_case_nrows_nqi4':
             do_analysis_by_x_y_lines(exp_df, x_col='supp_thresh', y_col='noise', lines_col='nrows', thresh=0.90)
             make_noise_min_num_rows_table(exp_df, "nqi4")
+        elif exp_group == 'probe_agg_known':
+            pass
         else:
             # Generic analysis for other experiment groups
             print(f"\n\n{'='*80}")

@@ -5,6 +5,8 @@
 
 When run with no command line arguments, it lists the attacks (jobs) and their associated parameters, and generates the file run.slurm, which can be used to run all the attacks in a SLURM cluster.
 
+Note that the timeout for the slurm jobs is determined by `max_time_minutes`. The purpose for this is to allow us to set the timeout to a low value (say 30 minutes) so that quick jobs can complete, even though long jobs will time out. The work cycle is to then do `gather.py` to create result.parquet, increase `max_time_minutes`, and then run `run_row_mask_attack_py` again to create slurm jobs that only include the longer jobs.
+
 When run with -h or --help, it lists the command line arguments.
 
 When run with a single integer, it runs the attack associated with the index defined by the integer.
