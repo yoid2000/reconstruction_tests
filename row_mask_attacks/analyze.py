@@ -7,7 +7,7 @@ import sys
 import pprint as pp
 pp = pp.PrettyPrinter(indent=2)
 
-grouping_cols = ['max_qi', 'solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'min_num_rows', 'known_qi_fraction']
+grouping_cols = ['max_qi', 'solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'supp_thresh', 'known_qi_fraction']
 group_max_cols = ['solver_metrics_runtime']
 group_median_cols = ['solver_metrics_runtime']
 grouping_cols_seed = grouping_cols + ['seed']
@@ -293,7 +293,7 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
         return
 
     # Heuristics for "enough" samples
-    min_seeds = 15  # only consider groups that have at least this many seeds
+    min_seeds = 2  # only consider groups that have at least this many seeds
     abs_margin = 0.05  # absolute margin for CI half-width
     rel_margin = 0.1  # or within 10% of the mean
     alpha = 0.05       # 95% confidence
@@ -312,9 +312,6 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
 
         measures = g['measure'].dropna()
         n = len(measures)
-        if n > 20:
-            print(f"boo boo {n}")
-            pp.pprint(key_dict)
         if n == 0:
             continue
 
@@ -343,12 +340,6 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
             continue
 
         enough_samples = (seed_count >= min_seeds) and (not np.isnan(ci_half)) and (ci_half <= target_margin)
-        if n > 20:
-            print(f"boo boo 2 {n}")
-            print(f"enough_samples: {enough_samples}, seeds_needed: {seeds_needed}, seed_count: {seed_count}, ci_half: {ci_half}, target_margin: {target_margin}")
-        if enough_samples == False:
-            print(f"enough_samples is False! ({n})")
-            pp.pprint(key_dict)
 
         rows.append({
             **key_dict,
@@ -362,17 +353,11 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
             'enough_samples': enough_samples,
         })
 
-        print(f"Just appended row with enough_samples={enough_samples} (n={n})")
-
     if not rows:
         print("No data found for seed analysis")
         return
 
     summary_df = pd.DataFrame(rows)
-
-    # print count of distinct values in enough_samples column
-    print("\nSummary of enough_samples:")
-    print(summary_df['enough_samples'].value_counts())
 
     not_enough = summary_df[summary_df['enough_samples'].fillna(False).eq(False)]
     print(f"summary_df: {len(summary_df)} groups analyzed, {len(not_enough)} need more samples")
@@ -402,7 +387,6 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
             entry['seed'] = random.sample(seed_pool, seeds_needed)
         else:
             entry['seed'] = [random.randint(10000, 20000) for _ in range(seeds_needed)]
-        entry['min_num_rows'][0] += 1     # needed cause I shifted down earlier
 
         new_experiments.append(entry)
 
@@ -507,7 +491,7 @@ def do_agg_dinur_nrows_high_suppression_analysis(exp_df, exp_group):
     print(f"\n\nANALYSIS FOR {exp_group} EXPERIMENT GROUP")
     print("=" * 80)
     # For each distinct value in nrows, print measure, num_samples, and med_solver_metrics_runtime
-    distinct_min_num_rows = sorted(exp_df['min_num_rows'].dropna().unique())
+    distinct_min_num_rows = sorted(exp_df['supp_thresh'].dropna().unique())
     distinct_nrows = sorted(exp_df['nrows'].dropna().unique())
     for nrows in distinct_nrows:
         df_nrows = exp_df[exp_df['nrows'] == nrows]
@@ -515,7 +499,7 @@ def do_agg_dinur_nrows_high_suppression_analysis(exp_df, exp_group):
         print(df_nrows[['measure', 'num_samples', 'med_solver_metrics_runtime']].to_string(index=False))
 
 def remove_unused_rows(df: pd.DataFrame) -> pd.DataFrame:
-    experiments = read_experiments(tweak_min_num_rows=True)
+    experiments = read_experiments()
 
     used_mask = pd.Series([False] * len(df), index=df.index)
     for exp in experiments:
@@ -561,7 +545,8 @@ def analyze():
     print("\nKnown_qi_fraction value counts:")
     print(df_all['known_qi_fraction'].value_counts(dropna=False))
     if 'min_num_rows' in df_all.columns:
-        df_all['min_num_rows'] = df_all['min_num_rows'] - 1
+        df_all['supp_thresh'] = df_all['min_num_rows'] - 1
+        df_all['supp_thresh'] = df_all['supp_thresh'].astype(int)
     if 'known_qi_fraction' in df_all.columns:
         # for all rows where solver_type != 'agg_known', set known_qi_fraction to 1.0
         df_all.loc[df_all['solve_type'] != 'agg_known', 'known_qi_fraction'] = 1.0
@@ -631,7 +616,7 @@ def analyze():
     print(df_runtime_check.sort_values('rel_diff', ascending=False).head(5)[['med_solver_metrics_runtime', 'max_solver_metrics_runtime', 'rel_diff']])
 
     # Read experiments and group dataframes
-    experiments = read_experiments(tweak_min_num_rows=True)
+    experiments = read_experiments()
     exp_dataframes = get_experiment_dataframes(experiments, df_grouped)
 
     x_y_group = ['measure', 'num_samples', 'mixing_avg', 'separation_average', 'num_suppressed', 'solver_metrics_simplex_iterations', 'med_solver_metrics_runtime', 'mix_times_sep', 'solver_metrics_num_vars', 'solver_metrics_num_constrs']
@@ -650,15 +635,15 @@ def analyze():
         if exp_group == 'pure_dinur_basics':
             do_pure_dinur_basic_analysis(exp_df, experiments, exp_group)
         elif exp_group == 'agg_dinur_nrows_vals_per_qi':
-            # print exp_df for columns measure, min_num_rows, nrows
+            # print exp_df for columns measure, supp_thresh, nrows
             for ycol in x_y_group:
                 plot_by_x_y_lines(exp_df, x_col='vals_per_qi', y_col=ycol, lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="big_nrows", )
         elif exp_group == 'agg_dinur_nrows_suppression':
-            # print exp_df for columns measure, min_num_rows, nrows
+            # print exp_df for columns measure, supp_thresh, nrows
             for ycol in x_y_group:
-                plot_by_x_y_lines(exp_df, x_col='min_num_rows', y_col=ycol, lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="big_nrows", )
+                plot_by_x_y_lines(exp_df, x_col='supp_thresh', y_col=ycol, lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="big_nrows", )
         elif exp_group == 'agg_dinur_nrows_high_suppression':
-            # for each distinct value in min_num_rows, print measure, num_samples, and med_solver_metrics_runtime
+            # for each distinct value in supp_thresh, print measure, num_samples, and med_solver_metrics_runtime
             do_agg_dinur_nrows_high_suppression_analysis(exp_df, exp_group)
         elif exp_group == 'agg_dinur_basics':
             do_agg_dinur_basic_analysis(exp_df, experiments, exp_group)
@@ -691,10 +676,10 @@ def analyze():
             for ycol in x_y_group:
                 plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='noise', thresh_direction="highest", thresh=0.9, tag="mnr3", )
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_min_num_rows':
-            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='min_num_rows', thresh=0.90)
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='supp_thresh', thresh=0.90)
             for ycol in x_y_group:
-                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='min_num_rows', thresh_direction="highest", thresh=0.9, tag="", )
-            plot_mixing_by_param(exp_df, param_col='min_num_rows', tag="")
+                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='supp_thresh', thresh_direction="highest", thresh=0.9, tag="", )
+            plot_mixing_by_param(exp_df, param_col='supp_thresh', tag="")
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nunique_mnr3':
             do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nunique', thresh=0.90, tag="mnr3")
             for ycol in x_y_group:
@@ -711,10 +696,10 @@ def analyze():
                 plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='actual_vals_per_qi', thresh_direction="highest", thresh=0.9, tag="mnr3", )
             plot_mixing_by_param(exp_df, param_col='actual_vals_per_qi', tag="mnr3")
         elif exp_group == 'agg_dinur_best_case_nrows_nqi3':
-            do_analysis_by_x_y_lines(exp_df, x_col='min_num_rows', y_col='noise', lines_col='nrows', thresh=0.90)
+            do_analysis_by_x_y_lines(exp_df, x_col='supp_thresh', y_col='noise', lines_col='nrows', thresh=0.90)
             make_noise_min_num_rows_table(exp_df, "nqi3")
         elif exp_group == 'agg_dinur_best_case_nrows_nqi4':
-            do_analysis_by_x_y_lines(exp_df, x_col='min_num_rows', y_col='noise', lines_col='nrows', thresh=0.90)
+            do_analysis_by_x_y_lines(exp_df, x_col='supp_thresh', y_col='noise', lines_col='nrows', thresh=0.90)
             make_noise_min_num_rows_table(exp_df, "nqi4")
         else:
             # Generic analysis for other experiment groups

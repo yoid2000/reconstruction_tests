@@ -55,7 +55,7 @@ def plot_simplex_combinations():
         ('noise', 'viridis', 'Noise'),
         ('nrows', 'plasma', 'Number of Rows'),
         ('nunique', 'cividis', 'Distinct Target Values'),
-        ('min_num_rows', 'coolwarm', 'Suppress Threshold'),
+        ('supp_thresh', 'coolwarm', 'Suppress Threshold'),
     ]
     
     # Create 4 plots (one for each color scheme)

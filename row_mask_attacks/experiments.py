@@ -8,7 +8,7 @@ experiments = [
         'used_in_paper': True,
         'experiment_group': 'agg_dinur_nrows_vals_per_qi',
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'seed': list(range(20)),
         'nrows': [100, 200, 300, 400, 500],
         'mask_size': [0],
         'nunique': [2],
@@ -22,7 +22,7 @@ experiments = [
         'used_in_paper': True,
         'experiment_group': 'agg_dinur_nrows_suppression',
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'seed': list(range(20)),
         'nrows': [100, 200, 300, 400],
         'mask_size': [0],
         'nunique': [2],
@@ -36,7 +36,7 @@ experiments = [
         'used_in_paper': False,
         'experiment_group': 'agg_dinur_nrows_high_suppression',
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'seed': list(range(20)),
         'nrows': [100, 200, 300, 400, 500],
         'mask_size': [0],
         'nunique': [2],
@@ -50,7 +50,7 @@ experiments = [
         'used_in_paper': True,
         'experiment_group': 'agg_dinur_nrows_low_nqi',
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'seed': list(range(20)),
         'nrows': [25, 50, 100, 200, 400, 800, 1600],
         'mask_size': [0],
         'nunique': [2],
@@ -79,7 +79,7 @@ experiments = [
         'used_in_paper': True,
         'experiment_group': 'agg_dinur_best_case_nrows_nqi4',
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'seed': list(range(20)),
         'nrows': [5,10,20,50,80,120,200,500],
         'mask_size': [0],       # not used
         'nunique': [2],
@@ -93,7 +93,7 @@ experiments = [
         'used_in_paper': True,
         'experiment_group': 'agg_dinur_best_case_nrows_nqi3',
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'seed': list(range(20)),
         'nrows': [5,10,20,50,80,120,200,500],
         'mask_size': [0],       # not used
         'nunique': [2],
@@ -107,7 +107,7 @@ experiments = [
         'used_in_paper': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_max_qi_mnr3',
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'seed': list(range(20)),
         'max_qi': [2,3,4,5,6,1000],
         'nrows': [150],
         'mask_size': [0],
@@ -122,7 +122,7 @@ experiments = [
         'used_in_paper': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_nrows_mnr3',
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'seed': list(range(20)),
         'nrows': [25,50,75,100,125,150,175],
         'mask_size': [0],
         'nunique': [2],
@@ -136,7 +136,7 @@ experiments = [
         'used_in_paper': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_vals_per_qi_mnr3',
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'seed': list(range(20)),
         'nrows': [150],
         'mask_size': [0],
         'nunique': [2],
@@ -150,7 +150,7 @@ experiments = [
         'used_in_paper': True,
         'experiment_group': 'agg_dinur_x_nqi_y_stuff_lines_noise_mnr3',
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'seed': list(range(20)),
         'nrows': [150],
         'mask_size': [0],
         'nunique': [2],
@@ -164,7 +164,7 @@ experiments = [
         'used_in_paper': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_nunique_mnr3',
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'seed': list(range(20)),
         'nrows': [150],
         'mask_size': [0],
         'nunique': [2,3,4,5],
@@ -178,7 +178,7 @@ experiments = [
         'used_in_paper': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_min_num_rows',
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'seed': list(range(20)),
         'nrows': [150],
         'mask_size': [0],
         'nunique': [2],
@@ -192,7 +192,7 @@ experiments = [
         'used_in_paper': True,
         'experiment_group': 'agg_dinur_explore_nrows',
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'seed': list(range(20)),
         'nrows': [25,50,75,100,125,150,175],
         'mask_size': [0],
         'nunique': [2],
@@ -332,7 +332,7 @@ experiments = [
         'used_in_paper': False,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_nrows_mnr5',
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'seed': list(range(20)),
         'nrows': [25,50,75,100,125,150,175],
         'mask_size': [0],
         'nunique': [2],
@@ -346,7 +346,7 @@ experiments = [
         'used_in_paper': False,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_vals_per_qi_mnr5',
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'seed': list(range(20)),
         'nrows': [150],
         'mask_size': [0],
         'nunique': [2],
@@ -360,7 +360,7 @@ experiments = [
         'used_in_paper': False,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_nunique_mnr5',
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+        'seed': list(range(20)),
         'nrows': [150],
         'mask_size': [0],
         'nunique': [2,3,4,5],
@@ -371,17 +371,17 @@ experiments = [
     },
 ]
 
-def read_experiments(tweak_min_num_rows: bool = False, used_only_in_paper: bool = True, include_new_experiments: bool = False) -> list[dict]:
+def read_experiments(used_only_in_paper: bool = True, include_new_experiments: bool = False) -> list[dict]:
     adjusted_experiments = copy.deepcopy(experiments)
     if used_only_in_paper:
         adjusted_experiments = [exp for exp in adjusted_experiments if exp.get('used_in_paper', False)]
-    if tweak_min_num_rows:
-        for exp in adjusted_experiments:
-            if 'min_num_rows' in exp:
-                values = exp['min_num_rows']
-                if not isinstance(values, list):
-                    values = [values]
-                exp['min_num_rows'] = [value - 1 for value in values]
+    for exp in adjusted_experiments:
+        if 'min_num_rows' in exp:
+            values = exp['min_num_rows']
+            if not isinstance(values, list):
+                values = [values]
+            exp['supp_thresh'] = [value - 1 for value in values]
+    # Note that new_experiments already includes supp_thresh
     if include_new_experiments:
         adjusted_experiments.extend(copy.deepcopy(new_experiments))
     return adjusted_experiments

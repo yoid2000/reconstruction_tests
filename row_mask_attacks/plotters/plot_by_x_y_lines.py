@@ -38,7 +38,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                       'nunique': "Target values",
                       'noise': "Noise",
                       'nqi': "Number QI columns",
-                      'min_num_rows': "Suppress thresh",
+                      'supp_thresh': "Suppress thresh",
                       'vals_per_qi': "QI values",
                       'actual_vals_per_qi': "QI values",
                       'known_qi_fraction': "Known QI fraction",
@@ -54,11 +54,11 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                       'nunique': 2,
                       'noise': 2,
                       'nqi': 6,
-                      'min_num_rows': 2,
+                      'supp_thresh': 2,
                       'actual_vals_per_qi': 2,
                       'max_qi': 1000,
                       }
-    reportable_columns = ['max_qi', 'nrows', 'nunique', 'noise', 'nqi', 'min_num_rows', 'actual_vals_per_qi','known_qi_fraction']
+    reportable_columns = ['max_qi', 'nrows', 'nunique', 'noise', 'nqi', 'supp_thresh', 'actual_vals_per_qi','known_qi_fraction']
     
     if thresh_direction not in ['lowest', 'highest']:
         raise ValueError(f"thresh_direction must be 'lowest' or 'highest', got '{thresh_direction}'")

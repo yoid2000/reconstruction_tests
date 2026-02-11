@@ -4,13 +4,13 @@ from typing import Optional
 
 
 def make_noise_min_num_rows_table(df: pd.DataFrame, note: str, thresh: float = 0.9):
-    """Generate tables showing max measure by noise, min_num_rows, and nrows.
+    """Generate tables showing max measure by noise, supp_thress, and nrows.
     
     Creates both a text table and a LaTeX table showing maximum measure
-    for each combination of noise, min_num_rows, and nrows.
+    for each combination of noise, supp_thress, and nrows.
     
     Args:
-        df: DataFrame with columns 'noise', 'min_num_rows', 'nrows', and 'measure'
+        df: DataFrame with columns 'noise', 'supp_thress', 'nrows', and 'measure'
         note: String to include in output filenames, labels, and captions
         thresh: Threshold for bolding values in LaTeX (default: 0.9)
     """
@@ -21,43 +21,43 @@ def make_noise_min_num_rows_table(df: pd.DataFrame, note: str, thresh: float = 0
     
     # Get unique sorted values
     noise_values = sorted(df['noise'].unique())
-    min_num_rows_values = sorted(df['min_num_rows'].unique())
+    supp_thress_values = sorted(df['supp_thresh'].unique())
     nrows_values = sorted(df['nrows'].unique())
     
-    # Build the data structure: dict[noise][min_num_rows][nrows] = max
+    # Build the data structure: dict[noise][supp_thress][nrows] = max
     table_data = {}
     for noise in noise_values:
         table_data[noise] = {}
-        for mnr in min_num_rows_values:
-            table_data[noise][mnr] = {}
+        for stv in supp_thress_values:
+            table_data[noise][stv] = {}
             for nrows in nrows_values:
                 # Filter data
                 subset = df[(df['noise'] == noise) & 
-                           (df['min_num_rows'] == mnr) & 
+                           (df['supp_thresh'] == stv) & 
                            (df['nrows'] == nrows)]
                 
                 if len(subset) > 0 and 'measure' in subset.columns:
                     max_measure = subset['measure'].max()
-                    table_data[noise][mnr][nrows] = max_measure
+                    table_data[noise][stv][nrows] = max_measure
                 else:
-                    table_data[noise][mnr][nrows] = None
+                    table_data[noise][stv][nrows] = None
     
     # Generate text table
-    text_output = _generate_text_table(table_data, noise_values, min_num_rows_values, nrows_values)
-    text_file = output_dir / f'noise_min_num_rows_{note}.txt'
+    text_output = _generate_text_table(table_data, noise_values, supp_thress_values, nrows_values)
+    text_file = output_dir / f'noise_supp_thress_{note}.txt'
     with open(text_file, 'w') as f:
         f.write(text_output)
     print(f"Saved: {text_file}")
     
     # Generate LaTeX table
-    latex_output = _generate_latex_table(table_data, noise_values, min_num_rows_values, nrows_values, note, thresh)
-    latex_file = output_dir / f'noise_min_num_rows_{note}.tex'
+    latex_output = _generate_latex_table(table_data, noise_values, supp_thress_values, nrows_values, note, thresh)
+    latex_file = output_dir / f'noise_supp_thress_{note}.tex'
     with open(latex_file, 'w') as f:
         f.write(latex_output)
     print(f"Saved: {latex_file}")
 
 
-def _generate_text_table(table_data: dict, noise_values: list, min_num_rows_values: list, nrows_values: list) -> str:
+def _generate_text_table(table_data: dict, noise_values: list, supp_thress_values: list, nrows_values: list) -> str:
     """Generate a fixed-width text table."""
     
     lines = []
@@ -68,7 +68,7 @@ def _generate_text_table(table_data: dict, noise_values: list, min_num_rows_valu
         header_parts.append(f'n={nrows}')
     
     # Calculate column widths - more compact
-    col_widths = [6, 8]  # noise and min_num_rows
+    col_widths = [6, 8]  # noise and supp_thress
     data_col_width = 6  # for max value only (e.g., "0.00")
     col_widths.extend([data_col_width] * len(nrows_values))
     
@@ -86,11 +86,11 @@ def _generate_text_table(table_data: dict, noise_values: list, min_num_rows_valu
     
     # Data rows
     for noise in noise_values:
-        for mnr in min_num_rows_values:
-            row_parts = [str(int(noise)), str(int(mnr))]
+        for stv in supp_thress_values:
+            row_parts = [str(int(noise)), str(int(stv))]
             
             for nrows in nrows_values:
-                value = table_data[noise][mnr][nrows]
+                value = table_data[noise][stv][nrows]
                 if value is None:
                     cell = '---'
                 else:
@@ -106,7 +106,7 @@ def _generate_text_table(table_data: dict, noise_values: list, min_num_rows_valu
     return '\n'.join(lines)
 
 
-def _generate_latex_table(table_data: dict, noise_values: list, min_num_rows_values: list, 
+def _generate_latex_table(table_data: dict, noise_values: list, supp_thress_values: list, 
                           nrows_values: list, note: str, thresh: float) -> str:
     """Generate a LaTeX table using booktabs."""
     
@@ -136,11 +136,11 @@ def _generate_latex_table(table_data: dict, noise_values: list, min_num_rows_val
             lines.append('\\midrule')
         prev_noise = noise
         
-        for mnr in min_num_rows_values:
-            row_parts = [str(int(noise)), str(int(mnr))]
+        for stv in supp_thress_values:
+            row_parts = [str(int(noise)), str(int(stv))]
             
             for nrows in nrows_values:
-                value = table_data[noise][mnr][nrows]
+                value = table_data[noise][stv][nrows]
                 if value is None:
                     cell = '---'
                 else:
@@ -158,7 +158,7 @@ def _generate_latex_table(table_data: dict, noise_values: list, min_num_rows_val
     lines.append('\\bottomrule')
     lines.append('\\end{tabular}')
     lines.append(f'\\caption{{Maximum measure values by noise, minimum rows threshold, and number of rows ({note}). Values $\\geq {thresh}$ are shown in bold.}}')
-    lines.append(f'\\label{{tab:noise_min_num_rows_{note}}}')
+    lines.append(f'\\label{{tab:noise_supp_thress_{note}}}')
     lines.append('\\end{table}')
     
     return '\n'.join(lines)
