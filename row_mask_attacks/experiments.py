@@ -87,7 +87,7 @@ experiments = [
         'nqi': [3,4,5,6,7,9,11],
         'min_num_rows': [3],
         'vals_per_qi': [0],   # auto-select
-        'known_qi_fraction': [0, 0.25, 0.5, 0.75, 1.0],
+        'known_qi_fraction': [1.0],
     },
     {   # Agg known probe overall
         'dont_run': True,
