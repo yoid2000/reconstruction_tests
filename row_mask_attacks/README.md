@@ -28,5 +28,7 @@ The attack result is stored under `results/` in a json file
 
 `gather.py` reads in the json files produced by `run_row_mask_attack.py`, reads the data, and places the result in `results/result.parquet`.
 
+If run with --force, then `result.parquet` is created from scratch from the json files. Else, `result.parquet` is appended with the data from the json files not already in `result.parquet`. 
+
 ## analyze.py
 

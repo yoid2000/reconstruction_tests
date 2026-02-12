@@ -586,6 +586,134 @@ def prep_data() -> pd.DataFrame:
     print(f"Loaded {len(df_all)} rows from {parquet_path}")
     return df_all
 
+def compare_agg_known_to_agg_row(df_known, df_row):
+    print("\n\nCOMPARE agg_known vs agg_row")
+    print("=" * 80)
+
+    if df_known is None or len(df_known) == 0:
+        print("No agg_known rows to compare")
+        return
+    if df_row is None or len(df_row) == 0:
+        print("No agg_row rows to compare")
+        return
+
+    if 'known_qi_fraction' in df_known.columns:
+        before = len(df_known)
+        df_known = df_known[np.isclose(df_known['known_qi_fraction'], 1.0)].copy()
+        print(f"Filtered df_known by known_qi_fraction==1.0: {before} -> {len(df_known)} rows")
+    else:
+        print("Warning: df_known missing 'known_qi_fraction' column")
+
+    if len(df_known) == 0:
+        print("No agg_known rows with known_qi_fraction==1.0")
+        return
+
+    if 'solve_type' in df_row.columns:
+        df_row = df_row[df_row['solve_type'] == 'agg_row'].copy()
+    else:
+        print("Warning: df_row missing 'solve_type' column; cannot filter to agg_row")
+
+    if len(df_row) == 0:
+        print("No agg_row rows to compare after filtering")
+        return
+
+    if 'med_solver_metrics_runtime' in df_row.columns:
+        df_row_grouped = df_row.copy()
+    else:
+        df_row_grouped = group_by_experiment_parameters(df_row)
+
+    compare_groups = [
+        'max_qi', 'nrows', 'nunique', 'noise', 'nqi', 'vals_per_qi',
+        'max_samples', 'target_accuracy', 'supp_thresh', 'known_qi_fraction'
+    ]
+    compare_groups_present = [
+        col for col in compare_groups
+        if col in df_known.columns and col in df_row_grouped.columns
+    ]
+    drop_cols = [col for col in compare_groups_present if df_row_grouped[col].isna().all()]
+    if drop_cols:
+        compare_groups_present = [col for col in compare_groups_present if col not in drop_cols]
+        print(f"Warning: dropping compare columns with all-NaN agg_row values: {drop_cols}")
+
+    if not compare_groups_present:
+        print("No overlapping compare group columns found")
+        return
+
+    x_y_group_all = [
+        'measure', 'num_samples', 'mixing_avg', 'separation_average',
+        'num_suppressed', 'solver_metrics_simplex_iterations',
+        'med_solver_metrics_runtime', 'mix_times_sep',
+        'solver_metrics_num_vars', 'solver_metrics_num_constrs'
+    ]
+    x_y_group = [
+        col for col in x_y_group_all
+        if col in df_known.columns and col in df_row_grouped.columns
+    ]
+    if not x_y_group:
+        print("No overlapping x_y_group columns found for comparison")
+        return
+
+    missing_known = [col for col in x_y_group_all if col not in df_known.columns]
+    missing_row = [col for col in x_y_group_all if col not in df_row_grouped.columns]
+    if missing_known:
+        print(f"Warning: df_known missing columns: {missing_known}")
+    if missing_row:
+        print(f"Warning: df_row missing columns: {missing_row}")
+
+    def summarize_group(group_df: pd.DataFrame, cols: list) -> pd.Series:
+        if len(group_df) == 1:
+            return group_df.iloc[0][cols]
+        summary = {}
+        for col in cols:
+            if col not in group_df.columns:
+                continue
+            if pd.api.types.is_numeric_dtype(group_df[col]):
+                summary[col] = group_df[col].mean()
+            else:
+                summary[col] = group_df[col].iloc[0]
+        return pd.Series(summary)
+
+    grouped_known = df_known.groupby(compare_groups_present, dropna=False)
+    match_count = 0
+
+    for keys, known_group in grouped_known:
+        if not isinstance(keys, tuple):
+            keys = (keys,)
+        key_dict = dict(zip(compare_groups_present, keys))
+
+        mask = pd.Series(True, index=df_row_grouped.index)
+        for col, value in key_dict.items():
+            if pd.isna(value):
+                mask &= df_row_grouped[col].isna()
+            else:
+                mask &= df_row_grouped[col] == value
+
+        row_group = df_row_grouped[mask]
+
+        print("\n" + "-" * 80)
+        print("Group:", ", ".join(f"{k}={v}" for k, v in key_dict.items()))
+
+        if len(row_group) == 0:
+            print("No matching agg_row group found")
+            continue
+
+        if len(row_group) > 1:
+            print(f"Warning: multiple agg_row matches ({len(row_group)}), averaging values")
+        if len(known_group) > 1:
+            print(f"Warning: multiple agg_known rows ({len(known_group)}), averaging values")
+
+        known_vals = summarize_group(known_group, x_y_group)
+        row_vals = summarize_group(row_group, x_y_group)
+
+        compare_df = pd.DataFrame({
+            'agg_known': known_vals,
+            'agg_row': row_vals,
+        })
+        print(compare_df.to_string(float_format=lambda x: f"{x:0.4f}"))
+        match_count += 1
+
+    print(f"\nCompared {match_count} group(s)")
+
 def analyze():
     """Read result.parquet and analyze correlations with num_samples."""
     df_all = prep_data()
@@ -711,6 +839,8 @@ def analyze():
             make_noise_min_num_rows_table(exp_df, "nqi4")
         elif exp_group == 'probe_agg_known':
             pass
+        elif exp_group == 'agg_known_compare':
+            compare_agg_known_to_agg_row(exp_df, df_final)
         else:
             # Generic analysis for other experiment groups
             print(f"\n\n{'='*80}")
