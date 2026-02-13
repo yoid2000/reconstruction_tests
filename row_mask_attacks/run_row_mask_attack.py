@@ -817,7 +817,7 @@ def main():
         return
     
     # Generate test parameter combinations
-    max_time_minutes = 60 * 24     # We'll set slurm to this
+    max_time_minutes = 60 * 24 * 2     # We'll set slurm to this
     # 2 minutes for overhead, convert to seconds, then divide by 20 to safely allow for multiple runs
     time_include_threshold_seconds =  ((max_time_minutes-2) * 60) / 20
     test_params = []
