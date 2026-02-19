@@ -833,10 +833,10 @@ def analyze():
             plot_mixing_by_param(exp_df, param_col='actual_vals_per_qi', tag="mnr3")
         elif exp_group == 'agg_dinur_best_case_nrows_nqi3':
             do_analysis_by_x_y_lines(exp_df, x_col='supp_thresh', y_col='noise', lines_col='nrows', thresh=0.90)
-            make_noise_min_num_rows_table(exp_df, "nqi3")
+            make_noise_min_num_rows_table(exp_df, 3, "nqi3")
         elif exp_group == 'agg_dinur_best_case_nrows_nqi4':
             do_analysis_by_x_y_lines(exp_df, x_col='supp_thresh', y_col='noise', lines_col='nrows', thresh=0.90)
-            make_noise_min_num_rows_table(exp_df, "nqi4")
+            make_noise_min_num_rows_table(exp_df, 4, "nqi4")
         elif exp_group == 'probe_agg_known':
             pass
         elif exp_group == 'agg_known_compare':
