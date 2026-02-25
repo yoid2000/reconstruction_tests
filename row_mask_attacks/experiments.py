@@ -75,7 +75,7 @@ experiments = [
         'known_qi_fraction': [1.0],
     },
     {   # Agg known test known_qi_fraction with defaults
-        'dont_run': False,
+        'dont_run': True,
         'used_in_paper': True,
         'experiment_group': 'agg_known_defaults',
         'solve_type': 'agg_known',
@@ -88,6 +88,21 @@ experiments = [
         'min_num_rows': [3],
         'vals_per_qi': [0],   # auto-select
         'known_qi_fraction': [0, 0.25, 0.5, 0.75, 1.0],
+    },
+    {   # Agg known best
+        'dont_run': False,
+        'used_in_paper': True,
+        'experiment_group': 'agg_known_best',
+        'solve_type': 'agg_known',
+        'seed': [1],
+        'nrows': [100],
+        'mask_size': [0],
+        'nunique': [2],
+        'noise': [1],
+        'nqi': [6],
+        'min_num_rows': [2],
+        'vals_per_qi': [0],   # auto-select
+        'known_qi_fraction': [0.0, 0.25, 0.5, 0.75],
     },
     {   # Agg known probe overall
         'dont_run': True,

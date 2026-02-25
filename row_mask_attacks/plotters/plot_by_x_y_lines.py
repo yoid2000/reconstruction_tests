@@ -57,6 +57,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                       'supp_thresh': 2,
                       'actual_vals_per_qi': 2,
                       'max_qi': 1000,
+                      'known_qi_fraction': 1.0,
                       }
     reportable_columns = ['max_qi', 'nrows', 'nunique', 'noise', 'nqi', 'supp_thresh', 'actual_vals_per_qi','known_qi_fraction']
     

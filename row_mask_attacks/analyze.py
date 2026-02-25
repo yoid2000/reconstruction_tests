@@ -36,6 +36,50 @@ from plotters import (
     plot_mixing_by_param,
 )
 
+def print_experiment_group_results(exp_df, exp_group, metrics):
+    if exp_df is None or len(exp_df) == 0:
+        print(f"\nSkipping {exp_group}: no data")
+        return
+
+    grouping_cols_present = [col for col in grouping_cols if col in exp_df.columns]
+    metric_cols_present = [col for col in metrics if col in exp_df.columns]
+
+    if not grouping_cols_present:
+        print(f"\nSkipping {exp_group}: no grouping columns present")
+        return
+    if not metric_cols_present:
+        print(f"\nSkipping {exp_group}: none of requested metrics present: {metrics}")
+        return
+
+    # Aggregate metrics if multiple rows share the same grouping key
+    agg_dict = {}
+    for col in metric_cols_present:
+        if pd.api.types.is_numeric_dtype(exp_df[col]):
+            agg_dict[col] = 'mean'
+        else:
+            agg_dict[col] = 'first'
+
+    grouped = exp_df.groupby(grouping_cols_present, dropna=False).agg(agg_dict).reset_index()
+
+    if len(grouped) != len(exp_df):
+        print(f"\nNote: aggregated {len(exp_df)} rows into {len(grouped)} groups for {exp_group}")
+
+    grouped = grouped.sort_values(by=grouping_cols_present)
+
+    # Only show grouping columns that vary across groups
+    varying_group_cols = [
+        col for col in grouping_cols_present
+        if grouped[col].nunique(dropna=False) > 1
+    ]
+
+    print(f"\nResults for experiment group '{exp_group}':")
+    for _, row in grouped.iterrows():
+        print("-" * 40)
+        for col in varying_group_cols:
+            print(f"{col}: {row[col]}")
+        for col in metric_cols_present:
+            print(f"{col}: {row[col]}")
+
 def analyze_single_parameter_variation(df: pd.DataFrame, experiments: list, exp_group: str):
     """Analyze how results vary when only one parameter changes.
     
@@ -838,6 +882,12 @@ def analyze():
             do_analysis_by_x_y_lines(exp_df, x_col='supp_thresh', y_col='noise', lines_col='nrows', thresh=0.90)
             make_noise_min_num_rows_table(exp_df, 4, "nqi4")
         elif exp_group == 'probe_agg_known':
+            metrics = ['measure', 'med_solver_metrics_runtime']
+            print_experiment_group_results(exp_df, exp_group, metrics)
+        elif exp_group == 'agg_known_defaults':
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='known_qi_fraction', thresh=0.90, tag="mnr3")
+            for ycol in x_y_group:
+                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='actual_vals_per_qi', thresh_direction="highest", thresh=0.9, tag="mnr3", )
             pass
         elif exp_group == 'agg_known_compare':
             compare_agg_known_to_agg_row(exp_df, df_final)
