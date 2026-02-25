@@ -90,7 +90,7 @@ experiments = [
         'known_qi_fraction': [0, 0.25, 0.5, 0.75, 1.0],
     },
     {   # Agg known best
-        'dont_run': False,
+        'dont_run': True,
         'used_in_paper': True,
         'experiment_group': 'agg_known_best',
         'solve_type': 'agg_known',
