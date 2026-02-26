@@ -89,18 +89,33 @@ experiments = [
         'vals_per_qi': [0],   # auto-select
         'known_qi_fraction': [0, 0.25, 0.5, 0.75, 1.0],
     },
-    {   # Agg known best
+    {   # Agg known best, nqi = 5
         'dont_run': False,
         'used_in_paper': True,
-        'experiment_group': 'agg_known_best',
+        'experiment_group': 'agg_known_best_nqi5',
         'solve_type': 'agg_known',
         'seed': [0,1,2,3,4],
         'nrows': [50],
         'mask_size': [0],
         'nunique': [2],
-        'noise': [1,2],
+        'noise': [1,2,3],
+        'nqi': [5],
+        'min_num_rows': [2,3,4],
+        'vals_per_qi': [0],   # auto-select
+        'known_qi_fraction': [0.0, 0.25, 0.5, 0.75],
+    },
+    {   # Agg known best, nqi = 6
+        'dont_run': False,
+        'used_in_paper': True,
+        'experiment_group': 'agg_known_best_nqi6',
+        'solve_type': 'agg_known',
+        'seed': [0,1,2,3,4],
+        'nrows': [50],
+        'mask_size': [0],
+        'nunique': [2],
+        'noise': [1,2,3],
         'nqi': [6],
-        'min_num_rows': [2,3],
+        'min_num_rows': [2,3,4],
         'vals_per_qi': [0],   # auto-select
         'known_qi_fraction': [0.0, 0.25, 0.5, 0.75],
     },
