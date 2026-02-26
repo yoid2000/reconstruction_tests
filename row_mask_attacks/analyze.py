@@ -34,6 +34,7 @@ from plotters import (
     make_noise_min_num_rows_table,
     plot_mixing_by_measure,
     plot_mixing_by_param,
+    plot_elapsed_time_pdf,
 )
 
 def print_experiment_group_results(exp_df, exp_group, metrics):
@@ -796,6 +797,7 @@ def analyze():
     """Read result.parquet and analyze correlations with num_samples."""
     df_all = prep_data()
     analyze_refinement(df_all)
+    plot_elapsed_time_pdf(df_all)
 
     # Make df_final, which removes rows where final_attack is False
     df_final = df_all[df_all['final_attack'] == True].copy()
@@ -818,6 +820,7 @@ def analyze():
     print(df_grouped['solve_type'].value_counts(dropna=False))
     print("Columns in df_grouped:")
     print(list(df_grouped.columns))
+
     
     # print first row of df_grouped using to_string to show all columns
     print(f"\nFirst row of grouped dataframe:\n{df_grouped.iloc[0].to_string()}\n")

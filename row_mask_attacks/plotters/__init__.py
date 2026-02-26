@@ -18,6 +18,7 @@ from .plot_by_x_y_lines import plot_by_x_y_lines
 from .make_noise_min_num_rows_table import make_noise_min_num_rows_table
 from .plot_mixing_by_param import plot_mixing_by_param
 from .plot_mixing_by_measure import plot_mixing_by_measure
+from .plot_elapsed_time_pdf import plot_elapsed_time_pdf
 
 __all__ = [
     'plot_mixing_vs_samples',
@@ -38,4 +39,5 @@ __all__ = [
     'make_noise_min_num_rows_table',
     'plot_mixing_by_measure',
     'plot_mixing_by_param',
+    'plot_elapsed_time_pdf',
 ]
