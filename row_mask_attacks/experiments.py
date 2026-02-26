@@ -1,5 +1,5 @@
 import copy
-from new_experiments import new_experiments
+from more_seeds_experiments import more_seeds_experiments
 
 # Define parameter ranges
 experiments = [
@@ -90,9 +90,9 @@ experiments = [
         'known_qi_fraction': [0, 0.25, 0.5, 0.75, 1.0],
     },
     {   # Agg known best, nqi = 5
-        'dont_run': False,
+        'dont_run': True,
         'used_in_paper': True,
-        'experiment_group': 'agg_known_best_nqi5',
+        'experiment_group': 'agg_known_best',
         'solve_type': 'agg_known',
         'seed': [0,1,2,3,4],
         'nrows': [50],
@@ -102,12 +102,12 @@ experiments = [
         'nqi': [5],
         'min_num_rows': [2,3,4],
         'vals_per_qi': [0],   # auto-select
-        'known_qi_fraction': [0.0, 0.25, 0.5, 0.75],
+        'known_qi_fraction': [0.0, 0.25, 0.5, 0.75, 1.0],
     },
     {   # Agg known best, nqi = 6
-        'dont_run': False,
+        'dont_run': True,
         'used_in_paper': True,
-        'experiment_group': 'agg_known_best_nqi6',
+        'experiment_group': 'agg_known_best',
         'solve_type': 'agg_known',
         'seed': [0,1,2,3,4],
         'nrows': [50],
@@ -117,7 +117,7 @@ experiments = [
         'nqi': [6],
         'min_num_rows': [2,3,4],
         'vals_per_qi': [0],   # auto-select
-        'known_qi_fraction': [0.0, 0.25, 0.5, 0.75],
+        'known_qi_fraction': [0.0, 0.25, 0.5, 0.75, 1.0],
     },
     {   # Agg known probe overall
         'dont_run': True,
@@ -431,7 +431,7 @@ experiments = [
     },
 ]
 
-def read_experiments(used_only_in_paper: bool = True, include_new_experiments: bool = False) -> list[dict]:
+def read_experiments(used_only_in_paper: bool = True, include_more_seeds_experiments: bool = False) -> list[dict]:
     adjusted_experiments = copy.deepcopy(experiments)
     if used_only_in_paper:
         adjusted_experiments = [exp for exp in adjusted_experiments if exp.get('used_in_paper', False)]
@@ -441,7 +441,7 @@ def read_experiments(used_only_in_paper: bool = True, include_new_experiments: b
             if not isinstance(values, list):
                 values = [values]
             exp['supp_thresh'] = [value - 1 for value in values]
-    # Note that new_experiments already includes supp_thresh
-    if include_new_experiments:
-        adjusted_experiments.extend(copy.deepcopy(new_experiments))
+    # Note that more_seeds_experiments already includes supp_thresh
+    if include_more_seeds_experiments:
+        adjusted_experiments.extend(copy.deepcopy(more_seeds_experiments))
     return adjusted_experiments

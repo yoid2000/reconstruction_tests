@@ -529,36 +529,41 @@ def attack_loop(nrows: int,
             reconstructed, num_equations, solver_metrics = reconstruct_by_row(samples, noise, seed)
             accuracy = measure_by_row(df, reconstructed)
         elif solve_type == 'agg_known':
-            # Filter complete_known_qi_rows to only those appearing in at least one sample
-            known_qi_rows = []
-            for known_qi_row in complete_known_qi_rows:
-                # Check if this known_qi_row matches any sample
-                for sample in samples:
-                    if 'qi_cols' in sample and 'qi_vals' in sample:
-                        # Check if any qi_cols in the sample match the known_qi_row
-                        match = False
-                        for col, val in zip(sample['qi_cols'], sample['qi_vals']):
-                            if known_qi_row.get(col) == val:
-                                match = True
+            if known_qi_fraction == 1.0:
+                reconstructed, num_equations, solver_metrics = reconstruct_by_row(samples, noise, seed)
+                accuracy = measure_by_row(df, reconstructed)
+                qi_match_accuracy = 1.0
+            else:
+                # Filter complete_known_qi_rows to only those appearing in at least one sample
+                known_qi_rows = []
+                for known_qi_row in complete_known_qi_rows:
+                    # Check if this known_qi_row matches any sample
+                    for sample in samples:
+                        if 'qi_cols' in sample and 'qi_vals' in sample:
+                            # Check if any qi_cols in the sample match the known_qi_row
+                            match = False
+                            for col, val in zip(sample['qi_cols'], sample['qi_vals']):
+                                if known_qi_row.get(col) == val:
+                                    match = True
+                                    break
+                            if match:
+                                # This known_qi_row is covered by at least one sample
+                                known_qi_rows.append(known_qi_row)
                                 break
-                        if match:
-                            # This known_qi_row is covered by at least one sample
-                            known_qi_rows.append(known_qi_row)
-                            break
-            
-            if (len(known_qi_rows) != len(complete_known_qi_rows)):
-                # throw exception
-                print("Samples:")
-                pp.pprint(samples)
-                print("Complete known QI rows:")
-                pp.pprint(complete_known_qi_rows)
-                print("Filtered known QI rows:")
-                pp.pprint(known_qi_rows)
-                raise ValueError(f"Known QI rows used in reconstruction ({len(known_qi_rows)}) does not match total known QI rows ({len(complete_known_qi_rows)})")
-            reconstructed, num_equations, solver_metrics = reconstruct_by_aggregate_and_known_qi(samples, noise, nrows, all_qi_cols, complete_known_qi_rows, seed)
-            accuracy_measure = measure_by_aggregate(df, reconstructed)
-            accuracy = accuracy_measure['qi_and_val_match']
-            qi_match_accuracy = accuracy_measure['qi_match']
+                
+                if (len(known_qi_rows) != len(complete_known_qi_rows)):
+                    # throw exception
+                    print("Samples:")
+                    pp.pprint(samples)
+                    print("Complete known QI rows:")
+                    pp.pprint(complete_known_qi_rows)
+                    print("Filtered known QI rows:")
+                    pp.pprint(known_qi_rows)
+                    raise ValueError(f"Known QI rows used in reconstruction ({len(known_qi_rows)}) does not match total known QI rows ({len(complete_known_qi_rows)})")
+                reconstructed, num_equations, solver_metrics = reconstruct_by_aggregate_and_known_qi(samples, noise, nrows, all_qi_cols, complete_known_qi_rows, seed)
+                accuracy_measure = measure_by_aggregate(df, reconstructed)
+                accuracy = accuracy_measure['qi_and_val_match']
+                qi_match_accuracy = accuracy_measure['qi_match']
         else:
             raise ValueError(f"Unsupported solve_type: {solve_type}")
         mixing = mixing_stats(samples)
@@ -715,7 +720,7 @@ def main():
     
     # Read in the experiments data structure from experiments.py
     from experiments import read_experiments
-    experiments = read_experiments(include_new_experiments=True)
+    experiments = read_experiments(include_more_seeds_experiments=True)
     
     # Fixed parameters
     max_samples = 20000
@@ -817,7 +822,7 @@ def main():
         return
     
     # Generate test parameter combinations
-    max_time_minutes = 60 * 24 * 2     # We'll set slurm to this
+    max_time_minutes = 60 * 2     # We'll set slurm to this
     # 2 minutes for overhead, convert to seconds, then divide by 20 to safely allow for multiple runs
     time_include_threshold_seconds =  ((max_time_minutes-2) * 60) / 20
     test_params = []

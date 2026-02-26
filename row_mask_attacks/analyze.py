@@ -216,7 +216,7 @@ def get_experiment_dataframes(experiments, df):
     Returns:
         Dict mapping experiment_group name to filtered dataframe
     """
-    result = {}
+    grouped_parts = {}
     
     for exp in experiments:
         exp_group = exp['experiment_group']
@@ -246,8 +246,19 @@ def get_experiment_dataframes(experiments, df):
                 mask = mask & df[param].isin(values)
                 print(f"    Mask now has {mask.sum()} rows (or {len(df) - mask.sum()} excluded)")
         
-        result[exp_group] = df[mask].copy()
-        
+        grouped_parts.setdefault(exp_group, []).append(df[mask].copy())
+
+    # Combine all parts for the same experiment_group (union of rows)
+    result = {}
+    for exp_group, parts in grouped_parts.items():
+        if not parts:
+            result[exp_group] = df.iloc[0:0].copy()
+            continue
+        combined = pd.concat(parts, axis=0)
+        # Ensure union of rows if overlapping filters hit the same row
+        combined = combined.loc[~combined.index.duplicated(keep="first")]
+        result[exp_group] = combined
+
     return result
 
 def group_by_experiment_parameters(df_final):
@@ -338,13 +349,12 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
 
     # Heuristics for "enough" samples
     min_seeds = 2  # only consider groups that have at least this many seeds
-    abs_margin = 0.05  # absolute margin for CI half-width
-    rel_margin = 0.1  # or within 10% of the mean
+    min_margin = 0.01  # minimum margin for CI half-width
     alpha = 0.05       # 95% confidence
 
     print("\nSeed effect / sample adequacy check")
     print(f"  Grouping columns: {grouping_cols_present}")
-    print(f"  Criteria: >= {min_seeds} seeds and CI half-width <= max({abs_margin}, {rel_margin} * mean)")
+    print(f"  Criteria: >= {min_seeds} seeds and CI half-width = < max({min_margin}, (1-mean_measure)/2)")
 
     rows = []
     grouped = df_final.groupby(grouping_cols_present, dropna=False)
@@ -353,6 +363,15 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
         if not isinstance(keys, tuple):
             keys = (keys,)
         key_dict = dict(zip(grouping_cols_present, keys))
+        if 'min_num_rows' in g.columns:
+            unique_min_rows = g['min_num_rows'].dropna().unique()
+            if len(unique_min_rows) == 0:
+                key_dict['min_num_rows'] = None
+            elif len(unique_min_rows) == 1:
+                key_dict['min_num_rows'] = unique_min_rows[0]
+            else:
+                print(f"Warning: multiple min_num_rows values for group {key_dict}: {unique_min_rows}")
+                key_dict['min_num_rows'] = unique_min_rows[0]
 
         measures = g['measure'].dropna()
         n = len(measures)
@@ -369,7 +388,7 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
         else:
             ci_half = np.nan
 
-        target_margin = max(abs_margin, rel_margin * abs(mean_val))
+        target_margin = max(min_margin, (1.0-mean_val)/2)
 
         # Rough estimate of seeds needed to hit target margin (use normal approx)
         if std_val == 0:
@@ -405,7 +424,7 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
 
     not_enough = summary_df[summary_df['enough_samples'].fillna(False).eq(False)]
     print(f"summary_df: {len(summary_df)} groups analyzed, {len(not_enough)} need more samples")
-    new_experiments = []
+    more_seeds_experiments = []
     for _, row in not_enough.iterrows():
         entry = {
             'dont_run': False,
@@ -424,6 +443,13 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
                 entry[col] = value
             else:
                 entry[col] = [value]
+        if 'min_num_rows' in row.index:
+            value = row['min_num_rows']
+            if pd.isna(value):
+                value = None
+            elif hasattr(value, "item"):
+                value = value.item()
+            entry['min_num_rows'] = [value]
 
         seeds_needed = int(row['seeds_needed_est'])
         seed_pool = list(range(10000, 20001))
@@ -432,18 +458,26 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
         else:
             entry['seed'] = [random.randint(10000, 20000) for _ in range(seeds_needed)]
 
-        new_experiments.append(entry)
+        more_seeds_experiments.append(entry)
 
-    output_path = Path(__file__).parent / "new_experiments.py"
+    output_path = Path(__file__).parent / "more_seeds_experiments.py"
     with output_path.open("w", encoding="utf-8") as handle:
-        handle.write("new_experiments = [\n")
-        for entry in new_experiments:
+        handle.write("more_seeds_experiments = [\n")
+        for entry in more_seeds_experiments:
             handle.write(f"    {entry},\n")
         handle.write("]\n")
-    print(f"\nWrote {len(new_experiments)} new experiments to {output_path}")
+    print(f"\nWrote {len(more_seeds_experiments)} new experiments to {output_path}")
     print(f"\nTotal groups analyzed: {len(summary_df)}")
     print(f"Groups with enough samples: {len(summary_df) - len(not_enough)}")
     print(f"Groups needing more seeds: {len(not_enough)}")
+    if len(not_enough) > 0:
+        mean_measure_avg = float(not_enough['mean_measure'].mean())
+        mean_measure_std = float(not_enough['mean_measure'].std(ddof=1)) if len(not_enough) > 1 else 0.0
+        target_margin_avg = float(not_enough['target_margin'].mean())
+        target_margin_std = float(not_enough['target_margin'].std(ddof=1)) if len(not_enough) > 1 else 0.0
+        print(f"\nGroups needing more seeds stats:")
+        print(f"  mean_measure avg: {mean_measure_avg:.6f}, std: {mean_measure_std:.6f}")
+        print(f"  target_margin avg: {target_margin_avg:.6f}, std: {target_margin_std:.6f}")
 
     if len(not_enough) > 0:
         # Show the top 100 groups most in need of more seeds (sorted by margin gap)
