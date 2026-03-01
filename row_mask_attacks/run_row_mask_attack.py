@@ -968,7 +968,7 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
             f.write(slurm_content)
         
         print(f"\nSLURM file created: {slurm_file}")
-        print(f"Total jobs: {len(test_params)} (array: 0-{num_jobs}) out of which {num_finished_jobs} are already finished.")
+        print(f"Total jobs: {len(test_params)} (array: 0-{num_jobs}). {num_finished_jobs} are already finished.")
         return
     
     # Check if job_num is valid

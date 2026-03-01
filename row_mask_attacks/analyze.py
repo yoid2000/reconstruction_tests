@@ -35,6 +35,7 @@ from plotters import (
     plot_mixing_by_measure,
     plot_mixing_by_param,
     plot_elapsed_time_pdf,
+    plot_agg_known_heatmaps,
 )
 
 def print_experiment_group_results(exp_df, exp_group, metrics):
@@ -924,6 +925,7 @@ def analyze():
         elif exp_group == 'agg_known_best':
             metrics = ['measure', 'med_solver_metrics_runtime']
             print_experiment_group_results(exp_df, exp_group, metrics)
+            plot_agg_known_heatmaps(exp_df)
         elif exp_group == 'agg_known_defaults':
             do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='known_qi_fraction', thresh=0.90, tag="mnr3")
             for ycol in x_y_group:
