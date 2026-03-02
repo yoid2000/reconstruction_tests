@@ -352,11 +352,12 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
     # Heuristics for "enough" samples
     min_seeds = 2  # only consider groups that have at least this many seeds
     min_margin = 0.01  # minimum margin for CI half-width
+    ci_fraction = 3.0  # require CI half-width to be less than mean_measure / ci_fraction
     alpha = 0.05       # 95% confidence
 
     print("\nSeed effect / sample adequacy check")
     print(f"  Grouping columns: {grouping_cols_present}")
-    print(f"  Criteria: >= {min_seeds} seeds and CI half-width = < max({min_margin}, (1-mean_measure)/2)")
+    print(f"  Criteria: >= {min_seeds} seeds and CI half-width = < max({min_margin}, (1-mean_measure)/{ci_fraction})")
 
     rows = []
     grouped = df_final.groupby(grouping_cols_present, dropna=False)
@@ -390,21 +391,21 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
         else:
             ci_half = np.nan
 
-        target_margin = max(min_margin, (1.0-mean_val)/2)
+        target_half_margin = max(min_margin, (1.0-mean_val)/ci_fraction)
 
         # Rough estimate of seeds needed to hit target margin (use normal approx)
         if std_val == 0:
             seeds_needed = min_seeds
         else:
             z_val = stats.norm.ppf(1 - alpha / 2)
-            seeds_needed = int(np.ceil((z_val * std_val / target_margin) ** 2))
+            seeds_needed = int(np.ceil((z_val * std_val / target_half_margin) ** 2))
             seeds_needed = max(seeds_needed, min_seeds)
 
         seed_count = g['seed'].nunique()
         if seed_count < min_seeds:
             continue
 
-        enough_samples = (seed_count >= min_seeds) and (not np.isnan(ci_half)) and (ci_half <= target_margin)
+        enough_samples = (seed_count >= min_seeds) and (not np.isnan(ci_half)) and (ci_half <= target_half_margin)
 
         rows.append({
             **key_dict,
@@ -413,7 +414,7 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
             'mean_measure': mean_val,
             'std_measure': std_val,
             'ci_half_width': ci_half,
-            'target_margin': target_margin,
+            'target_half_margin': target_half_margin,
             'seeds_needed_est': seeds_needed,
             'enough_samples': enough_samples,
         })
@@ -475,18 +476,18 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
     if len(not_enough) > 0:
         mean_measure_avg = float(not_enough['mean_measure'].mean())
         mean_measure_std = float(not_enough['mean_measure'].std(ddof=1)) if len(not_enough) > 1 else 0.0
-        target_margin_avg = float(not_enough['target_margin'].mean())
-        target_margin_std = float(not_enough['target_margin'].std(ddof=1)) if len(not_enough) > 1 else 0.0
+        target_half_margin_avg = float(not_enough['target_half_margin'].mean())
+        target_half_margin_std = float(not_enough['target_half_margin'].std(ddof=1)) if len(not_enough) > 1 else 0.0
         print(f"\nGroups needing more seeds stats:")
         print(f"  mean_measure avg: {mean_measure_avg:.6f}, std: {mean_measure_std:.6f}")
-        print(f"  target_margin avg: {target_margin_avg:.6f}, std: {target_margin_std:.6f}")
+        print(f"  target_half_margin avg: {target_half_margin_avg:.6f}, std: {target_half_margin_std:.6f}")
 
     if len(not_enough) > 0:
         # Show the top 100 groups most in need of more seeds (sorted by margin gap)
         not_enough = not_enough.copy()
-        not_enough['margin_gap'] = not_enough['ci_half_width'] - not_enough['target_margin']
+        not_enough['margin_gap'] = not_enough['ci_half_width'] - not_enough['target_half_margin']
         cols_to_show = grouping_cols_present + ['unique_seeds', 'seeds_needed_est', 'mean_measure',
-                                                'std_measure', 'ci_half_width', 'target_margin', 'margin_gap']
+                                                'std_measure', 'ci_half_width', 'target_half_margin', 'margin_gap']
         print("\nGroups needing more samples (top 100):")
         top_rows = not_enough.sort_values(['margin_gap', 'unique_seeds'], ascending=[False, True])[cols_to_show].head(100)
         for _, row in top_rows.iterrows():

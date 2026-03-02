@@ -15,8 +15,8 @@ def plot_agg_known_heatmaps(df: pd.DataFrame):
     output_dir = Path('./results/plots')
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    noise_vals = [1, 2, 3]
-    supp_vals = [1, 2, 3]
+    noise_vals = [1, 2, 3, 4]
+    supp_vals = [1, 2, 3, 4]
     kqf_vals = [0.0, 0.25, 0.5, 0.75, 1.0]
     nqi_vals = sorted(df['nqi'].dropna().unique())
 
@@ -59,9 +59,9 @@ def plot_agg_known_heatmaps(df: pd.DataFrame):
                     labels[i, j] = f"{measure:.2f}"
                     if measure >= 0.99:
                         category[i, j] = 4
-                    elif measure >= 0.9:
+                    elif measure >= 0.95:
                         category[i, j] = 3
-                    elif measure >= 0.75:
+                    elif measure >= 0.80:
                         category[i, j] = 2
                     else:
                         category[i, j] = 1
@@ -72,22 +72,32 @@ def plot_agg_known_heatmaps(df: pd.DataFrame):
 
             if row_idx == nrows - 1:
                 ax.set_xticklabels(supp_vals)
-                ax.set_xlabel('supp_thresh')
+                ax.set_xlabel('Suppression threshold', fontsize=11)
             else:
                 ax.set_xticklabels([])
 
             if col_idx == 0:
                 ax.set_yticklabels(noise_vals)
-                ax.set_ylabel(f"nqi={nqi}\nnoise")
+                ax.set_ylabel("Noise", fontsize=11)
+                ax.text(
+                    -0.30,
+                    0.5,
+                    f"Num QI columns: {nqi}",
+                    transform=ax.transAxes,
+                    rotation=90,
+                    va='center',
+                    ha='center',
+                    fontsize=14,
+                )
             else:
                 ax.set_yticklabels([])
 
             if row_idx == 0:
-                ax.set_title(f"kqf={kqf}")
+                ax.set_title(f"Known fraction: {kqf}", fontsize=14)
 
             for i in range(len(noise_vals)):
                 for j in range(len(supp_vals)):
-                    ax.text(j, i, labels[i, j], ha='center', va='center', fontsize=10)
+                    ax.text(j, i, labels[i, j], ha='center', va='center', fontsize=11)
 
             ax.set_xlim(-0.5, len(supp_vals) - 0.5)
             ax.set_ylim(len(noise_vals) - 0.5, -0.5)
