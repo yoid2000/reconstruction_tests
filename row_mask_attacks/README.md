@@ -32,3 +32,24 @@ If run with --force, then `result.parquet` is created from scratch from the json
 
 ## analyze.py
 
+Reads `result.parquet`and generates a variety of plots and tables.
+
+If the `--more_seeds` command flag is set, then it determines which experiments require more seeds to reach the target 95% confidence interval, and writes `more_seeds_experiments.py`.  This file is then used by `run_row_mask_attack.py` to run the additional experiments.
+
+## experiments.py
+
+Contains the configurations of experimental parameters. Used both by `run_row_mask_attack.py` to run experiments (only those with `dont_run = False`) and `analyze.py` to analyze experiments.
+
+## Workflow
+
+The general workflow for running experiments is then as follows:
+
+1. Add a set of experimental parameters to experiments.py. We recommend configuring 5 distinct seeds.
+2. Set `max_time_minutes` in `run_row_mask_attack.py` to the lowest value that is likely to cause most experiments to finish before SLURM ends them.
+3. Run `run_row_mask_attack.py` to generate the appropriate `run.slurm` file.
+4. Do `sbatch run.slurm` on the SLURM cluster.
+5. After finished, run `gather.py` to update `result.parquet`.
+6. If not all experiments completed, increase `max_time_minutes` and run from step 3 again. Note the reason we don't set `max_time_minutes` to a high value at first is because SLURM won't schedule as many parallel jobs.
+7. Repeat 3-6 until all experiments are run, or until the maximum `max_time_minutes` allowed by the SLURM configuration is run.
+8. Run `analyze.py --more_seeds`. If this causes additional experiments to be configured in `more_seeds_experiments.py`, then do the 3-6 loop again until these are completed.
+

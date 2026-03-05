@@ -167,7 +167,7 @@ def _generate_latex_table(table_data: dict, noise_values: list, supp_thresh_valu
                     formatted_val = f'{value:.2f}'
                     # Bold if >= threshold
                     if value >= thresh:
-                        cell = f'\\textbf{{{formatted_val}}}'
+                        cell = f'\\textcolor{{red}}{{\\textbf{{{formatted_val}}}}}'
                     else:
                         cell = formatted_val
                 row_parts.append(cell)
@@ -177,8 +177,10 @@ def _generate_latex_table(table_data: dict, noise_values: list, supp_thresh_valu
     # Table closing
     lines.append('\\bottomrule')
     lines.append('\\end{tabular}')
-    lines.append(f'\\caption{{Average accuracy by noise $e$, suppression threshold $\\tau$, and number of rows $R$, where the number of QI columns is $C={nqi}$. Accuracy values $\\geq {thresh}$ are shown in bold.}}')
+    lines.append(f'\\caption{{Average accuracy by noise $e$, suppression threshold $\\tau$, and number of rows $R$, where the number of QI columns is $C={nqi}$. Accuracy values $\\geq {thresh}$ are shown in bold red.}}')
     lines.append(f'\\label{{tab:noise_supp_thresh_{note}}}')
     lines.append('\\end{table}')
     
     return '\n'.join(lines)
+
+

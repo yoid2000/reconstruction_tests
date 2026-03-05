@@ -1,3 +1,4 @@
+import argparse
 import pandas as pd
 import numpy as np
 import random
@@ -328,7 +329,7 @@ def group_by_experiment_parameters(df_final):
 
     return df_grouped
 
-def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
+def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list, write_more_seeds: bool = False):
     """Check whether each parameter grouping has enough seeds for a tight CI on measure.
     
     A "sample" here is a single seed run. We check the number of unique seeds and
@@ -427,49 +428,52 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list):
 
     not_enough = summary_df[summary_df['enough_samples'].fillna(False).eq(False)]
     print(f"summary_df: {len(summary_df)} groups analyzed, {len(not_enough)} need more samples")
-    more_seeds_experiments = []
-    for _, row in not_enough.iterrows():
-        entry = {
-            'dont_run': False,
-            'used_in_paper': False,
-            'experiment_group': 'temp',
-        }
-        for col in grouping_cols_present:
-            if col not in row.index:
-                continue
-            value = row[col]
-            if pd.isna(value):
-                value = None
-            elif hasattr(value, "item"):
-                value = value.item()
-            if col == 'solve_type':
-                entry[col] = value
+    if write_more_seeds:
+        more_seeds_experiments = []
+        for _, row in not_enough.iterrows():
+            entry = {
+                'dont_run': False,
+                'used_in_paper': False,
+                'experiment_group': 'temp',
+            }
+            for col in grouping_cols_present:
+                if col not in row.index:
+                    continue
+                value = row[col]
+                if pd.isna(value):
+                    value = None
+                elif hasattr(value, "item"):
+                    value = value.item()
+                if col == 'solve_type':
+                    entry[col] = value
+                else:
+                    entry[col] = [value]
+            if 'min_num_rows' in row.index:
+                value = row['min_num_rows']
+                if pd.isna(value):
+                    value = None
+                elif hasattr(value, "item"):
+                    value = value.item()
+                entry['min_num_rows'] = [value]
+
+            seeds_needed = int(row['seeds_needed_est'])
+            seed_pool = list(range(10000, 20001))
+            if seeds_needed <= len(seed_pool):
+                entry['seed'] = random.sample(seed_pool, seeds_needed)
             else:
-                entry[col] = [value]
-        if 'min_num_rows' in row.index:
-            value = row['min_num_rows']
-            if pd.isna(value):
-                value = None
-            elif hasattr(value, "item"):
-                value = value.item()
-            entry['min_num_rows'] = [value]
+                entry['seed'] = [random.randint(10000, 20000) for _ in range(seeds_needed)]
 
-        seeds_needed = int(row['seeds_needed_est'])
-        seed_pool = list(range(10000, 20001))
-        if seeds_needed <= len(seed_pool):
-            entry['seed'] = random.sample(seed_pool, seeds_needed)
-        else:
-            entry['seed'] = [random.randint(10000, 20000) for _ in range(seeds_needed)]
+            more_seeds_experiments.append(entry)
 
-        more_seeds_experiments.append(entry)
-
-    output_path = Path(__file__).parent / "more_seeds_experiments.py"
-    with output_path.open("w", encoding="utf-8") as handle:
-        handle.write("more_seeds_experiments = [\n")
-        for entry in more_seeds_experiments:
-            handle.write(f"    {entry},\n")
-        handle.write("]\n")
-    print(f"\nWrote {len(more_seeds_experiments)} new experiments to {output_path}")
+        output_path = Path(__file__).parent / "more_seeds_experiments.py"
+        with output_path.open("w", encoding="utf-8") as handle:
+            handle.write("more_seeds_experiments = [\n")
+            for entry in more_seeds_experiments:
+                handle.write(f"    {entry},\n")
+            handle.write("]\n")
+        print(f"\nWrote {len(more_seeds_experiments)} new experiments to {output_path}")
+    else:
+        print("\nSkipping write of more_seeds_experiments.py (use --more_seeds to enable).")
     print(f"\nTotal groups analyzed: {len(summary_df)}")
     print(f"Groups with enough samples: {len(summary_df) - len(not_enough)}")
     print(f"Groups needing more seeds: {len(not_enough)}")
@@ -795,7 +799,7 @@ def compare_agg_known_to_agg_row(df_known, df_row):
 
     print(f"\nCompared {match_count} group(s)")
 
-def analyze():
+def analyze(more_seeds: bool = False):
     """Read result.parquet and analyze correlations with num_samples."""
     df_all = prep_data()
     analyze_refinement(df_all)
@@ -814,7 +818,7 @@ def analyze():
     df_final = df_final[df_final['finished'] == True].copy()
     print(f"Remaining rows: {len(df_final)}")
 
-    analyze_seed_effect(df_final, grouping_cols)
+    analyze_seed_effect(df_final, grouping_cols, write_more_seeds=more_seeds)
     df_grouped = group_by_experiment_parameters(df_final)
     print("\n nrows value counts:")
     print(df_grouped['nrows'].value_counts(dropna=False))
@@ -1395,4 +1399,11 @@ def do_agg_dinur_explore_vals_per_qi_analysis(df, experiments=None, exp_group=No
         analyze_single_parameter_variation(df, experiments, exp_group)
 
 if __name__ == "__main__":
-    analyze()
+    parser = argparse.ArgumentParser(description="Analyze experiment results.")
+    parser.add_argument(
+        "--more_seeds",
+        action="store_true",
+        help="Write more_seeds_experiments.py based on seed analysis.",
+    )
+    args = parser.parse_args()
+    analyze(more_seeds=args.more_seeds)

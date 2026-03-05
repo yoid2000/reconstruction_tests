@@ -61,17 +61,22 @@ def get_required_num_distinct(nrows: int, nqi: int) -> int:
 def build_row_masks_qi(nrows: int = 1024,
                        nunique: int = 2,
                        nqi: int = 3,
-                       vals_per_qi = 0) -> pd.DataFrame:
+                       vals_per_qi = 0,
+                       corr_strength: float = 0.0) -> pd.DataFrame:
     """ Builds a dataframe with nrows rows and 2+nqi columns.
     
     Args:
         nrows: Number of rows in the dataframe
         nunique: Number of unique values for the 'val' column
         nqi: Number of quasi-identifier columns
+        corr_strength: Probability of correlating each QI pair per row (0..1)
     
     Returns:
         DataFrame with columns 'id', 'val', and qi0, qi1, ..., qi(nqi-1)
     """
+    if corr_strength < 0.0 or corr_strength > 1.0:
+        raise ValueError("corr_strength must be between 0 and 1.")
+
     # Calculate minimum number of distinct values needed per QI column
     # We need n_distinct^nqi >= nrows
     # So n_distinct = ceil(nrows^(1/nqi))
@@ -84,7 +89,8 @@ def build_row_masks_qi(nrows: int = 1024,
     len_all_combinations = n_distinct ** nqi
     
     # Check if we can afford to generate all combinations
-    if len_all_combinations < 10 * nrows:
+    # If corr_strength != 0, force random sampling to allow correlation edits later
+    if corr_strength == 0.0 and len_all_combinations < 10 * nrows:
         # Generate all possible combinations
         possible_values = list(range(n_distinct))
         all_combinations = list(itertools.product(possible_values, repeat=nqi))
@@ -102,13 +108,24 @@ def build_row_masks_qi(nrows: int = 1024,
         
         while len(selected_combinations) < nrows:
             # Randomly generate a combination
-            combo = tuple(np.random.randint(0, n_distinct, size=nqi))
+            combo = list(np.random.randint(0, n_distinct, size=nqi))
+
+            # Apply correlation within QI pairs before uniqueness check
+            if corr_strength > 0.0 and nqi >= 2:
+                for qi_idx in range(0, nqi - 1, 2):
+                    if np.random.rand() < corr_strength:
+                        if np.random.rand() < 0.5:
+                            combo[qi_idx] = combo[qi_idx + 1]
+                        else:
+                            combo[qi_idx + 1] = combo[qi_idx]
+
+            combo = tuple(combo)
             
             # Check if we've already selected this combination
             if combo not in seen_combinations:
                 seen_combinations.add(combo)
                 selected_combinations.append(combo)
-    
+
     # Build the dataframe
     df = pd.DataFrame({
         'id': range(nrows),
@@ -120,7 +137,7 @@ def build_row_masks_qi(nrows: int = 1024,
         col_name = f'qi{qi_idx}'
         df[col_name] = [combo[qi_idx] for combo in selected_combinations]
     
-    # Validate that all QI combinations are unique
+    # Validate that all QI combinations 
     check_masks_qi(df)
     
     return df
