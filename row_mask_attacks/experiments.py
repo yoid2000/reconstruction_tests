@@ -443,6 +443,22 @@ experiments = [
         'min_num_rows': [5],
         'vals_per_qi': [0],   # auto-select
     },
+    {   # Agg Dinur-style, x=nqi, y=noise, lines=corr_strength
+        'dont_run': False,
+        'used_in_paper': True,
+        'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_corr_strength_mnr3',
+        'slurm_run': 30,
+        'solve_type': 'agg_row',
+        'seed': list(range(5)),
+        'nrows': [150],
+        'mask_size': [0],
+        'corr_strength': [0.0, 0.1, 0.2, 0.3],
+        'nunique': [2],
+        'noise': [0,1,2,4,6,8,10,12,14,16,18,20,22,24],
+        'nqi': [3,4,5,6,7,9,11],
+        'min_num_rows': [3],
+        'vals_per_qi': [0],   # auto-select
+    },
 ]
 
 def read_experiments(used_only_in_paper: bool = True, include_more_seeds_experiments: bool = False) -> list[dict]:
