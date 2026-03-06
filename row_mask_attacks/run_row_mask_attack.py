@@ -694,8 +694,6 @@ def main():
     """Main function to run parameter sweep experiments."""
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Run row mask attack experiments')
-    parser.add_argument('job_num_pos', type=int, nargs='?', default=None,
-                       help='[deprecated] Job number to run from parameter combinations')
     parser.add_argument('--job_num', type=int, default=None,
                        help='Job number to run from parameter combinations')
     parser.add_argument('--slurm_run', type=int, default=None,
@@ -728,7 +726,7 @@ def main():
                        help='Random seed for reproducibility')
     
     args = parser.parse_args()
-    job_num = args.job_num if args.job_num is not None else args.job_num_pos
+    job_num = args.job_num
     
     # Create directories
     results_dir = Path('./results/files')
@@ -744,13 +742,10 @@ def main():
     if args.slurm_run is not None:
         experiments = [
             exp for exp in experiments
-            if exp.get('slurm_run') == args.slurm_run
+            if exp.get('slurm_run', args.slurm_run) == args.slurm_run
         ]
         if len(experiments) == 0:
             print(f"No experiments found with slurm_run={args.slurm_run}")
-            return
-        if len(experiments) > 1:
-            print(f"Expected exactly one experiment with slurm_run={args.slurm_run}, found {len(experiments)}")
             return
     
     # Fixed parameters
@@ -998,7 +993,7 @@ def main():
         num_jobs = len(test_params) - 1  # Array range is 0 to num_jobs-1
         slurm_content = f"""#!/bin/bash
 #SBATCH --job-name=recon_test
-#SBATCH --output=/INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/slurm_out/job_%A_%a.out
+#SBATCH --output=/INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/slurm_out/job_{args.slurm_run}_%A_%a.out
 #SBATCH --time={max_time_minutes}
 #SBATCH --mem={max_memory}
 #SBATCH --cpus-per-task=1

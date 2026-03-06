@@ -431,11 +431,12 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list, write_more_
     if write_more_seeds:
         more_seeds_experiments = []
         for _, row in not_enough.iterrows():
-            entry = {
-                'dont_run': False,
-                'used_in_paper': False,
-                'experiment_group': 'temp',
-            }
+        entry = {
+            'dont_run': False,
+            'used_in_paper': False,
+            'experiment_group': 'temp',
+            'slurm_run': 0,
+        }
             for col in grouping_cols_present:
                 if col not in row.index:
                     continue

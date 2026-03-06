@@ -7,7 +7,7 @@ experiments = [
         'dont_run': True,
         'used_in_paper': True,
         'experiment_group': 'agg_dinur_nrows_vals_per_qi',
-        'slurm_run': 0,
+        'slurm_run': 29,
         'solve_type': 'agg_row',
         'seed': list(range(20)),
         'nrows': [100, 200, 300, 400, 500],

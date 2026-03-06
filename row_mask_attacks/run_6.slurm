@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=6_recon_test
-#SBATCH --output=/INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/slurm_out/job_%A_%a.out
+#SBATCH --output=/INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/slurm_out/job_6_%A_%a.out
 #SBATCH --time=10080
 #SBATCH --mem=20G
 #SBATCH --cpus-per-task=1
