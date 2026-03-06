@@ -24,6 +24,7 @@ solve_type_map = {
 def generate_filename(params, target_accuracy) -> str:
     """ Generate a filename string based on attack parameters. """
     vals_per_qi = params['vals_per_qi']
+    corr_strength = params.get('corr_strength', 0.0)
     if params['nqi'] > 0:
         new_vals_per_qi = get_required_num_distinct(params['nrows'], params['nqi'])
         # If it so happens that the actual vals_per_qi is more than what is specified,
@@ -37,9 +38,12 @@ def generate_filename(params, target_accuracy) -> str:
         kqf_str = f"_kqf{int(params['known_qi_fraction']*100)}"
     max_qi = params.get('max_qi', 1000)
     max_qi_str = f"_mq{max_qi}" if max_qi != 1000 else ""
+    corr_strength_str = ""
+    if corr_strength and corr_strength > 0.0:
+        corr_strength_str = f"_cs{int(round(corr_strength * 100))}"
     file_name = (f"nr{params['nrows']}_mf{params['mask_size']}_"
                 f"nu{params['nunique']}_qi{params['nqi']}_n{params['noise']}_"
-                f"mnr{params['min_num_rows']}_vpq{vals_per_qi}{max_qi_str}_"
+                f"mnr{params['min_num_rows']}_vpq{vals_per_qi}{max_qi_str}{corr_strength_str}_"
                 f"st{solve_type_map[params['solve_type']]}_"
                 f"ms{params['max_samples']}_ta{int(target_accuracy*100)}{kqf_str}{seed_str}")
     return file_name
@@ -346,6 +350,7 @@ def attack_loop(nrows: int,
                 target_accuracy: float = 0.99,
                 min_num_rows: int = 3,
                 vals_per_qi: int = 2,
+                corr_strength: float = 0.0,
                 max_samples: int = 20000,
                 solve_type: str = 'agg_known',
                 known_qi_fraction: float = 1.0,
@@ -363,6 +368,7 @@ def attack_loop(nrows: int,
         noise: Noise bound for counts (±noise)
         nqi: Number of quasi-identifier columns
         vals_per_qi: Number of distinct values per QI column (default: 0, means auto compute)
+        corr_strength: Correlation probability for QI pairs (default: 0.0)
         target_accuracy: Target accuracy to stop early (default: 0.99)
         min_num_rows: Minimum number of rows in any aggregate (default: 3)
         known_qi_fraction: Fraction of rows with known QI values (default: 0.0, range: 0.0-1.0)
@@ -434,7 +440,13 @@ def attack_loop(nrows: int,
             actual_vals_per_qi = min_vals_per_qi
         else:
             actual_vals_per_qi = vals_per_qi
-        df = build_row_masks_qi(nrows=nrows, nunique=nunique, nqi=nqi, vals_per_qi=vals_per_qi)
+        df = build_row_masks_qi(
+            nrows=nrows,
+            nunique=nunique,
+            nqi=nqi,
+            vals_per_qi=vals_per_qi,
+            corr_strength=corr_strength,
+        )
     
     # Generate complete_known_qi_rows if known_qi_fraction > 0
     complete_known_qi_rows = []
@@ -655,6 +667,7 @@ def attack_loop(nrows: int,
             'noise': noise,
             'nqi': nqi,
             'vals_per_qi': vals_per_qi,
+            'corr_strength': corr_strength,
             'actual_vals_per_qi': actual_vals_per_qi,
             'known_qi_fraction': known_qi_fraction,
             'max_qi': max_qi,
@@ -681,8 +694,12 @@ def main():
     """Main function to run parameter sweep experiments."""
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Run row mask attack experiments')
-    parser.add_argument('job_num', type=int, nargs='?', default=None,
+    parser.add_argument('job_num_pos', type=int, nargs='?', default=None,
+                       help='[deprecated] Job number to run from parameter combinations')
+    parser.add_argument('--job_num', type=int, default=None,
                        help='Job number to run from parameter combinations')
+    parser.add_argument('--slurm_run', type=int, default=None,
+                       help='Only use the experiment with this slurm_run number')
     parser.add_argument('--solve_type', type=str, default=None,
                        help='Type of solve: pure_row, agg_row, agg_known')
     parser.add_argument('--nrows', type=int, default=None,
@@ -699,6 +716,8 @@ def main():
                        help='Minimum number of rows in any aggregate')
     parser.add_argument('--vals_per_qi', type=int, default=None,
                        help='Number of distinct values per QI column')
+    parser.add_argument('--corr_strength', type=float, default=None,
+                       help='Correlation probability for QI pairs (0.0-1.0)')
     parser.add_argument('--known_qi_fraction', type=float, default=None,
                        help='Fraction of rows with known QI values (0.0-1.0)')
     parser.add_argument('--max_qi', type=int, default=None,
@@ -709,6 +728,7 @@ def main():
                        help='Random seed for reproducibility')
     
     args = parser.parse_args()
+    job_num = args.job_num if args.job_num is not None else args.job_num_pos
     
     # Create directories
     results_dir = Path('./results/files')
@@ -721,6 +741,17 @@ def main():
     # Read in the experiments data structure from experiments.py
     from experiments import read_experiments
     experiments = read_experiments(include_more_seeds_experiments=True)
+    if args.slurm_run is not None:
+        experiments = [
+            exp for exp in experiments
+            if exp.get('slurm_run') == args.slurm_run
+        ]
+        if len(experiments) == 0:
+            print(f"No experiments found with slurm_run={args.slurm_run}")
+            return
+        if len(experiments) > 1:
+            print(f"Expected exactly one experiment with slurm_run={args.slurm_run}, found {len(experiments)}")
+            return
     
     # Fixed parameters
     max_samples = 20000
@@ -736,6 +767,7 @@ def main():
         'nqi': 3,
         'min_num_rows': 3,
         'vals_per_qi': 2,
+        'corr_strength': 0.0,
         'known_qi_fraction': 1.0,
         'max_qi': 1000,
         'max_samples': max_samples,
@@ -752,6 +784,7 @@ def main():
         args.nqi is not None,
         args.min_num_rows is not None,
         args.vals_per_qi is not None,
+        args.corr_strength is not None,
         args.known_qi_fraction is not None,
         args.max_qi is not None,
         args.max_samples is not None,
@@ -769,6 +802,7 @@ def main():
             'nqi': args.nqi if args.nqi is not None else defaults['nqi'],
             'min_num_rows': args.min_num_rows if args.min_num_rows is not None else defaults['min_num_rows'],
             'vals_per_qi': args.vals_per_qi if args.vals_per_qi is not None else defaults['vals_per_qi'],
+            'corr_strength': args.corr_strength if args.corr_strength is not None else defaults['corr_strength'],
             'known_qi_fraction': args.known_qi_fraction if args.known_qi_fraction is not None else defaults['known_qi_fraction'],
             'max_qi': args.max_qi if args.max_qi is not None else defaults['max_qi'],
             'max_samples': args.max_samples if args.max_samples is not None else defaults['max_samples'],
@@ -800,6 +834,7 @@ def main():
             target_accuracy=target_accuracy,
             min_num_rows=params['min_num_rows'],
             vals_per_qi=params['vals_per_qi'],
+            corr_strength=params['corr_strength'],
             known_qi_fraction=params['known_qi_fraction'],
             max_qi=params['max_qi'],
             solve_type=params['solve_type'],
@@ -822,7 +857,8 @@ def main():
         return
     
     # Generate test parameter combinations
-    max_time_minutes = int(60 * 24 * (60/24))     # We'll set slurm to this
+    max_time_minutes = int(60 * 24 * ((24*7)/24))     # We'll set slurm to this
+    max_memory = '20G'
     # 2 minutes for overhead, convert to seconds, then divide by 20 to safely allow for multiple runs
     time_include_threshold_seconds =  ((max_time_minutes-2) * 60) / 20
     test_params = []
@@ -846,6 +882,7 @@ def main():
                 'nqi',
                 'min_num_rows',
                 'vals_per_qi',
+                'corr_strength',
                 'known_qi_fraction',
                 'max_qi',
                 'max_samples',
@@ -856,6 +893,9 @@ def main():
             if 'max_qi' in missing_cols:
                 results_df['max_qi'] = defaults['max_qi']
                 missing_cols.remove('max_qi')
+            if 'corr_strength' in missing_cols:
+                results_df['corr_strength'] = defaults['corr_strength']
+                missing_cols.remove('corr_strength')
             if missing_cols:
                 print(f"Warning: {result_parquet} missing columns {missing_cols}; skipping finished filter.")
             else:
@@ -893,6 +933,8 @@ def main():
                             row_params[col] = int(val)
                         elif col in ['known_qi_fraction', 'target_accuracy']:
                             row_params[col] = float(val)
+                        elif col == 'corr_strength':
+                            row_params[col] = float(val)
                         else:
                             row_params[col] = val
                     file_name = generate_filename(row_params, row_params['target_accuracy'])
@@ -910,6 +952,7 @@ def main():
         # Get known_qi_fraction list from experiment, default to [1.0] if not specified
         known_qi_fraction_list = exp.get('known_qi_fraction', [1.0])
         max_qi_list = exp.get('max_qi', [defaults['max_qi']])
+        corr_strength_list = exp.get('corr_strength', [defaults['corr_strength']])
         for nrows in exp['nrows']:
             for mask_size in exp['mask_size']:
                 for nunique in exp['nunique']:
@@ -918,34 +961,36 @@ def main():
                             for max_qi in max_qi_list:
                                 for min_num_rows in exp['min_num_rows']:
                                     for vals_per_qi in exp['vals_per_qi']:
-                                        for known_qi_fraction in known_qi_fraction_list:
-                                            for seed in seed_list:
-                                                params = {
-                                                    'nrows': nrows,
-                                                    'solve_type': exp['solve_type'],
-                                                    'mask_size': mask_size,
-                                                    'nunique': nunique,
-                                                    'noise': noise,
-                                                    'nqi': nqi,
-                                                    'min_num_rows': min_num_rows,
-                                                    'vals_per_qi': vals_per_qi,
-                                                    'known_qi_fraction': known_qi_fraction,
-                                                    'max_qi': max_qi,
-                                                    'max_samples': max_samples,
-                                                    'seed': seed,
-                                                }
-                                                key = generate_filename(params, target_accuracy)
-                                                if key in finished_param_keys:
-                                                    num_finished_jobs += 1
-                                                    #print(f"Matched: {key}")
-                                                    continue
-                                                if key not in seen:
-                                                    seen.add(key)
-                                                    #print(f"Adding: {key}")
-                                                    test_params.append(params)
+                                        for corr_strength in corr_strength_list:
+                                            for known_qi_fraction in known_qi_fraction_list:
+                                                for seed in seed_list:
+                                                    params = {
+                                                        'nrows': nrows,
+                                                        'solve_type': exp['solve_type'],
+                                                        'mask_size': mask_size,
+                                                        'nunique': nunique,
+                                                        'noise': noise,
+                                                        'nqi': nqi,
+                                                        'min_num_rows': min_num_rows,
+                                                        'vals_per_qi': vals_per_qi,
+                                                        'corr_strength': corr_strength,
+                                                        'known_qi_fraction': known_qi_fraction,
+                                                        'max_qi': max_qi,
+                                                        'max_samples': max_samples,
+                                                        'seed': seed,
+                                                    }
+                                                    key = generate_filename(params, target_accuracy)
+                                                    if key in finished_param_keys:
+                                                        num_finished_jobs += 1
+                                                        #print(f"Matched: {key}")
+                                                        continue
+                                                    if key not in seen:
+                                                        seen.add(key)
+                                                        #print(f"Adding: {key}")
+                                                        test_params.append(params)
     
     # If no job_num, just print all combinations
-    if args.job_num is None:
+    if job_num is None:
         for i, params in enumerate(test_params):
             print(f"Job {i}: {params}")
         
@@ -955,15 +1000,25 @@ def main():
 #SBATCH --job-name=recon_test
 #SBATCH --output=/INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/slurm_out/job_%A_%a.out
 #SBATCH --time={max_time_minutes}
-#SBATCH --mem=10G
+#SBATCH --mem={max_memory}
 #SBATCH --cpus-per-task=1
 #SBATCH --array=0-{num_jobs}
 arrayNum="${{SLURM_ARRAY_TASK_ID}}"
 source /INS/syndiffix/work/paul/github/reconstruction_tests/.venv/bin/activate
-python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run_row_mask_attack.py $arrayNum
+python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run_row_mask_attack.py --job_num $arrayNum
 """
-        
-        slurm_file = Path(__file__).parent / 'run.slurm'
+        slurm_file_name = 'run.slurm'
+        if args.slurm_run is not None:
+            slurm_file_name = f"run_{args.slurm_run}.slurm"
+            slurm_content = slurm_content.replace(
+                "#SBATCH --job-name=recon_test",
+                f"#SBATCH --job-name={args.slurm_run}_recon_test",
+            )
+            slurm_content = slurm_content.replace(
+                "run_row_mask_attack.py --job_num $arrayNum",
+                f"run_row_mask_attack.py --slurm_run {args.slurm_run} --job_num $arrayNum",
+            )
+        slurm_file = Path(__file__).parent / slurm_file_name
         with open(slurm_file, 'w') as f:
             f.write(slurm_content)
         
@@ -972,12 +1027,12 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
         return
     
     # Check if job_num is valid
-    if args.job_num < 0 or args.job_num >= len(test_params):
-        print(f"Error: job_num {args.job_num} out of range [0, {len(test_params)-1}]")
+    if job_num < 0 or job_num >= len(test_params):
+        print(f"Error: job_num {job_num} out of range [0, {len(test_params)-1}]")
         return
     
     # Get parameters for this job
-    params = test_params[args.job_num]
+    params = test_params[job_num]
     
     # Generate filename
     file_name = generate_filename(params, target_accuracy)
@@ -993,7 +1048,7 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
             return
     
     # Run attack_loop
-    print(f"Running job {args.job_num}: {params}")
+    print(f"Running job {job_num}: {params}")
     
     attack_loop(
         nrows=params['nrows'],
@@ -1004,6 +1059,7 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
         target_accuracy=target_accuracy,
         min_num_rows=params['min_num_rows'],
         vals_per_qi=params['vals_per_qi'],
+        corr_strength=params['corr_strength'],
         known_qi_fraction=params['known_qi_fraction'],
         max_qi=params['max_qi'],
         max_samples=params['max_samples'],

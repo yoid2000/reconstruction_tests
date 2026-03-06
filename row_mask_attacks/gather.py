@@ -30,6 +30,8 @@ def gather_results(json_files: List[Path]) -> pd.DataFrame:
                 result['actual_vals_per_qi'] = actual_vals_per_qi
             if 'max_qi' not in result:
                 result['max_qi'] = 1000
+            if 'corr_strength' not in result:
+                result['corr_strength'] = 0.0
             
             # Get top-level metadata (everything except attack_results)
             base_data = {'filename': json_file.name}
