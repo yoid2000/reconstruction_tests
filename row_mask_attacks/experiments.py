@@ -449,7 +449,7 @@ experiments = [
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_corr_strength_mnr3',
         'slurm_run': 30,
         'solve_type': 'agg_row',
-        'seed': list(range(5)),
+        'seed': list(range(20)),
         'nrows': [150],
         'mask_size': [0],
         'corr_strength': [0.0, 0.1, 0.2, 0.3],

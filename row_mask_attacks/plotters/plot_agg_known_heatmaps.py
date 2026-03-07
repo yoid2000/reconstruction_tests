@@ -42,7 +42,7 @@ def plot_agg_known_heatmaps(df: pd.DataFrame):
         for col_idx, kqf in enumerate(kqf_vals):
             ax = axes[row_idx, col_idx]
             category = np.zeros((len(noise_vals), len(supp_vals)), dtype=int)
-            labels = np.full((len(noise_vals), len(supp_vals)), '-', dtype=object)
+            labels = np.full((len(noise_vals), len(supp_vals)), ' ', dtype=object)
 
             for i, noise in enumerate(noise_vals):
                 for j, supp in enumerate(supp_vals):
