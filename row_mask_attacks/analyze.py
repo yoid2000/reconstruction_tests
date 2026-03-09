@@ -8,7 +8,7 @@ import sys
 import pprint as pp
 pp = pp.PrettyPrinter(indent=2)
 
-grouping_cols = ['max_qi', 'solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'supp_thresh', 'known_qi_fraction']
+grouping_cols = ['max_qi', 'solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'supp_thresh', 'known_qi_fraction', 'corr_strength']
 group_max_cols = ['solver_metrics_runtime']
 group_median_cols = ['solver_metrics_runtime']
 grouping_cols_seed = grouping_cols + ['seed']
@@ -431,12 +431,12 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list, write_more_
     if write_more_seeds:
         more_seeds_experiments = []
         for _, row in not_enough.iterrows():
-        entry = {
-            'dont_run': False,
-            'used_in_paper': False,
-            'experiment_group': 'temp',
-            'slurm_run': 0,
-        }
+            entry = {
+                'dont_run': False,
+                'used_in_paper': False,
+                'experiment_group': 'temp',
+                'slurm_run': 0,
+            }
             for col in grouping_cols_present:
                 if col not in row.index:
                     continue
@@ -642,6 +642,7 @@ def prep_data() -> pd.DataFrame:
 
     cols_to_fill = [{'col': 'seed', 'value': -1},
                     {'col': 'solver_metrics_skipped_constraints', 'value': -1},
+                    {'col': 'corr_strength', 'value': 0.0},
                    ]
     for item in cols_to_fill:
         col = item['col']
@@ -909,6 +910,10 @@ def analyze(more_seeds: bool = False):
             for ycol in x_y_group:
                 plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='nunique', thresh_direction="highest", thresh=0.9, tag="mnr3", )
             plot_mixing_by_param(exp_df, param_col='nunique', tag="mnr3")
+        elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_corr_strength_mnr3':
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='corr_strength', thresh=0.90, tag="mnr3")
+            for ycol in x_y_group:
+                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='corr_strength', thresh_direction="highest", thresh=0.9, tag="mnr3", )
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_max_qi_mnr3':
             do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='max_qi', thresh=0.90, tag="mnr3")
             for ycol in x_y_group:

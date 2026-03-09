@@ -105,9 +105,9 @@ experiments = [
         'nrows': [50],
         'mask_size': [0],
         'nunique': [2],
-        'noise': [1,2,3,4],
+        'noise': [0,1,2,3,4],
         'nqi': [4,5,6,7],
-        'min_num_rows': [2,3,4,5],
+        'min_num_rows': [1,2,3,4,5],
         'vals_per_qi': [0],   # auto-select
         'known_qi_fraction': [0.0, 0.25, 0.5, 0.75, 1.0],
     },
@@ -458,6 +458,38 @@ experiments = [
         'nqi': [3,4,5,6,7,9,11],
         'min_num_rows': [3],
         'vals_per_qi': [0],   # auto-select
+    },
+    {   # temp
+        'dont_run': False,
+        'used_in_paper': True,
+        'experiment_group': 'temp',
+        'slurm_run': 31,
+        'solve_type': 'agg_known',
+        'seed': [0,1,2,3,4],
+        'nrows': [50],
+        'mask_size': [0],
+        'nunique': [2],
+        'noise': [0],
+        'nqi': [4,5,6,7],
+        'min_num_rows': [1,2,3,4,5],
+        'vals_per_qi': [0],   # auto-select
+        'known_qi_fraction': [0.0, 0.25, 0.5, 0.75, 1.0],
+    },
+    {   # temp
+        'dont_run': False,
+        'used_in_paper': True,
+        'experiment_group': 'temp',
+        'slurm_run': 32,
+        'solve_type': 'agg_known',
+        'seed': [0,1,2,3,4],
+        'nrows': [50],
+        'mask_size': [0],
+        'nunique': [2],
+        'noise': [0,1,2,3,4],
+        'nqi': [4,5,6,7],
+        'min_num_rows': [1],
+        'vals_per_qi': [0],   # auto-select
+        'known_qi_fraction': [0.0, 0.25, 0.5, 0.75, 1.0],
     },
 ]
 
