@@ -1,8 +1,10 @@
 import pandas as pd
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional
 import numpy as np
 import json
+import hashlib
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -20,9 +22,44 @@ solve_type_map = {
     'agg_row': 'ar',
     'agg_known': 'ak',
 }
+
+def _sanitize_filename_part(value: str) -> str:
+    """Keep only filename-safe characters and collapse others to underscores."""
+    cleaned = re.sub(r'[^A-Za-z0-9._-]+', '_', str(value))
+    cleaned = cleaned.strip('._-')
+    return cleaned or "x"
         
 def generate_filename(params, target_accuracy) -> str:
     """ Generate a filename string based on attack parameters. """
+    path_to_dataset = params.get('path_to_dataset')
+    target_column = params.get('target_column')
+    known_columns = params.get('known_columns')
+    if path_to_dataset is not None and target_column is not None:
+        dataset_stem = _sanitize_filename_part(Path(path_to_dataset).stem)
+        target_label = _sanitize_filename_part(target_column)
+        known_cols_for_hash = known_columns if known_columns is not None else "all_other_columns"
+        hash_payload = json.dumps(
+            {
+                'path_to_dataset': path_to_dataset,
+                'target_column': target_column,
+                'known_columns': known_cols_for_hash,
+            },
+            sort_keys=True,
+        )
+        dataset_hash = hashlib.md5(hash_payload.encode('utf-8')).hexdigest()[:8]
+        seed_str = f"_s{params['seed']}" if params['seed'] is not None else ""
+        kqf_str = ""
+        if params['solve_type'] == 'agg_known':
+            kqf_str = f"_kqf{int(params['known_qi_fraction']*100)}"
+        max_qi = params.get('max_qi', 1000)
+        max_qi_str = f"_mq{max_qi}" if max_qi != 1000 else ""
+        return (
+            f"ds{dataset_stem}_tc{target_label}_h{dataset_hash}_"
+            f"mf{params['mask_size']}_n{params['noise']}_mnr{params['min_num_rows']}{max_qi_str}_"
+            f"st{solve_type_map[params['solve_type']]}_"
+            f"ms{params['max_samples']}_ta{int(target_accuracy*100)}{kqf_str}{seed_str}"
+        )
+
     vals_per_qi = params['vals_per_qi']
     corr_strength = params.get('corr_strength', 0.0)
     if params['nqi'] > 0:
@@ -47,6 +84,58 @@ def generate_filename(params, target_accuracy) -> str:
                 f"st{solve_type_map[params['solve_type']]}_"
                 f"ms{params['max_samples']}_ta{int(target_accuracy*100)}{kqf_str}{seed_str}")
     return file_name
+
+def get_and_process_data(path_to_dataset: str,
+                         target_column: str,
+                         known_columns: Optional[List[str]] = None) -> pd.DataFrame:
+    """Load and process an external parquet dataset into id/val/qi* attack format."""
+    if Path(path_to_dataset).suffix.lower() != '.parquet':
+        raise ValueError(f"path_to_dataset must point to a .parquet file, got: {path_to_dataset}")
+
+    dataset_path = Path(path_to_dataset)
+    if not dataset_path.is_absolute():
+        dataset_path = Path.cwd() / dataset_path
+    if not dataset_path.exists():
+        raise FileNotFoundError(f"Dataset file not found: {dataset_path}")
+
+    source_df = pd.read_parquet(dataset_path)
+    if target_column not in source_df.columns:
+        raise ValueError(
+            f"target_column '{target_column}' is not in dataset columns: {list(source_df.columns)}"
+        )
+
+    if known_columns is not None:
+        missing_known = [col for col in known_columns if col not in source_df.columns]
+        if missing_known:
+            raise ValueError(f"known_columns not found in dataset: {missing_known}")
+        if target_column in known_columns:
+            raise ValueError("target_column cannot also be in known_columns")
+        selected_known_columns = list(known_columns)
+    else:
+        selected_known_columns = [col for col in source_df.columns if col != target_column]
+
+    selected_columns = [target_column] + selected_known_columns
+    df = source_df[selected_columns].copy()
+
+    rename_map = {target_column: 'val'}
+    for idx, col_name in enumerate(selected_known_columns, start=1):
+        rename_map[col_name] = f'qi{idx}'
+    df = df.rename(columns=rename_map)
+
+    value_columns = ['val'] + [f'qi{idx}' for idx in range(1, len(selected_known_columns) + 1)]
+    for col in value_columns:
+        try:
+            codes, _ = pd.factorize(df[col], sort=True)
+        except TypeError:
+            # Mixed incomparable dtypes can fail with sort=True; preserve deterministic first-seen order.
+            codes, _ = pd.factorize(df[col], sort=False)
+        if np.any(codes < 0):
+            next_code = int(codes[codes >= 0].max() + 1) if np.any(codes >= 0) else 0
+            codes = np.where(codes < 0, next_code, codes)
+        df[col] = codes.astype(int)
+
+    df.insert(0, 'id', np.arange(len(df), dtype=int))
+    return df
 
 def mixing_stats(samples: List[Dict]) -> Dict:
     """ Computes mixing statistics for IDs across samples.
@@ -357,6 +446,9 @@ def attack_loop(nrows: int,
                 max_qi: int = 1000,
                 max_refine: int = 2,
                 seed: int = None,
+                path_to_dataset: str = None,
+                target_column: str = None,
+                known_columns: Optional[List[str]] = None,
                 output_file: Path = None,
                 cur_attack_results: List[Dict] = None) -> dict:
     """ Runs an iterative attack loop to reconstruct values from noisy samples.
@@ -375,6 +467,9 @@ def attack_loop(nrows: int,
         max_qi: Maximum subset size to consider for aggregate queries (default: 1000)
         max_refine: Maximum number of refinement iterations (default: 2)
         seed: Random seed for reproducibility (default: None)
+        path_to_dataset: Relative or absolute path to .parquet dataset (default: None)
+        target_column: Target column name in dataset to map to 'val' (default: None)
+        known_columns: Optional known column names in dataset to map to qi1, qi2, ... (default: None)
         output_file: Path to JSON file to save results incrementally (default: None)
         cur_attack_results: Previous attack results to resume from (default: None)
     
@@ -428,8 +523,25 @@ def attack_loop(nrows: int,
         return best_failure, best_success
     
     actual_vals_per_qi = None
-    # Build the ground truth dataframe
-    if solve_type == 'pure_row':
+    has_dataset_inputs = path_to_dataset is not None or target_column is not None
+    if has_dataset_inputs and (path_to_dataset is None or target_column is None):
+        raise ValueError("Both path_to_dataset and target_column must be provided together.")
+
+    # Build the ground truth dataframe, either synthetic or from external parquet.
+    if path_to_dataset is not None and target_column is not None:
+        df = get_and_process_data(path_to_dataset, target_column, known_columns)
+        nrows = int(len(df))
+        nunique = int(df['val'].nunique())
+        nqi = int(len([col for col in df.columns if col.startswith('qi')]))
+        print(
+            f"Using dataset mode: {path_to_dataset} (target={target_column}, "
+            f"known_columns={'all_other_columns' if known_columns is None else known_columns})"
+        )
+        print(
+            "Ignoring synthetic data args: "
+            "nrows, nunique, nqi, vals_per_qi, corr_strength"
+        )
+    elif solve_type == 'pure_row':
         df = build_row_masks(nrows=nrows, nunique=nunique)
     else:
         min_vals_per_qi = get_required_num_distinct(nrows, nqi)
@@ -615,7 +727,7 @@ def attack_loop(nrows: int,
         exit_reason = ''
 
         # Check stopping conditions
-        if nqi > 0 and qi_index >= len(qi_subsets):
+        if solve_type in ['agg_row', 'agg_known'] and qi_index >= len(qi_subsets):
             print("Exit loop: No more QI subsets to use")
             finished = True
             exit_reason = 'no_more_qi_subsets'
@@ -650,7 +762,7 @@ def attack_loop(nrows: int,
                     exit_reason = 'target_accuracy'
             else:
                 next_samples = len(samples) * 2
-                if nqi == 0 and next_samples > max_samples:
+                if solve_type == 'pure_row' and next_samples > max_samples:
                     print(f"Exit loop: Reached max samples limit: {max_samples}")
                     exit_reason = 'max_samples'
                     finished = True
@@ -672,6 +784,9 @@ def attack_loop(nrows: int,
             'known_qi_fraction': known_qi_fraction,
             'max_qi': max_qi,
             'seed': seed,
+            'path_to_dataset': path_to_dataset,
+            'target_column': target_column,
+            'known_columns': known_columns,
             'max_samples': max_samples,
             'target_accuracy': target_accuracy,
             'min_num_rows': min_num_rows,
@@ -724,6 +839,12 @@ def main():
                        help='Maximum number of samples to use before quitting')
     parser.add_argument('--seed', type=int, default=None,
                        help='Random seed for reproducibility')
+    parser.add_argument('--path_to_dataset', type=str, default=None,
+                       help='Path to a .parquet dataset, relative to current working directory')
+    parser.add_argument('--target_column', type=str, default=None,
+                       help='Dataset column to use as target and rename to val')
+    parser.add_argument('--known_columns', nargs='+', default=None,
+                       help='Optional dataset columns to use as known QIs (renamed to qi1, qi2, ...)')
     
     args = parser.parse_args()
     job_num = args.job_num
@@ -767,6 +888,9 @@ def main():
         'max_qi': 1000,
         'max_samples': max_samples,
         'seed': None,
+        'path_to_dataset': None,
+        'target_column': None,
+        'known_columns': None,
     }
     
     # Check if any individual parameters were provided
@@ -783,7 +907,10 @@ def main():
         args.known_qi_fraction is not None,
         args.max_qi is not None,
         args.max_samples is not None,
-        args.seed is not None
+        args.seed is not None,
+        args.path_to_dataset is not None,
+        args.target_column is not None,
+        args.known_columns is not None,
     ])
     
     if individual_params_provided:
@@ -802,7 +929,14 @@ def main():
             'max_qi': args.max_qi if args.max_qi is not None else defaults['max_qi'],
             'max_samples': args.max_samples if args.max_samples is not None else defaults['max_samples'],
             'seed': args.seed if args.seed is not None else defaults['seed'],
+            'path_to_dataset': args.path_to_dataset if args.path_to_dataset is not None else defaults['path_to_dataset'],
+            'target_column': args.target_column if args.target_column is not None else defaults['target_column'],
+            'known_columns': args.known_columns if args.known_columns is not None else defaults['known_columns'],
         }
+        if (params['path_to_dataset'] is None) != (params['target_column'] is None):
+            raise ValueError("path_to_dataset and target_column must either both be provided or both be omitted.")
+        if params['known_columns'] is not None and params['path_to_dataset'] is None:
+            raise ValueError("known_columns can only be used when path_to_dataset and target_column are provided.")
 
         file_name = generate_filename(params, target_accuracy)
         file_path = attack_results_dir / f"{file_name}.json"
@@ -834,6 +968,9 @@ def main():
             max_qi=params['max_qi'],
             solve_type=params['solve_type'],
             seed=params['seed'],
+            path_to_dataset=params['path_to_dataset'],
+            target_column=params['target_column'],
+            known_columns=params['known_columns'],
             output_file=file_path,
             cur_attack_results=cur_attack_results_list,
         )
@@ -882,6 +1019,9 @@ def main():
                 'max_qi',
                 'max_samples',
                 'seed',
+                'path_to_dataset',
+                'target_column',
+                'known_columns',
                 'target_accuracy',
             ]
             missing_cols = [col for col in param_cols + ['finished'] if col not in results_df.columns]
@@ -891,6 +1031,15 @@ def main():
             if 'corr_strength' in missing_cols:
                 results_df['corr_strength'] = defaults['corr_strength']
                 missing_cols.remove('corr_strength')
+            if 'path_to_dataset' in missing_cols:
+                results_df['path_to_dataset'] = defaults['path_to_dataset']
+                missing_cols.remove('path_to_dataset')
+            if 'target_column' in missing_cols:
+                results_df['target_column'] = defaults['target_column']
+                missing_cols.remove('target_column')
+            if 'known_columns' in missing_cols:
+                results_df['known_columns'] = defaults['known_columns']
+                missing_cols.remove('known_columns')
             if missing_cols:
                 print(f"Warning: {result_parquet} missing columns {missing_cols}; skipping finished filter.")
             else:
@@ -918,11 +1067,20 @@ def main():
                     ]
                 print(f"Including {len(overtime_df)} additional jobs to filter based on time threshold of {time_include_threshold_seconds} seconds.")
                 combined_df = pd.concat([finished_df, overtime_df], ignore_index=True)
+
+                def is_missing_value(value):
+                    if isinstance(value, (list, dict, tuple, set)):
+                        return False
+                    try:
+                        return bool(pd.isna(value))
+                    except (TypeError, ValueError):
+                        return False
+
                 for _, row in combined_df.iterrows():
                     row_params = {}
                     for col in param_cols:
                         val = row[col]
-                        if pd.isna(val):
+                        if is_missing_value(val):
                             row_params[col] = defaults.get(col)
                         elif col in int_cols:
                             row_params[col] = int(val)
@@ -930,6 +1088,15 @@ def main():
                             row_params[col] = float(val)
                         elif col == 'corr_strength':
                             row_params[col] = float(val)
+                        elif col == 'known_columns':
+                            if isinstance(val, str):
+                                try:
+                                    parsed_val = json.loads(val)
+                                except (TypeError, ValueError):
+                                    parsed_val = [val]
+                                row_params[col] = parsed_val
+                            else:
+                                row_params[col] = val
                         else:
                             row_params[col] = val
                     file_name = generate_filename(row_params, row_params['target_accuracy'])
@@ -939,15 +1106,37 @@ def main():
     for key in finished_param_keys:
         #print(f"Finished: {key}")
         pass
+
+    def normalize_grid_value(value):
+        if isinstance(value, list):
+            return value
+        return [value]
+
+    def normalize_known_columns_grid(value):
+        if value is None:
+            return [None]
+        if isinstance(value, list):
+            if len(value) == 0:
+                return [[]]
+            if all(isinstance(item, str) for item in value):
+                return [value]
+            return value
+        if isinstance(value, str):
+            return [[value]]
+        return [value]
+
     for exp in experiments:
         if exp['dont_run'] is True:
             continue
         # Get seed list from experiment, default to [None] if not specified
-        seed_list = exp.get('seed', [None])
+        seed_list = normalize_grid_value(exp.get('seed', [None]))
         # Get known_qi_fraction list from experiment, default to [1.0] if not specified
-        known_qi_fraction_list = exp.get('known_qi_fraction', [1.0])
-        max_qi_list = exp.get('max_qi', [defaults['max_qi']])
-        corr_strength_list = exp.get('corr_strength', [defaults['corr_strength']])
+        known_qi_fraction_list = normalize_grid_value(exp.get('known_qi_fraction', [1.0]))
+        max_qi_list = normalize_grid_value(exp.get('max_qi', [defaults['max_qi']]))
+        corr_strength_list = normalize_grid_value(exp.get('corr_strength', [defaults['corr_strength']]))
+        path_to_dataset_list = normalize_grid_value(exp.get('path_to_dataset', [None]))
+        target_column_list = normalize_grid_value(exp.get('target_column', [None]))
+        known_columns_list = normalize_known_columns_grid(exp.get('known_columns', [None]))
         for nrows in exp['nrows']:
             for mask_size in exp['mask_size']:
                 for nunique in exp['nunique']:
@@ -958,31 +1147,41 @@ def main():
                                     for vals_per_qi in exp['vals_per_qi']:
                                         for corr_strength in corr_strength_list:
                                             for known_qi_fraction in known_qi_fraction_list:
-                                                for seed in seed_list:
-                                                    params = {
-                                                        'nrows': nrows,
-                                                        'solve_type': exp['solve_type'],
-                                                        'mask_size': mask_size,
-                                                        'nunique': nunique,
-                                                        'noise': noise,
-                                                        'nqi': nqi,
-                                                        'min_num_rows': min_num_rows,
-                                                        'vals_per_qi': vals_per_qi,
-                                                        'corr_strength': corr_strength,
-                                                        'known_qi_fraction': known_qi_fraction,
-                                                        'max_qi': max_qi,
-                                                        'max_samples': max_samples,
-                                                        'seed': seed,
-                                                    }
-                                                    key = generate_filename(params, target_accuracy)
-                                                    if key in finished_param_keys:
-                                                        num_finished_jobs += 1
-                                                        #print(f"Matched: {key}")
-                                                        continue
-                                                    if key not in seen:
-                                                        seen.add(key)
-                                                        #print(f"Adding: {key}")
-                                                        test_params.append(params)
+                                                for path_to_dataset in path_to_dataset_list:
+                                                    for target_column in target_column_list:
+                                                        for known_columns in known_columns_list:
+                                                            if (path_to_dataset is None) != (target_column is None):
+                                                                continue
+                                                            if known_columns is not None and path_to_dataset is None:
+                                                                continue
+                                                            for seed in seed_list:
+                                                                params = {
+                                                                    'nrows': nrows,
+                                                                    'solve_type': exp['solve_type'],
+                                                                    'mask_size': mask_size,
+                                                                    'nunique': nunique,
+                                                                    'noise': noise,
+                                                                    'nqi': nqi,
+                                                                    'min_num_rows': min_num_rows,
+                                                                    'vals_per_qi': vals_per_qi,
+                                                                    'corr_strength': corr_strength,
+                                                                    'known_qi_fraction': known_qi_fraction,
+                                                                    'max_qi': max_qi,
+                                                                    'max_samples': max_samples,
+                                                                    'seed': seed,
+                                                                    'path_to_dataset': path_to_dataset,
+                                                                    'target_column': target_column,
+                                                                    'known_columns': known_columns,
+                                                                }
+                                                                key = generate_filename(params, target_accuracy)
+                                                                if key in finished_param_keys:
+                                                                    num_finished_jobs += 1
+                                                                    #print(f"Matched: {key}")
+                                                                    continue
+                                                                if key not in seen:
+                                                                    seen.add(key)
+                                                                    #print(f"Adding: {key}")
+                                                                    test_params.append(params)
     
     # If no job_num, just print all combinations
     if job_num is None:
@@ -1060,6 +1259,9 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
         max_samples=params['max_samples'],
         solve_type=params['solve_type'],
         seed=params['seed'],
+        path_to_dataset=params.get('path_to_dataset'),
+        target_column=params.get('target_column'),
+        known_columns=params.get('known_columns'),
         output_file=file_path,
         cur_attack_results=cur_attack_results_list,
     )

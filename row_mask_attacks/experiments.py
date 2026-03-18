@@ -95,8 +95,8 @@ experiments = [
         'vals_per_qi': [0],   # auto-select
         'known_qi_fraction': [0, 0.25, 0.5, 0.75, 1.0],
     },
-    {   # Agg known best, all nqi
-        'dont_run': False,
+    {   # Agg known best, known_qi_fraction
+        'dont_run': True,
         'used_in_paper': True,
         'experiment_group': 'agg_known_best',
         'slurm_run': 6,
@@ -444,7 +444,7 @@ experiments = [
         'vals_per_qi': [0],   # auto-select
     },
     {   # Agg Dinur-style, x=nqi, y=noise, lines=corr_strength
-        'dont_run': False,
+        'dont_run': True,
         'used_in_paper': True,
         'experiment_group': 'agg_dinur_x_nqi_y_noise_lines_corr_strength_mnr3',
         'slurm_run': 30,
@@ -458,22 +458,6 @@ experiments = [
         'nqi': [3,4,5,6,7,9,11],
         'min_num_rows': [3],
         'vals_per_qi': [0],   # auto-select
-    },
-    {   # temp
-        'dont_run': False,
-        'used_in_paper': True,
-        'experiment_group': 'temp',
-        'slurm_run': 31,
-        'solve_type': 'agg_known',
-        'seed': [0,1,2,3,4],
-        'nrows': [50],
-        'mask_size': [0],
-        'nunique': [2],
-        'noise': [0],
-        'nqi': [4,5,6,7],
-        'min_num_rows': [1,2,3,4,5],
-        'vals_per_qi': [0],   # auto-select
-        'known_qi_fraction': [0.0, 0.25, 0.5, 0.75, 1.0],
     },
     {   # temp
         'dont_run': False,
@@ -511,4 +495,26 @@ def read_experiments(used_only_in_paper: bool = True, include_more_seeds_experim
             exp['corr_strength'] = [0.0]
         elif not isinstance(exp['corr_strength'], list):
             exp['corr_strength'] = [exp['corr_strength']]
+        if 'path_to_dataset' not in exp:
+            exp['path_to_dataset'] = [None]
+        elif not isinstance(exp['path_to_dataset'], list):
+            exp['path_to_dataset'] = [exp['path_to_dataset']]
+        if 'target_column' not in exp:
+            exp['target_column'] = [None]
+        elif not isinstance(exp['target_column'], list):
+            exp['target_column'] = [exp['target_column']]
+        if 'known_columns' not in exp:
+            exp['known_columns'] = [None]
+        else:
+            known_columns_value = exp['known_columns']
+            if known_columns_value is None:
+                exp['known_columns'] = [None]
+            elif isinstance(known_columns_value, list):
+                # A flat list of strings means "one known_columns set".
+                if len(known_columns_value) == 0:
+                    exp['known_columns'] = [[]]
+                elif all(isinstance(item, str) for item in known_columns_value):
+                    exp['known_columns'] = [known_columns_value]
+            else:
+                exp['known_columns'] = [known_columns_value]
     return adjusted_experiments

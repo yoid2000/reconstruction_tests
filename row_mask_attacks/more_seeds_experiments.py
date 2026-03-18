@@ -192,3 +192,8 @@ more_seeds_experiments = [
     {'slurm_run': 0, 'dont_run': False, 'used_in_paper': False, 'experiment_group': 'temp', 'max_qi': [1000], 'solve_type': 'agg_row', 'nrows': [200], 'mask_size': [0], 'nunique': [2], 'noise': [3], 'nqi': [5], 'vals_per_qi': [0], 'max_samples': [20000], 'target_accuracy': [0.99], 'supp_thresh': [2], 'known_qi_fraction': [1.0], 'min_num_rows': [3], 'seed': [14198, 10253, 13232, 11202, 15097, 13582, 15563, 13777, 16003, 19192, 15826, 12426, 11792, 15005, 12887, 14604, 11157, 14508, 11218, 14253, 16537, 15149, 12406, 16746, 18902, 13136, 13368, 19904, 18177, 14421, 12745, 14426, 10595, 13652, 13109]},
     {'slurm_run': 0, 'dont_run': False, 'used_in_paper': False, 'experiment_group': 'temp', 'max_qi': [1000], 'solve_type': 'agg_row', 'nrows': [300], 'mask_size': [0], 'nunique': [2], 'noise': [2], 'nqi': [6], 'vals_per_qi': [0], 'max_samples': [20000], 'target_accuracy': [0.99], 'supp_thresh': [6], 'known_qi_fraction': [1.0], 'min_num_rows': [7], 'seed': [13880, 15724, 10326, 17795, 15301, 13015, 17736, 16849, 19886, 19945, 12248, 16076, 19145, 17094, 16168, 10118, 11034, 17704, 13214, 12249, 13359, 10073, 19247, 14946, 13423, 10794, 12696, 17860, 10730, 10527, 18562, 10744, 19888]},
 ]
+
+for experiment in more_seeds_experiments:
+    experiment.setdefault('path_to_dataset', [None])
+    experiment.setdefault('target_column', [None])
+    experiment.setdefault('known_columns', [None])

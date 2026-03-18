@@ -2,9 +2,9 @@
 #SBATCH --job-name=32_recon_test
 #SBATCH --output=/INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/slurm_out/job_32_%A_%a.out
 #SBATCH --time=2880
-#SBATCH --mem=10G
+#SBATCH --mem=20G
 #SBATCH --cpus-per-task=1
-#SBATCH --array=0-499
+#SBATCH --array=0-147
 arrayNum="${SLURM_ARRAY_TASK_ID}"
 source /INS/syndiffix/work/paul/github/reconstruction_tests/.venv/bin/activate
 python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run_row_mask_attack.py --slurm_run 32 --job_num $arrayNum

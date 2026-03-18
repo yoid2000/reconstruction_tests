@@ -15,8 +15,8 @@ def plot_agg_known_heatmaps(df: pd.DataFrame):
     output_dir = Path('./results/plots')
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    noise_vals = [1, 2, 3, 4]
-    supp_vals = [1, 2, 3, 4]
+    noise_vals = [0, 1, 2, 3, 4]
+    supp_vals = [0, 1, 2, 3, 4]
     kqf_vals = [0.0, 0.25, 0.5, 0.75, 1.0]
     nqi_vals = sorted(df['nqi'].dropna().unique())
 
@@ -24,13 +24,13 @@ def plot_agg_known_heatmaps(df: pd.DataFrame):
         print("plot_agg_known_heatmaps: no nqi values found; skipping plot")
         return
 
-    colors = ['#ffffff', '#c7e9c0', '#ffe066', '#fdae6b', '#f7b6d2']
+    colors = ['#ffffff', '#bfe0bf', '#d9f7a6', '#f7c6d0', '#e08f8f']
     cmap = ListedColormap(colors)
     norm = BoundaryNorm([-0.5, 0.5, 1.5, 2.5, 3.5, 4.5], cmap.N)
 
     nrows = len(nqi_vals)
     ncols = len(kqf_vals)
-    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(3.0 * ncols, 2.6 * nrows))
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(3.3 * ncols, 2.9 * nrows))
     if nrows == 1 and ncols == 1:
         axes = np.array([[axes]])
     elif nrows == 1:
@@ -59,9 +59,9 @@ def plot_agg_known_heatmaps(df: pd.DataFrame):
                     labels[i, j] = f"{measure:.2f}"
                     if measure >= 0.99:
                         category[i, j] = 4
-                    elif measure >= 0.95:
+                    elif measure >= 0.9:
                         category[i, j] = 3
-                    elif measure >= 0.80:
+                    elif measure >= 0.75:
                         category[i, j] = 2
                     else:
                         category[i, j] = 1
@@ -102,7 +102,7 @@ def plot_agg_known_heatmaps(df: pd.DataFrame):
             ax.set_xlim(-0.5, len(supp_vals) - 0.5)
             ax.set_ylim(len(noise_vals) - 0.5, -0.5)
 
-    plt.tight_layout()
+    plt.tight_layout(w_pad=0.3)
     for ext in ['png', 'pdf']:
         out_path = output_dir / f'agg_known_heatmaps.{ext}'
         plt.savefig(out_path, dpi=300 if ext == 'png' else None)
