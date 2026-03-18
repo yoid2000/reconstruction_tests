@@ -475,6 +475,19 @@ experiments = [
         'vals_per_qi': [0],   # auto-select
         'known_qi_fraction': [0.0, 0.25, 0.5, 0.75, 1.0],
     },
+    {   # agg_row, ons 200-row, 8 QI columns
+        'dont_run': False,
+        'used_in_paper': True,
+        'experiment_group': 'agg_row_ons_200_row_8_qi',
+        'path_to_dataset': 'datasets/oa_200.parquet',
+        'target_column': 'health_in_general',
+        'slurm_run': 31,
+        'solve_type': 'agg_row',
+        'seed': [0,1,2,3,4],
+        'mask_size': [0],
+        'noise': [0,1,2,3,4],
+        'min_num_rows': [1,2,3,4,5],
+    },
 ]
 
 def read_experiments(used_only_in_paper: bool = True, include_more_seeds_experiments: bool = False) -> list[dict]:
@@ -503,18 +516,4 @@ def read_experiments(used_only_in_paper: bool = True, include_more_seeds_experim
             exp['target_column'] = [None]
         elif not isinstance(exp['target_column'], list):
             exp['target_column'] = [exp['target_column']]
-        if 'known_columns' not in exp:
-            exp['known_columns'] = [None]
-        else:
-            known_columns_value = exp['known_columns']
-            if known_columns_value is None:
-                exp['known_columns'] = [None]
-            elif isinstance(known_columns_value, list):
-                # A flat list of strings means "one known_columns set".
-                if len(known_columns_value) == 0:
-                    exp['known_columns'] = [[]]
-                elif all(isinstance(item, str) for item in known_columns_value):
-                    exp['known_columns'] = [known_columns_value]
-            else:
-                exp['known_columns'] = [known_columns_value]
     return adjusted_experiments

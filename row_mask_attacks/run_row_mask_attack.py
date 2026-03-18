@@ -1,5 +1,5 @@
 import pandas as pd
-from typing import List, Dict, Set, Optional
+from typing import List, Dict, Set
 import numpy as np
 import json
 import hashlib
@@ -28,21 +28,43 @@ def _sanitize_filename_part(value: str) -> str:
     cleaned = re.sub(r'[^A-Za-z0-9._-]+', '_', str(value))
     cleaned = cleaned.strip('._-')
     return cleaned or "x"
+
+def _resolve_dataset_path(path_to_dataset: str) -> Path:
+    dataset_path = Path(path_to_dataset)
+    if dataset_path.suffix.lower() != '.parquet':
+        raise ValueError(f"path_to_dataset must point to a .parquet file, got: {path_to_dataset}")
+    if not dataset_path.is_absolute():
+        dataset_path = Path.cwd() / dataset_path
+    return dataset_path
+
+def get_dataset_generation_params(path_to_dataset: str, target_column: str) -> Dict[str, int]:
+    """Infer nrows, nunique, and nqi from raw parquet dataset metadata/content."""
+    dataset_path = _resolve_dataset_path(path_to_dataset)
+    if not dataset_path.exists():
+        raise FileNotFoundError(f"Dataset file not found: {dataset_path}")
+
+    source_df = pd.read_parquet(dataset_path)
+    if target_column not in source_df.columns:
+        raise ValueError(
+            f"target_column '{target_column}' is not in dataset columns: {list(source_df.columns)}"
+        )
+    return {
+        'nrows': int(len(source_df)),
+        'nunique': int(source_df[target_column].nunique(dropna=False)),
+        'nqi': int(max(0, len(source_df.columns) - 1)),
+    }
         
 def generate_filename(params, target_accuracy) -> str:
     """ Generate a filename string based on attack parameters. """
     path_to_dataset = params.get('path_to_dataset')
     target_column = params.get('target_column')
-    known_columns = params.get('known_columns')
     if path_to_dataset is not None and target_column is not None:
         dataset_stem = _sanitize_filename_part(Path(path_to_dataset).stem)
         target_label = _sanitize_filename_part(target_column)
-        known_cols_for_hash = known_columns if known_columns is not None else "all_other_columns"
         hash_payload = json.dumps(
             {
                 'path_to_dataset': path_to_dataset,
                 'target_column': target_column,
-                'known_columns': known_cols_for_hash,
             },
             sort_keys=True,
         )
@@ -86,15 +108,9 @@ def generate_filename(params, target_accuracy) -> str:
     return file_name
 
 def get_and_process_data(path_to_dataset: str,
-                         target_column: str,
-                         known_columns: Optional[List[str]] = None) -> pd.DataFrame:
+                         target_column: str) -> pd.DataFrame:
     """Load and process an external parquet dataset into id/val/qi* attack format."""
-    if Path(path_to_dataset).suffix.lower() != '.parquet':
-        raise ValueError(f"path_to_dataset must point to a .parquet file, got: {path_to_dataset}")
-
-    dataset_path = Path(path_to_dataset)
-    if not dataset_path.is_absolute():
-        dataset_path = Path.cwd() / dataset_path
+    dataset_path = _resolve_dataset_path(path_to_dataset)
     if not dataset_path.exists():
         raise FileNotFoundError(f"Dataset file not found: {dataset_path}")
 
@@ -103,26 +119,17 @@ def get_and_process_data(path_to_dataset: str,
         raise ValueError(
             f"target_column '{target_column}' is not in dataset columns: {list(source_df.columns)}"
         )
+    qi_source_columns = [col for col in source_df.columns if col != target_column]
 
-    if known_columns is not None:
-        missing_known = [col for col in known_columns if col not in source_df.columns]
-        if missing_known:
-            raise ValueError(f"known_columns not found in dataset: {missing_known}")
-        if target_column in known_columns:
-            raise ValueError("target_column cannot also be in known_columns")
-        selected_known_columns = list(known_columns)
-    else:
-        selected_known_columns = [col for col in source_df.columns if col != target_column]
-
-    selected_columns = [target_column] + selected_known_columns
+    selected_columns = [target_column] + qi_source_columns
     df = source_df[selected_columns].copy()
 
     rename_map = {target_column: 'val'}
-    for idx, col_name in enumerate(selected_known_columns, start=1):
+    for idx, col_name in enumerate(qi_source_columns, start=1):
         rename_map[col_name] = f'qi{idx}'
     df = df.rename(columns=rename_map)
 
-    value_columns = ['val'] + [f'qi{idx}' for idx in range(1, len(selected_known_columns) + 1)]
+    value_columns = ['val'] + [f'qi{idx}' for idx in range(1, len(qi_source_columns) + 1)]
     for col in value_columns:
         try:
             codes, _ = pd.factorize(df[col], sort=True)
@@ -448,7 +455,6 @@ def attack_loop(nrows: int,
                 seed: int = None,
                 path_to_dataset: str = None,
                 target_column: str = None,
-                known_columns: Optional[List[str]] = None,
                 output_file: Path = None,
                 cur_attack_results: List[Dict] = None) -> dict:
     """ Runs an iterative attack loop to reconstruct values from noisy samples.
@@ -469,7 +475,6 @@ def attack_loop(nrows: int,
         seed: Random seed for reproducibility (default: None)
         path_to_dataset: Relative or absolute path to .parquet dataset (default: None)
         target_column: Target column name in dataset to map to 'val' (default: None)
-        known_columns: Optional known column names in dataset to map to qi1, qi2, ... (default: None)
         output_file: Path to JSON file to save results incrementally (default: None)
         cur_attack_results: Previous attack results to resume from (default: None)
     
@@ -529,13 +534,13 @@ def attack_loop(nrows: int,
 
     # Build the ground truth dataframe, either synthetic or from external parquet.
     if path_to_dataset is not None and target_column is not None:
-        df = get_and_process_data(path_to_dataset, target_column, known_columns)
-        nrows = int(len(df))
-        nunique = int(df['val'].nunique())
-        nqi = int(len([col for col in df.columns if col.startswith('qi')]))
+        dataset_params = get_dataset_generation_params(path_to_dataset, target_column)
+        nrows = dataset_params['nrows']
+        nunique = dataset_params['nunique']
+        nqi = dataset_params['nqi']
+        df = get_and_process_data(path_to_dataset, target_column)
         print(
-            f"Using dataset mode: {path_to_dataset} (target={target_column}, "
-            f"known_columns={'all_other_columns' if known_columns is None else known_columns})"
+            f"Using dataset mode: {path_to_dataset} (target={target_column})"
         )
         print(
             "Ignoring synthetic data args: "
@@ -786,7 +791,6 @@ def attack_loop(nrows: int,
             'seed': seed,
             'path_to_dataset': path_to_dataset,
             'target_column': target_column,
-            'known_columns': known_columns,
             'max_samples': max_samples,
             'target_accuracy': target_accuracy,
             'min_num_rows': min_num_rows,
@@ -843,8 +847,6 @@ def main():
                        help='Path to a .parquet dataset, relative to current working directory')
     parser.add_argument('--target_column', type=str, default=None,
                        help='Dataset column to use as target and rename to val')
-    parser.add_argument('--known_columns', nargs='+', default=None,
-                       help='Optional dataset columns to use as known QIs (renamed to qi1, qi2, ...)')
     
     args = parser.parse_args()
     job_num = args.job_num
@@ -890,8 +892,15 @@ def main():
         'seed': None,
         'path_to_dataset': None,
         'target_column': None,
-        'known_columns': None,
     }
+
+    dataset_param_cache: Dict[tuple[str, str], Dict[str, int]] = {}
+
+    def get_dataset_params_cached(path_to_dataset: str, target_column: str) -> Dict[str, int]:
+        cache_key = (path_to_dataset, target_column)
+        if cache_key not in dataset_param_cache:
+            dataset_param_cache[cache_key] = get_dataset_generation_params(path_to_dataset, target_column)
+        return dataset_param_cache[cache_key]
     
     # Check if any individual parameters were provided
     individual_params_provided = any([
@@ -910,7 +919,6 @@ def main():
         args.seed is not None,
         args.path_to_dataset is not None,
         args.target_column is not None,
-        args.known_columns is not None,
     ])
     
     if individual_params_provided:
@@ -931,12 +939,17 @@ def main():
             'seed': args.seed if args.seed is not None else defaults['seed'],
             'path_to_dataset': args.path_to_dataset if args.path_to_dataset is not None else defaults['path_to_dataset'],
             'target_column': args.target_column if args.target_column is not None else defaults['target_column'],
-            'known_columns': args.known_columns if args.known_columns is not None else defaults['known_columns'],
         }
         if (params['path_to_dataset'] is None) != (params['target_column'] is None):
             raise ValueError("path_to_dataset and target_column must either both be provided or both be omitted.")
-        if params['known_columns'] is not None and params['path_to_dataset'] is None:
-            raise ValueError("known_columns can only be used when path_to_dataset and target_column are provided.")
+        if params['path_to_dataset'] is not None:
+            dataset_params = get_dataset_params_cached(params['path_to_dataset'], params['target_column'])
+            params['nrows'] = dataset_params['nrows']
+            params['nunique'] = dataset_params['nunique']
+            params['nqi'] = dataset_params['nqi']
+            # These are synthetic-generation knobs and should revert to defaults in dataset mode.
+            params['vals_per_qi'] = defaults['vals_per_qi']
+            params['corr_strength'] = defaults['corr_strength']
 
         file_name = generate_filename(params, target_accuracy)
         file_path = attack_results_dir / f"{file_name}.json"
@@ -970,7 +983,6 @@ def main():
             seed=params['seed'],
             path_to_dataset=params['path_to_dataset'],
             target_column=params['target_column'],
-            known_columns=params['known_columns'],
             output_file=file_path,
             cur_attack_results=cur_attack_results_list,
         )
@@ -1021,7 +1033,6 @@ def main():
                 'seed',
                 'path_to_dataset',
                 'target_column',
-                'known_columns',
                 'target_accuracy',
             ]
             missing_cols = [col for col in param_cols + ['finished'] if col not in results_df.columns]
@@ -1037,9 +1048,6 @@ def main():
             if 'target_column' in missing_cols:
                 results_df['target_column'] = defaults['target_column']
                 missing_cols.remove('target_column')
-            if 'known_columns' in missing_cols:
-                results_df['known_columns'] = defaults['known_columns']
-                missing_cols.remove('known_columns')
             if missing_cols:
                 print(f"Warning: {result_parquet} missing columns {missing_cols}; skipping finished filter.")
             else:
@@ -1088,15 +1096,6 @@ def main():
                             row_params[col] = float(val)
                         elif col == 'corr_strength':
                             row_params[col] = float(val)
-                        elif col == 'known_columns':
-                            if isinstance(val, str):
-                                try:
-                                    parsed_val = json.loads(val)
-                                except (TypeError, ValueError):
-                                    parsed_val = [val]
-                                row_params[col] = parsed_val
-                            else:
-                                row_params[col] = val
                         else:
                             row_params[col] = val
                     file_name = generate_filename(row_params, row_params['target_accuracy'])
@@ -1112,19 +1111,6 @@ def main():
             return value
         return [value]
 
-    def normalize_known_columns_grid(value):
-        if value is None:
-            return [None]
-        if isinstance(value, list):
-            if len(value) == 0:
-                return [[]]
-            if all(isinstance(item, str) for item in value):
-                return [value]
-            return value
-        if isinstance(value, str):
-            return [[value]]
-        return [value]
-
     for exp in experiments:
         if exp['dont_run'] is True:
             continue
@@ -1132,11 +1118,35 @@ def main():
         seed_list = normalize_grid_value(exp.get('seed', [None]))
         # Get known_qi_fraction list from experiment, default to [1.0] if not specified
         known_qi_fraction_list = normalize_grid_value(exp.get('known_qi_fraction', [1.0]))
-        max_qi_list = normalize_grid_value(exp.get('max_qi', [defaults['max_qi']]))
-        corr_strength_list = normalize_grid_value(exp.get('corr_strength', [defaults['corr_strength']]))
         path_to_dataset_list = normalize_grid_value(exp.get('path_to_dataset', [None]))
         target_column_list = normalize_grid_value(exp.get('target_column', [None]))
-        known_columns_list = normalize_known_columns_grid(exp.get('known_columns', [None]))
+        has_dataset_mode = any(path is not None for path in path_to_dataset_list)
+        if has_dataset_mode:
+            inferred_nrows = set()
+            inferred_nunique = set()
+            inferred_nqi = set()
+            for path_to_dataset in path_to_dataset_list:
+                for target_column in target_column_list:
+                    if path_to_dataset is None and target_column is None:
+                        continue
+                    if (path_to_dataset is None) != (target_column is None):
+                        continue
+                    dataset_params = get_dataset_params_cached(path_to_dataset, target_column)
+                    inferred_nrows.add(dataset_params['nrows'])
+                    inferred_nunique.add(dataset_params['nunique'])
+                    inferred_nqi.add(dataset_params['nqi'])
+            if len(inferred_nrows) == 0:
+                raise ValueError("Experiment has path_to_dataset entries but no valid target_column entries.")
+            # Fill experiment structure from parquet metadata for dataset-backed runs.
+            exp['nrows'] = sorted(inferred_nrows)
+            exp['nunique'] = sorted(inferred_nunique)
+            exp['nqi'] = sorted(inferred_nqi)
+            exp['vals_per_qi'] = [defaults['vals_per_qi']]
+            exp['corr_strength'] = [defaults['corr_strength']]
+
+        max_qi_list = normalize_grid_value(exp.get('max_qi', [defaults['max_qi']]))
+        corr_strength_list = normalize_grid_value(exp.get('corr_strength', [defaults['corr_strength']]))
+
         for nrows in exp['nrows']:
             for mask_size in exp['mask_size']:
                 for nunique in exp['nunique']:
@@ -1149,39 +1159,48 @@ def main():
                                             for known_qi_fraction in known_qi_fraction_list:
                                                 for path_to_dataset in path_to_dataset_list:
                                                     for target_column in target_column_list:
-                                                        for known_columns in known_columns_list:
-                                                            if (path_to_dataset is None) != (target_column is None):
+                                                        if (path_to_dataset is None) != (target_column is None):
+                                                            continue
+                                                        for seed in seed_list:
+                                                            effective_nrows = nrows
+                                                            effective_nunique = nunique
+                                                            effective_nqi = nqi
+                                                            effective_vals_per_qi = vals_per_qi
+                                                            effective_corr_strength = corr_strength
+                                                            if path_to_dataset is not None:
+                                                                dataset_params = get_dataset_params_cached(path_to_dataset, target_column)
+                                                                effective_nrows = dataset_params['nrows']
+                                                                effective_nunique = dataset_params['nunique']
+                                                                effective_nqi = dataset_params['nqi']
+                                                                # Revert synthetic generation knobs to defaults.
+                                                                effective_vals_per_qi = defaults['vals_per_qi']
+                                                                effective_corr_strength = defaults['corr_strength']
+                                                            params = {
+                                                                'nrows': effective_nrows,
+                                                                'solve_type': exp['solve_type'],
+                                                                'mask_size': mask_size,
+                                                                'nunique': effective_nunique,
+                                                                'noise': noise,
+                                                                'nqi': effective_nqi,
+                                                                'min_num_rows': min_num_rows,
+                                                                'vals_per_qi': effective_vals_per_qi,
+                                                                'corr_strength': effective_corr_strength,
+                                                                'known_qi_fraction': known_qi_fraction,
+                                                                'max_qi': max_qi,
+                                                                'max_samples': max_samples,
+                                                                'seed': seed,
+                                                                'path_to_dataset': path_to_dataset,
+                                                                'target_column': target_column,
+                                                            }
+                                                            key = generate_filename(params, target_accuracy)
+                                                            if key in finished_param_keys:
+                                                                num_finished_jobs += 1
+                                                                #print(f"Matched: {key}")
                                                                 continue
-                                                            if known_columns is not None and path_to_dataset is None:
-                                                                continue
-                                                            for seed in seed_list:
-                                                                params = {
-                                                                    'nrows': nrows,
-                                                                    'solve_type': exp['solve_type'],
-                                                                    'mask_size': mask_size,
-                                                                    'nunique': nunique,
-                                                                    'noise': noise,
-                                                                    'nqi': nqi,
-                                                                    'min_num_rows': min_num_rows,
-                                                                    'vals_per_qi': vals_per_qi,
-                                                                    'corr_strength': corr_strength,
-                                                                    'known_qi_fraction': known_qi_fraction,
-                                                                    'max_qi': max_qi,
-                                                                    'max_samples': max_samples,
-                                                                    'seed': seed,
-                                                                    'path_to_dataset': path_to_dataset,
-                                                                    'target_column': target_column,
-                                                                    'known_columns': known_columns,
-                                                                }
-                                                                key = generate_filename(params, target_accuracy)
-                                                                if key in finished_param_keys:
-                                                                    num_finished_jobs += 1
-                                                                    #print(f"Matched: {key}")
-                                                                    continue
-                                                                if key not in seen:
-                                                                    seen.add(key)
-                                                                    #print(f"Adding: {key}")
-                                                                    test_params.append(params)
+                                                            if key not in seen:
+                                                                seen.add(key)
+                                                                #print(f"Adding: {key}")
+                                                                test_params.append(params)
     
     # If no job_num, just print all combinations
     if job_num is None:
@@ -1261,7 +1280,6 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
         seed=params['seed'],
         path_to_dataset=params.get('path_to_dataset'),
         target_column=params.get('target_column'),
-        known_columns=params.get('known_columns'),
         output_file=file_path,
         cur_attack_results=cur_attack_results_list,
     )
