@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
 
 
-def plot_agg_known_heatmaps(df: pd.DataFrame):
+def plot_agg_known_heatmaps(df: pd.DataFrame, tag: str = ""):
     required_cols = {'measure', 'noise', 'supp_thresh', 'known_qi_fraction', 'nqi'}
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
@@ -104,7 +104,7 @@ def plot_agg_known_heatmaps(df: pd.DataFrame):
 
     plt.tight_layout(w_pad=0.3)
     for ext in ['png', 'pdf']:
-        out_path = output_dir / f'agg_known_heatmaps.{ext}'
+        out_path = output_dir / f'agg_known_heatmaps_{tag}.{ext}'
         plt.savefig(out_path, dpi=300 if ext == 'png' else None)
     plt.close()
-    print(f"Saved: {output_dir / 'agg_known_heatmaps.png'}")
+    print(f"Saved: {output_dir / f'agg_known_heatmaps_{tag}.png'}")

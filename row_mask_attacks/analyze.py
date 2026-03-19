@@ -643,6 +643,9 @@ def prep_data() -> pd.DataFrame:
     cols_to_fill = [{'col': 'seed', 'value': -1},
                     {'col': 'solver_metrics_skipped_constraints', 'value': -1},
                     {'col': 'corr_strength', 'value': 0.0},
+                    {'col': 'path_to_dataset', 'value': ""},
+                    {'col': 'target_column', 'value': ""},
+                    {'col': 'actual_vals_per_qi', 'value': 0},
                    ]
     for item in cols_to_fill:
         col = item['col']
@@ -936,7 +939,7 @@ def analyze(more_seeds: bool = False):
         elif exp_group == 'agg_known_best':
             metrics = ['measure', 'med_solver_metrics_runtime']
             print_experiment_group_results(exp_df, exp_group, metrics)
-            plot_agg_known_heatmaps(exp_df)
+            plot_agg_known_heatmaps(exp_df, "agg_known_best")
         elif exp_group == 'agg_known_defaults':
             do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='known_qi_fraction', thresh=0.90, tag="mnr3")
             for ycol in x_y_group:
