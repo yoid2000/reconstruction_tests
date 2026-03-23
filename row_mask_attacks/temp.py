@@ -11,6 +11,9 @@ def main() -> None:
         raise ValueError("Column 'path_to_dataset' does not exist in results/result.parquet")
 
     filtered_df = df[df["path_to_dataset"].isna()].copy()
+
+    # remove columns path_to_dataset and target_column
+    filtered_df.drop(columns=["path_to_dataset", "target_column"], inplace=True)
     filtered_df.to_parquet(parquet_path, index=False)
 
 

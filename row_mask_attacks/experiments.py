@@ -459,48 +459,6 @@ experiments = [
         'min_num_rows': [3],
         'vals_per_qi': [0],   # auto-select
     },
-    {   # temp
-        'dont_run': False,
-        'used_in_paper': True,
-        'experiment_group': 'temp',
-        'slurm_run': 32,
-        'solve_type': 'agg_known',
-        'seed': [0,1,2,3,4],
-        'nrows': [50],
-        'mask_size': [0],
-        'nunique': [2],
-        'noise': [0,1,2,3,4],
-        'nqi': [4,5,6,7],
-        'min_num_rows': [1],
-        'vals_per_qi': [0],   # auto-select
-        'known_qi_fraction': [0.0, 0.25, 0.5, 0.75, 1.0],
-    },
-    {   # agg_row, ons 200-row, 8 QI columns
-        'dont_run': False,
-        'used_in_paper': True,
-        'experiment_group': 'agg_row_ons_200_row_8_qi',
-        'path_to_dataset': 'datasets/oa_200.parquet',
-        'target_column': 'health_in_general',
-        'slurm_run': 31,
-        'solve_type': 'agg_row',
-        'seed': list(range(20)),
-        'mask_size': [0],
-        'noise': [0,1,2,3,4],
-        'min_num_rows': [1,2,3,4,5],
-    },
-    {   # agg_row, ons 500-row, 8 QI columns
-        'dont_run': False,
-        'used_in_paper': True,
-        'experiment_group': 'agg_row_ons_500_row_8_qi',
-        'path_to_dataset': 'datasets/oa_500.parquet',
-        'target_column': 'health_in_general',
-        'slurm_run': 33,
-        'solve_type': 'agg_row',
-        'seed': list(range(20)),
-        'mask_size': [0],
-        'noise': [0,1,2,3,4],
-        'min_num_rows': [1,2,3,4,5],
-    },
 ]
 
 def read_experiments(used_only_in_paper: bool = True, include_more_seeds_experiments: bool = False) -> list[dict]:
