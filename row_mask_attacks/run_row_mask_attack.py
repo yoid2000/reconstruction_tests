@@ -1,5 +1,5 @@
 import pandas as pd
-from typing import List, Dict, Set
+from typing import Any, List, Dict, Set, Optional
 import numpy as np
 import json
 import hashlib
@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 import pprint
 import argparse
+from anonymity_loss_coefficient import brm_attack_simple
+
 pp = pprint.PrettyPrinter(indent=2)
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -143,6 +145,90 @@ def get_and_process_data(path_to_dataset: str,
 
     df.insert(0, 'id', np.arange(len(df), dtype=int))
     return df
+
+
+def convert_from_qi_val_tuples(df: pd.DataFrame, reconstructed: List[Dict[str, Any]]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Convert reconstructed QI/value rows into BRM input dataframes.
+
+    Args:
+        df: Original attack dataframe with columns `id`, optional `qi*`, and `val`.
+        reconstructed: Rows as dicts containing all `qi*` columns and `val`.
+
+    Returns:
+        Tuple `(original, anon)`:
+            - `original`: `df` without the `id` column.
+            - `anon`: reconstructed dataframe with same columns/order as `original`.
+    """
+    if 'id' not in df.columns or 'val' not in df.columns:
+        raise ValueError("df must contain 'id' and 'val' columns.")
+
+    original = df.drop(columns=['id']).copy()
+    qi_cols = [col for col in df.columns if col not in ['id', 'val']]
+    tuple_cols = qi_cols + ['val']
+
+    if reconstructed is None:
+        reconstructed = []
+
+    rows: List[Dict[str, Any]] = []
+    for idx, item in enumerate(reconstructed):
+        if not isinstance(item, dict):
+            raise ValueError(f"reconstructed[{idx}] must be a dict, got {type(item).__name__}")
+        missing_cols = [col for col in tuple_cols if col not in item]
+        if missing_cols:
+            raise ValueError(
+                f"reconstructed[{idx}] is missing columns {missing_cols}; expected {tuple_cols}"
+            )
+        rows.append({col: item[col] for col in tuple_cols})
+
+    anon = pd.DataFrame(rows, columns=tuple_cols)
+    anon = anon.reindex(columns=original.columns)
+
+    for col in original.columns:
+        if col in anon.columns and not anon.empty:
+            try:
+                anon[col] = anon[col].astype(original[col].dtype, copy=False)
+            except (TypeError, ValueError):
+                pass
+
+    return original, anon
+
+
+def convert_from_id_val_tuples(df: pd.DataFrame, reconstructed: List[Dict[str, Any]]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Convert reconstructed ID/value rows into QI/value rows and then to BRM dataframes.
+
+    Args:
+        df: Original attack dataframe with columns `id`, optional `qi*`, and `val`.
+        reconstructed: Rows as dicts containing `id` and `val`.
+
+    Returns:
+        Tuple `(original, anon)` where `anon` has QI/value rows aligned to ids from `df`.
+    """
+    if 'id' not in df.columns or 'val' not in df.columns:
+        raise ValueError("df must contain 'id' and 'val' columns.")
+
+    original = df.drop(columns=['id']).copy()
+    qi_cols = [col for col in df.columns if col not in ['id', 'val']]
+
+    if reconstructed is None:
+        reconstructed = []
+
+    id_val_rows: List[Dict[str, Any]] = []
+    for idx, item in enumerate(reconstructed):
+        if not isinstance(item, dict):
+            raise ValueError(f"reconstructed[{idx}] must be a dict, got {type(item).__name__}")
+        if 'id' not in item or 'val' not in item:
+            raise ValueError("id/val dict rows must contain keys 'id' and 'val'.")
+        id_val_rows.append({'id': item['id'], 'val': item['val']})
+
+    if len(id_val_rows) == 0:
+        return original, pd.DataFrame(columns=original.columns)
+
+    recon_df = pd.DataFrame(id_val_rows, columns=['id', 'val'])
+    id_to_qi_df = df[['id'] + qi_cols].drop_duplicates(subset=['id'])
+    merged = recon_df.merge(id_to_qi_df, on='id', how='inner')
+
+    qi_val_rows = merged[qi_cols + ['val']].to_dict('records')
+    return convert_from_qi_val_tuples(df, qi_val_rows)
 
 def mixing_stats(samples: List[Dict]) -> Dict:
     """ Computes mixing statistics for IDs across samples.
@@ -438,6 +524,61 @@ def get_best_refine(attack_results: List[Dict]) -> int:
             best_refine = refine
     return best_refine
 
+def compute_alc_measures(
+    df: pd.DataFrame,
+    reconstructed: List[Dict[str, Any]],
+    target_column: str,
+    path_to_dataset: str | None,
+    attack_precision: float,
+) -> Dict[str, Any]:
+    if path_to_dataset is None:
+        # compute distinct number of values for column val in df
+        num_distinct_vals = df['val'].nunique()
+        if num_distinct_vals == 1:
+            # throw exception
+            raise ValueError(f"Should always have more than one distinct target value")
+        base_precision = 1/num_distinct_vals
+        return {
+            'alc': (attack_precision - base_precision) / (1.0 - base_precision),
+            'attack_precision': attack_precision,
+            'attack_recall': 1.0,
+            'attack_prc': attack_precision,
+            'baseline_precision': base_precision,
+            'baseline_recall': 1.0,
+            'baseline_prc': base_precision,
+        }
+
+    # At this point, df is the original dataset, but with id, qiX, and val columns.
+    # Determine whether reconstructed rows use id/val or qi*/val by inspecting reconstructed itself.
+    if len(reconstructed) == 0:
+        print("Skipping BRM/ALC evaluation because reconstructed is empty.")
+        return {}
+
+    first_row = reconstructed[0]
+    if not isinstance(first_row, dict):
+        raise ValueError(f"reconstructed rows must be dicts, got {type(first_row).__name__}")
+    if 'val' not in first_row:
+        raise ValueError("reconstructed rows must contain key 'val'.")
+
+    uses_id_rows = 'id' in first_row
+    if uses_id_rows:
+        original, anon = convert_from_id_val_tuples(df, reconstructed)
+    else:
+        original, anon = convert_from_qi_val_tuples(df, reconstructed)
+
+    print(f"Evaluating best row match attack and ALC for target column '{target_column}'")
+    brm_results = brm_attack_simple(original, anon, 'val')
+
+    return {
+        'alc': brm_results['alc'],
+        'attack_precision': brm_results['attack']['precision'],
+        'attack_recall': brm_results['attack']['recall'],
+        'attack_prc': brm_results['attack']['prc'],
+        'baseline_precision': brm_results['baseline']['precision'],
+        'baseline_recall': brm_results['baseline']['recall'],
+        'baseline_prc': brm_results['baseline']['prc'],
+    }
+
 def attack_loop(nrows: int, 
                 nunique: int, 
                 mask_size: int, 
@@ -704,12 +845,14 @@ def attack_loop(nrows: int,
             num_masked = int(avg_num_masked / (len(samples) - len(working_samples))) if (len(samples) - len(working_samples)) > 0 else 0
             working_samples = samples.copy()
         
+        alc_result = compute_alc_measures(df, reconstructed, target_column, path_to_dataset, accuracy)
         # Record results
         current_result = {
             'num_samples': len(samples),
             'num_equations': num_equations,
             'measure': accuracy,
             'qi_match_measure': qi_match_accuracy,
+            'alc': alc_result,
             'mixing': mixing,
             'actual_num_rows': num_masked,
             'solver_metrics': solver_metrics,
@@ -776,6 +919,7 @@ def attack_loop(nrows: int,
                     refine_count = 0
 
         # Save results incrementally if output file is provided
+
         save_dict = {
             'solve_type': solve_type,
             'nrows': nrows,
@@ -1001,8 +1145,8 @@ def main():
         return
     
     # Generate test parameter combinations
-    max_time_minutes = int((60*24) * (24/24) * 7)   # We'll set slurm to this
-    max_memory = '20G'
+    max_time_minutes = int((60*24) * (4/24) * 1)   # We'll set slurm to this
+    max_memory = '10G'
     # 2 minutes for overhead, convert to seconds, then divide by 20 to safely allow for multiple runs
     time_include_threshold_seconds =  ((max_time_minutes-2) * 60) / 20
     test_params = []

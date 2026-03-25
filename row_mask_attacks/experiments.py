@@ -1,5 +1,5 @@
-import copy
 from more_seeds_experiments import more_seeds_experiments
+import copy
 
 # Define parameter ranges
 experiments = [
@@ -458,6 +458,42 @@ experiments = [
         'nqi': [3,4,5,6,7,9,11],
         'min_num_rows': [3],
         'vals_per_qi': [0],   # auto-select
+    },
+    {   # OCN 200, low distortion
+        'dont_run': False,
+        'used_in_paper': True,
+        'experiment_group': 'oa_200_low_distortion',
+        'slurm_run': 40,
+        'solve_type': 'agg_row',
+        'seed': [0,1,2,3,4],
+        'nrows': [0],    # take from dataset
+        'mask_size': [0],    # take from dataset
+        'nunique': [0],    # take from dataset
+        'noise': [0,1,2,3,4],
+        'nqi': [0],    # take from dataset
+        'min_num_rows': [1,2,3,4,5],
+        'vals_per_qi': [0],   # auto-select
+        'known_qi_fraction': [1.0],    # ignore
+        'path_to_dataset': ['datasets/oa_200.parquet'],
+        'target_column': ['health_in_general'],
+    },
+    {   # OCN 500, low distortion
+        'dont_run': False,
+        'used_in_paper': True,
+        'experiment_group': 'oa_500_low_distortion',
+        'slurm_run': 41,
+        'solve_type': 'agg_row',
+        'seed': [0,1,2,3,4],
+        'nrows': [0],    # take from dataset
+        'mask_size': [0],    # take from dataset
+        'nunique': [0],    # take from dataset
+        'noise': [0,1,2,3,4],
+        'nqi': [0],    # take from dataset
+        'min_num_rows': [1,2,3,4,5],
+        'vals_per_qi': [0],   # auto-select
+        'known_qi_fraction': [1.0],    # ignore
+        'path_to_dataset': ['datasets/oa_500.parquet'],
+        'target_column': ['health_in_general'],
     },
 ]
 
