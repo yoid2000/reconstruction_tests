@@ -465,7 +465,7 @@ experiments = [
         'experiment_group': 'oa_200_low_distortion',
         'slurm_run': 40,
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4],
+        'seed': list(range(20)),
         'nrows': [0],    # take from dataset
         'mask_size': [0],    # take from dataset
         'nunique': [0],    # take from dataset
@@ -483,7 +483,7 @@ experiments = [
         'experiment_group': 'oa_500_low_distortion',
         'slurm_run': 41,
         'solve_type': 'agg_row',
-        'seed': [0,1,2,3,4],
+        'seed': list(range(20)),
         'nrows': [0],    # take from dataset
         'mask_size': [0],    # take from dataset
         'nunique': [0],    # take from dataset
