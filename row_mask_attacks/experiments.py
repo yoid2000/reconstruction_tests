@@ -466,13 +466,8 @@ experiments = [
         'slurm_run': 40,
         'solve_type': 'agg_row',
         'seed': list(range(20)),
-        'nrows': [0],    # take from dataset
-        'mask_size': [0],    # take from dataset
-        'nunique': [0],    # take from dataset
         'noise': [0,1,2,3,4],
-        'nqi': [0],    # take from dataset
         'min_num_rows': [1,2,3,4,5],
-        'vals_per_qi': [0],   # auto-select
         'known_qi_fraction': [1.0],    # ignore
         'path_to_dataset': ['datasets/oa_200.parquet'],
         'target_column': ['health_in_general'],
@@ -484,13 +479,8 @@ experiments = [
         'slurm_run': 41,
         'solve_type': 'agg_row',
         'seed': list(range(20)),
-        'nrows': [0],    # take from dataset
-        'mask_size': [0],    # take from dataset
-        'nunique': [0],    # take from dataset
         'noise': [0,1,2,3,4],
-        'nqi': [0],    # take from dataset
         'min_num_rows': [1,2,3,4,5],
-        'vals_per_qi': [0],   # auto-select
         'known_qi_fraction': [1.0],    # ignore
         'path_to_dataset': ['datasets/oa_500.parquet'],
         'target_column': ['health_in_general'],
@@ -516,11 +506,13 @@ def read_experiments(used_only_in_paper: bool = True, include_more_seeds_experim
         elif not isinstance(exp['corr_strength'], list):
             exp['corr_strength'] = [exp['corr_strength']]
         if 'path_to_dataset' not in exp:
-            exp['path_to_dataset'] = [None]
+            exp['path_to_dataset'] = ['']
         elif not isinstance(exp['path_to_dataset'], list):
             exp['path_to_dataset'] = [exp['path_to_dataset']]
+        exp['path_to_dataset'] = ['' if value is None else value for value in exp['path_to_dataset']]
         if 'target_column' not in exp:
-            exp['target_column'] = [None]
+            exp['target_column'] = ['']
         elif not isinstance(exp['target_column'], list):
             exp['target_column'] = [exp['target_column']]
+        exp['target_column'] = ['' if value is None else value for value in exp['target_column']]
     return adjusted_experiments

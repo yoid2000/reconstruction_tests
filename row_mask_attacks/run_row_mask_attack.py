@@ -31,6 +31,15 @@ def _sanitize_filename_part(value: str) -> str:
     cleaned = cleaned.strip('._-')
     return cleaned or "x"
 
+
+def _is_missing_dataset_arg(value: Any) -> bool:
+    """Treat None or empty/whitespace string as missing dataset arg."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() == ""
+    return False
+
 def _resolve_dataset_path(path_to_dataset: str) -> Path:
     dataset_path = Path(path_to_dataset)
     if dataset_path.suffix.lower() != '.parquet':
@@ -60,7 +69,7 @@ def generate_filename(params, target_accuracy) -> str:
     """ Generate a filename string based on attack parameters. """
     path_to_dataset = params.get('path_to_dataset')
     target_column = params.get('target_column')
-    if path_to_dataset is not None and target_column is not None:
+    if not _is_missing_dataset_arg(path_to_dataset) and not _is_missing_dataset_arg(target_column):
         dataset_stem = _sanitize_filename_part(Path(path_to_dataset).stem)
         target_label = _sanitize_filename_part(target_column)
         hash_payload = json.dumps(
@@ -531,7 +540,7 @@ def compute_alc_measures(
     path_to_dataset: str | None,
     attack_precision: float,
 ) -> Dict[str, Any]:
-    if path_to_dataset is None:
+    if _is_missing_dataset_arg(path_to_dataset):
         # compute distinct number of values for column val in df
         num_distinct_vals = df['val'].nunique()
         if num_distinct_vals == 1:
@@ -594,8 +603,8 @@ def attack_loop(nrows: int,
                 max_qi: int = 1000,
                 max_refine: int = 2,
                 seed: int = None,
-                path_to_dataset: str = None,
-                target_column: str = None,
+                path_to_dataset: str = '',
+                target_column: str = '',
                 output_file: Path = None,
                 cur_attack_results: List[Dict] = None) -> dict:
     """ Runs an iterative attack loop to reconstruct values from noisy samples.
@@ -614,8 +623,8 @@ def attack_loop(nrows: int,
         max_qi: Maximum subset size to consider for aggregate queries (default: 1000)
         max_refine: Maximum number of refinement iterations (default: 2)
         seed: Random seed for reproducibility (default: None)
-        path_to_dataset: Relative or absolute path to .parquet dataset (default: None)
-        target_column: Target column name in dataset to map to 'val' (default: None)
+        path_to_dataset: Relative or absolute path to .parquet dataset (default: '')
+        target_column: Target column name in dataset to map to 'val' (default: '')
         output_file: Path to JSON file to save results incrementally (default: None)
         cur_attack_results: Previous attack results to resume from (default: None)
     
@@ -669,12 +678,17 @@ def attack_loop(nrows: int,
         return best_failure, best_success
     
     actual_vals_per_qi = None
-    has_dataset_inputs = path_to_dataset is not None or target_column is not None
-    if has_dataset_inputs and (path_to_dataset is None or target_column is None):
+    path_missing = _is_missing_dataset_arg(path_to_dataset)
+    target_missing = _is_missing_dataset_arg(target_column)
+    has_dataset_inputs = not path_missing or not target_missing
+    if has_dataset_inputs and (path_missing != target_missing):
         raise ValueError("Both path_to_dataset and target_column must be provided together.")
+    if path_missing and target_missing:
+        path_to_dataset = ''
+        target_column = ''
 
     # Build the ground truth dataframe, either synthetic or from external parquet.
-    if path_to_dataset is not None and target_column is not None:
+    if not path_missing and not target_missing:
         dataset_params = get_dataset_generation_params(path_to_dataset, target_column)
         nrows = dataset_params['nrows']
         nunique = dataset_params['nunique']
@@ -1034,8 +1048,8 @@ def main():
         'max_qi': 1000,
         'max_samples': max_samples,
         'seed': None,
-        'path_to_dataset': None,
-        'target_column': None,
+        'path_to_dataset': '',
+        'target_column': '',
     }
 
     dataset_param_cache: Dict[tuple[str, str], Dict[str, int]] = {}
@@ -1084,9 +1098,14 @@ def main():
             'path_to_dataset': args.path_to_dataset if args.path_to_dataset is not None else defaults['path_to_dataset'],
             'target_column': args.target_column if args.target_column is not None else defaults['target_column'],
         }
-        if (params['path_to_dataset'] is None) != (params['target_column'] is None):
+        path_missing = _is_missing_dataset_arg(params['path_to_dataset'])
+        target_missing = _is_missing_dataset_arg(params['target_column'])
+        if path_missing != target_missing:
             raise ValueError("path_to_dataset and target_column must either both be provided or both be omitted.")
-        if params['path_to_dataset'] is not None:
+        if path_missing and target_missing:
+            params['path_to_dataset'] = ''
+            params['target_column'] = ''
+        if not path_missing:
             dataset_params = get_dataset_params_cached(params['path_to_dataset'], params['target_column'])
             params['nrows'] = dataset_params['nrows']
             params['nunique'] = dataset_params['nunique']
@@ -1262,18 +1281,26 @@ def main():
         seed_list = normalize_grid_value(exp.get('seed', [None]))
         # Get known_qi_fraction list from experiment, default to [1.0] if not specified
         known_qi_fraction_list = normalize_grid_value(exp.get('known_qi_fraction', [1.0]))
-        path_to_dataset_list = normalize_grid_value(exp.get('path_to_dataset', [None]))
-        target_column_list = normalize_grid_value(exp.get('target_column', [None]))
-        has_dataset_mode = any(path is not None for path in path_to_dataset_list)
+        path_to_dataset_list = [
+            '' if _is_missing_dataset_arg(path) else str(path)
+            for path in normalize_grid_value(exp.get('path_to_dataset', [defaults['path_to_dataset']]))
+        ]
+        target_column_list = [
+            '' if _is_missing_dataset_arg(target) else str(target)
+            for target in normalize_grid_value(exp.get('target_column', [defaults['target_column']]))
+        ]
+        has_dataset_mode = any(not _is_missing_dataset_arg(path) for path in path_to_dataset_list)
         if has_dataset_mode:
             inferred_nrows = set()
             inferred_nunique = set()
             inferred_nqi = set()
             for path_to_dataset in path_to_dataset_list:
                 for target_column in target_column_list:
-                    if path_to_dataset is None and target_column is None:
+                    path_missing = _is_missing_dataset_arg(path_to_dataset)
+                    target_missing = _is_missing_dataset_arg(target_column)
+                    if path_missing and target_missing:
                         continue
-                    if (path_to_dataset is None) != (target_column is None):
+                    if path_missing != target_missing:
                         continue
                     dataset_params = get_dataset_params_cached(path_to_dataset, target_column)
                     inferred_nrows.add(dataset_params['nrows'])
@@ -1303,7 +1330,9 @@ def main():
                                             for known_qi_fraction in known_qi_fraction_list:
                                                 for path_to_dataset in path_to_dataset_list:
                                                     for target_column in target_column_list:
-                                                        if (path_to_dataset is None) != (target_column is None):
+                                                        path_missing = _is_missing_dataset_arg(path_to_dataset)
+                                                        target_missing = _is_missing_dataset_arg(target_column)
+                                                        if path_missing != target_missing:
                                                             continue
                                                         for seed in seed_list:
                                                             effective_nrows = nrows
@@ -1311,7 +1340,7 @@ def main():
                                                             effective_nqi = nqi
                                                             effective_vals_per_qi = vals_per_qi
                                                             effective_corr_strength = corr_strength
-                                                            if path_to_dataset is not None:
+                                                            if not path_missing:
                                                                 dataset_params = get_dataset_params_cached(path_to_dataset, target_column)
                                                                 effective_nrows = dataset_params['nrows']
                                                                 effective_nunique = dataset_params['nunique']

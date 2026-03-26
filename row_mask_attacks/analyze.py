@@ -8,7 +8,7 @@ import sys
 import pprint as pp
 pp = pp.PrettyPrinter(indent=2)
 
-grouping_cols = ['max_qi', 'solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'supp_thresh', 'known_qi_fraction', 'corr_strength']
+grouping_cols = ['max_qi', 'solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'supp_thresh', 'known_qi_fraction', 'corr_strength', 'path_to_dataset', 'target_column']
 group_max_cols = ['solver_metrics_runtime']
 group_median_cols = ['solver_metrics_runtime']
 grouping_cols_seed = grouping_cols + ['seed']
@@ -646,6 +646,8 @@ def prep_data() -> pd.DataFrame:
                     {'col': 'path_to_dataset', 'value': ""},
                     {'col': 'target_column', 'value': ""},
                     {'col': 'actual_vals_per_qi', 'value': 0},
+                    {'col': 'alc_attack_recall', 'value': 1.0},
+                    {'col': 'alc_baseline_recall', 'value': 1.0},
                    ]
     for item in cols_to_fill:
         col = item['col']
@@ -654,6 +656,32 @@ def prep_data() -> pd.DataFrame:
             df_all[col] = value
         else:
             df_all[col] = df_all[col].fillna(value)
+
+    # For rows where alc_alc is NaN, backfill ALC fields from measure and nunique.
+    if 'alc_alc' in df_all.columns:
+        nan_mask = df_all['alc_alc'].isna()
+        if nan_mask.any():
+            alc_cols = [
+                'alc_attack_precision',
+                'alc_baseline_precision',
+                'alc_attack_prc',
+                'alc_baseline_prc',
+            ]
+            for col in alc_cols:
+                if col not in df_all.columns:
+                    df_all[col] = np.nan
+
+            baseline = 1.0 / df_all.loc[nan_mask, 'nunique'].astype(float)
+            attack = df_all.loc[nan_mask, 'measure'].astype(float)
+
+            df_all.loc[nan_mask, 'alc_baseline_prc'] = baseline
+            df_all.loc[nan_mask, 'alc_baseline_precision'] = baseline
+            df_all.loc[nan_mask, 'alc_attack_prc'] = attack
+            df_all.loc[nan_mask, 'alc_attack_precision'] = attack
+            df_all.loc[nan_mask, 'alc_alc'] = (
+                (df_all.loc[nan_mask, 'alc_attack_prc'] - df_all.loc[nan_mask, 'alc_baseline_prc'])
+                / (1.0 - df_all.loc[nan_mask, 'alc_baseline_prc'])
+            )
 
     # check if any columns have NaN values, and if so print the column names and quit
     nan_columns = df_all.columns[df_all.isna().any()].tolist()
@@ -823,6 +851,27 @@ def analyze(more_seeds: bool = False):
     df_final = df_final[df_final['finished'] == True].copy()
     print(f"Remaining rows: {len(df_final)}")
 
+    ##### ChatGPT ######
+    alc_cols = sorted([col for col in df_final.columns if col.startswith('alc_')])
+    if 'nunique' not in df_final.columns:
+        print("\nSkipping example row print: 'nunique' column missing")
+    elif 'measure' not in df_final.columns:
+        print("\nSkipping example row print: 'measure' column missing")
+    elif len(alc_cols) == 0:
+        print("\nSkipping example row print: no columns starting with 'alc_' found")
+    else:
+        sample_cols = ['measure'] + alc_cols
+        print(f"\nExample rows for columns: {sample_cols}")
+        print("This is just to validate the ALC computation")
+        for nunique_val in [2, 4]:
+            subset = df_final[df_final['nunique'] == nunique_val]
+            if len(subset) == 0:
+                print(f"\nNo rows found where nunique == {nunique_val}")
+                continue
+            sample_n = min(5, len(subset))
+            print(f"\nRandom sample ({sample_n} rows) where nunique == {nunique_val}:")
+            print(subset[sample_cols].sample(n=sample_n).to_string(index=False))
+
     analyze_seed_effect(df_final, grouping_cols, write_more_seeds=more_seeds)
     df_grouped = group_by_experiment_parameters(df_final)
     print("\n nrows value counts:")
@@ -940,6 +989,14 @@ def analyze(more_seeds: bool = False):
             metrics = ['measure', 'med_solver_metrics_runtime']
             print_experiment_group_results(exp_df, exp_group, metrics)
             plot_agg_known_heatmaps(exp_df, "agg_known_best")
+        elif exp_group == 'oa_200_low_distortion':
+            metrics = ['alc_alc', 'med_solver_metrics_runtime']
+            print_experiment_group_results(exp_df, exp_group, metrics)
+            plot_agg_known_heatmaps(exp_df, tag = "oa_200_low_distortion", attr_name = 'alc_alc')
+        elif exp_group == 'oa_500_low_distortion':
+            metrics = ['alc_alc', 'med_solver_metrics_runtime']
+            print_experiment_group_results(exp_df, exp_group, metrics)
+            plot_agg_known_heatmaps(exp_df, tag = "oa_500_low_distortion", attr_name = 'alc_alc')
         elif exp_group == 'agg_known_defaults':
             do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='known_qi_fraction', thresh=0.90, tag="mnr3")
             for ycol in x_y_group:
