@@ -464,11 +464,12 @@ experiments = [
         'used_in_paper': True,
         'experiment_group': 'oa_200_low_distortion',
         'slurm_run': 40,
-        'solve_type': 'agg_row',
-        'seed': list(range(20)),
+        'mask_size': [0],       # not used
+        'solve_type': 'agg_known',
+        'seed': list(range(5)),
         'noise': [0,1,2,3,4],
         'min_num_rows': [1,2,3,4,5],
-        'known_qi_fraction': [1.0],    # ignore
+        'known_qi_fraction': [0.0, 0.5, 1.0],
         'path_to_dataset': ['datasets/oa_200.parquet'],
         'target_column': ['health_in_general'],
     },
@@ -477,11 +478,12 @@ experiments = [
         'used_in_paper': True,
         'experiment_group': 'oa_500_low_distortion',
         'slurm_run': 41,
-        'solve_type': 'agg_row',
-        'seed': list(range(20)),
+        'mask_size': [0],       # not used
+        'solve_type': 'agg_known',
+        'seed': list(range(5)),
         'noise': [0,1,2,3,4],
         'min_num_rows': [1,2,3,4,5],
-        'known_qi_fraction': [1.0],    # ignore
+        'known_qi_fraction': [0.0, 0.5, 1.0],
         'path_to_dataset': ['datasets/oa_500.parquet'],
         'target_column': ['health_in_general'],
     },

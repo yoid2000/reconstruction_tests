@@ -3,9 +3,15 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 
-def plot_mixing_by_measure(df: pd.DataFrame, output_dir: Path):
-    """Scatterplot of mixing_avg vs measure for agg_row runs, colored by exit_reason."""
-    required_cols = {'solve_type', 'mixing_avg', 'measure', 'exit_reason'}
+def plot_mixing_by_measure(
+    df: pd.DataFrame,
+    output_dir: Path,
+    measure_col: str = 'measure',
+    metric_label: str = 'Measure',
+    output_stem: str = 'mixing_avg_vs_measure_agg_row',
+):
+    """Scatterplot of mixing_avg vs selected metric for agg_row runs, colored by exit_reason."""
+    required_cols = {'solve_type', 'mixing_avg', measure_col, 'exit_reason'}
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
         print(f"plot_mixing_by_measure: missing columns {missing}; skipping plot")
@@ -27,7 +33,7 @@ def plot_mixing_by_measure(df: pd.DataFrame, output_dir: Path):
     for idx, reason in enumerate(reasons):
         subset = df_plot[df_plot['exit_reason_plot'] == reason]
         plt.scatter(
-            subset['measure'],
+            subset[measure_col],
             subset['mixing_avg'],
             color=cmap(idx % cmap.N),
             alpha=0.3,
@@ -35,15 +41,15 @@ def plot_mixing_by_measure(df: pd.DataFrame, output_dir: Path):
             label=reason,
         )
 
-    plt.xlabel('Measure')
+    plt.xlabel(metric_label)
     plt.ylabel('Mixing Average')
-    plt.title('Mixing Average vs Measure (solve_type = agg_row)')
+    plt.title(f'Mixing Average vs {metric_label} (solve_type = agg_row)')
     plt.grid(True, alpha=0.3)
     plt.legend(title='exit_reason', fontsize=8)
     plt.tight_layout()
 
     for ext in ['png', 'pdf']:
-        out_path = output_dir / f'mixing_avg_vs_measure_agg_row.{ext}'
+        out_path = output_dir / f'{output_stem}.{ext}'
         plt.savefig(out_path, dpi=300 if ext == 'png' else None)
     plt.close()
-    print(f"Saved: {output_dir / 'mixing_avg_vs_measure_agg_row.png'}")
+    print(f"Saved: {output_dir / f'{output_stem}.png'}")

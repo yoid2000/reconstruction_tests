@@ -20,6 +20,7 @@ from .plot_mixing_by_param import plot_mixing_by_param
 from .plot_mixing_by_measure import plot_mixing_by_measure
 from .plot_elapsed_time_pdf import plot_elapsed_time_pdf
 from .plot_agg_known_heatmaps import plot_agg_known_heatmaps
+from .plot_scatter_acc_cov import plot_scatter_acc_cov
 
 __all__ = [
     'plot_mixing_vs_samples',
@@ -42,4 +43,5 @@ __all__ = [
     'plot_mixing_by_param',
     'plot_elapsed_time_pdf',
     'plot_agg_known_heatmaps',
+    'plot_scatter_acc_cov',
 ]

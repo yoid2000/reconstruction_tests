@@ -1,10 +1,120 @@
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from pathlib import Path
+from typing import Optional, List
+import re
 
 
-def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, thresh: float = 0.95, thresh_direction: str = 'lowest', show_defaults: bool = False, tag = '', extra_y_cols: list = []):
+def _sanitize_filename_part(value: str) -> str:
+    return re.sub(r'[^A-Za-z0-9_.-]+', '_', str(value)).strip('_')
+
+
+def _debug_multi_value_column(
+    df: pd.DataFrame,
+    col: str,
+    x_col: str,
+    y_col: str,
+    lines_col: str,
+    tag: str,
+    output_dir: Path,
+    max_groups: int = 20,
+):
+    """Print and persist diagnostics when a reportable column has >1 unique value."""
+    if col not in df.columns:
+        return
+
+    group_cols = [c for c in [x_col, lines_col] if c in df.columns]
+    if len(group_cols) != 2:
+        return
+
+    nunique_by_group = (
+        df.groupby(group_cols, dropna=False)[col]
+        .nunique(dropna=False)
+        .reset_index(name='nunique_values')
+    )
+    problem_groups = nunique_by_group[nunique_by_group['nunique_values'] > 1].copy()
+
+    if len(problem_groups) == 0:
+        value_counts = df[col].value_counts(dropna=False).to_dict()
+        print(
+            f"Debug: '{col}' has multiple global values for plot x={x_col}, y={y_col}, lines={lines_col}, "
+            f"but each ({x_col}, {lines_col}) group is consistent. Global counts: {value_counts}"
+        )
+        return
+
+    print(
+        f"Debug: '{col}' varies within {len(problem_groups)} ({x_col}, {lines_col}) groups "
+        f"for plot x={x_col}, y={y_col}, lines={lines_col}, tag='{tag}'."
+    )
+
+    for _, grp in problem_groups.head(max_groups).iterrows():
+        x_val = grp[x_col]
+        line_val = grp[lines_col]
+        subset = df[(df[x_col] == x_val) & (df[lines_col] == line_val)]
+        value_counts = subset[col].value_counts(dropna=False).to_dict()
+        print(
+            f"  {x_col}={x_val}, {lines_col}={line_val}: "
+            f"n_rows={len(subset)}, {col}_counts={value_counts}"
+        )
+
+    if len(problem_groups) > max_groups:
+        print(f"  ... {len(problem_groups) - max_groups} additional groups omitted from stdout")
+
+    debug_cols = [
+        c for c in [
+            x_col,
+            y_col,
+            lines_col,
+            col,
+            'noise',
+            'nqi',
+            'nrows',
+            'nunique',
+            'supp_thresh',
+            'actual_vals_per_qi',
+            'vals_per_qi',
+            'solve_type',
+            'filename',
+            'seed',
+        ]
+        if c in df.columns
+    ]
+
+    mask = pd.Series(False, index=df.index)
+    for _, grp in problem_groups.iterrows():
+        mask |= (df[x_col] == grp[x_col]) & (df[lines_col] == grp[lines_col])
+
+    debug_df = df.loc[mask, debug_cols].copy()
+    debug_dir = output_dir / 'debug'
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    filename = (
+        f"multi_{_sanitize_filename_part(col)}"
+        f"_x_{_sanitize_filename_part(x_col)}"
+        f"_y_{_sanitize_filename_part(y_col)}"
+        f"_l_{_sanitize_filename_part(lines_col)}"
+        f"_tag_{_sanitize_filename_part(tag or 'none')}.csv"
+    )
+    debug_path = debug_dir / filename
+    debug_df.to_csv(debug_path, index=False)
+    print(f"Debug: wrote {len(debug_df)} rows to {debug_path}")
+
+
+def plot_by_x_y_lines(
+    df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    lines_col: str,
+    thresh: float = 0.95,
+    thresh_direction: str = 'lowest',
+    show_defaults: bool = False,
+    tag: str = '',
+    extra_y_cols: Optional[List[str]] = None,
+    output_dir: Optional[Path] = None,
+    measure_col: str = 'measure',
+    metric_label: str = 'Accuracy',
+):
     """Plot lowest/highest y value where measure >= threshold for each (x, lines) pair.
     
     For each pair of values (x, l) in x_col and lines_col, find the lowest or highest value y 
@@ -21,7 +131,11 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
         output_dir: Directory to save plot (default: results/plots)
     """
 
-    output_dir = Path('./results/plots')
+    if extra_y_cols is None:
+        extra_y_cols = []
+
+    if output_dir is None:
+        output_dir = Path('./results/plots')
     output_dir.mkdir(parents=True, exist_ok=True)
     thresh_str = ''
     dir_str = ''
@@ -42,7 +156,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                       'vals_per_qi': "QI values",
                       'actual_vals_per_qi': "QI values",
                       'known_qi_fraction': "Known QI fraction",
-                      'measure': "Reconstruction accuracy",
+                      'measure': metric_label,
                       'num_samples': "Number of samples",
                       'mixing_avg': "Mixing average",
                       'separation_average': "Separation average",
@@ -71,6 +185,17 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
     if lines_col != 'noise' and y_col != 'noise' and x_col != 'noise':
         default_noise = dashed_columns.get('noise')
         df = df[df['noise'] == default_noise]
+    if 'known_qi_fraction' in df.columns and 'known_qi_fraction' not in used_cols:
+        default_kqf = dashed_columns.get('known_qi_fraction', 1.0)
+        before_count = len(df)
+        df = df[np.isclose(df['known_qi_fraction'].astype(float), float(default_kqf))]
+        after_count = len(df)
+        if after_count < before_count:
+            print(
+                "plot_by_x_y_lines: filtered known_qi_fraction "
+                f"to {default_kqf} for x={x_col}, y={y_col}, lines={lines_col}: "
+                f"{before_count} -> {after_count} rows"
+            )
     
     reportable_values = {}
     for col in display_cols:
@@ -83,9 +208,19 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                 val = 'auto'
             reportable_values[display_name] = val
         else:
-            print(f"Warning: Column '{col}' has {len(unique_vals)} unique values, expected 1")
             display_name = maps.get(col, col)
             reportable_values[display_name] = f"Multiple ({len(unique_vals)})"
+            if col != 'actual_vals_per_qi':
+                print(f"Warning: Column '{col}' has {len(unique_vals)} unique values, expected 1")
+                _debug_multi_value_column(
+                    df=df,
+                    col=col,
+                    x_col=x_col,
+                    y_col=y_col,
+                    lines_col=lines_col,
+                    tag=tag,
+                    output_dir=output_dir,
+                )
     
     # Get unique values for x and lines
     x_values = sorted(df[x_col].unique())
@@ -118,7 +253,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                     raise ValueError(f"Expected exactly one row for {x_col}={x_val}, {lines_col}={line_val}, got {len(df_subset)} rows")
                 row_used = df_subset.iloc[0]
                 y_val = row_used[y_col]
-                target_accuracy = row_used.get('measure', float('nan')) >= row_used.get('target_accuracy', float('inf'))
+                target_accuracy = row_used.get(measure_col, float('nan')) >= row_used.get('target_accuracy', float('inf'))
                 
                 plot_data.append({
                     'x': x_val,
@@ -128,10 +263,10 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                 })
                 has_any_valid_data = True
             else:
-                ylabel_note = f' (accuracy >= {thresh})'
+                ylabel_note = f' ({metric_label} >= {thresh})'
                 # Original threshold-based logic for other y columns
                 # Find rows where measure >= thresh
-                df_valid_rows = df_subset[df_subset['measure'] >= thresh]
+                df_valid_rows = df_subset[df_subset[measure_col] >= thresh]
                 
                 if len(df_valid_rows) > 0:
                     # Get the lowest or highest y value from rows that meet threshold
@@ -142,7 +277,7 @@ def plot_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, 
                     else:
                         row_used = df_valid_rows.iloc[0]
                     y_val = row_used[y_col]
-                    target_accuracy = row_used.get('measure', float('nan')) >= row_used.get('target_accuracy', float('inf'))
+                    target_accuracy = row_used.get(measure_col, float('nan')) >= row_used.get('target_accuracy', float('inf'))
                     
                     plot_data.append({
                         'x': x_val,

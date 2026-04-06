@@ -3,7 +3,12 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 
-def plot_mixing_by_param(df: pd.DataFrame, param_col: str, tag: str = ""):
+def plot_mixing_by_param(
+    df: pd.DataFrame,
+    param_col: str,
+    tag: str = "",
+    output_dir: Path = None,
+):
     """Line plots of mixing_avg vs noise, split by nunique and nqi.
 
     - Drops rows where target_accuracy is not reached
@@ -76,7 +81,8 @@ def plot_mixing_by_param(df: pd.DataFrame, param_col: str, tag: str = ""):
         fig.tight_layout(rect=[0, 0, 1, 0.95])
     else:
         fig.tight_layout()
-    output_dir = Path('./results/plots')
+    if output_dir is None:
+        output_dir = Path('./results/plots')
     output_dir.mkdir(parents=True, exist_ok=True)
     param_part = f"_{param_col}" if param_col else ""
     tag_part = f"_{tag}" if tag else ""

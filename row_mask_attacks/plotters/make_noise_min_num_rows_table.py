@@ -3,8 +3,16 @@ from pathlib import Path
 from typing import Optional
 
 
-def make_noise_min_num_rows_table(df: pd.DataFrame, nqi, note: str, thresh: float = 0.9):
-    """Generate tables showing accuracy by noise, supp_thresh, and nrows.
+def make_noise_min_num_rows_table(
+    df: pd.DataFrame,
+    nqi,
+    note: str,
+    thresh: float = 0.9,
+    metric_col: str = 'measure',
+    metric_label: str = 'Accuracy',
+    output_dir: Optional[Path] = None,
+):
+    """Generate tables showing a metric by noise, supp_thresh, and nrows.
     
     Creates both a text table and a LaTeX table showing maximum measure
     for each combination of noise, supp_thresh, and nrows.
@@ -17,7 +25,8 @@ def make_noise_min_num_rows_table(df: pd.DataFrame, nqi, note: str, thresh: floa
     """
     
     # Create output directory
-    output_dir = Path('./results/tables')
+    if output_dir is None:
+        output_dir = Path('./results/tables')
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Get unique sorted values
@@ -44,9 +53,9 @@ def make_noise_min_num_rows_table(df: pd.DataFrame, nqi, note: str, thresh: floa
                         f"supp_thresh={stv}, nrows={nrows}"
                     )
 
-                if len(subset) == 1 and 'measure' in subset.columns:
-                    measure = subset['measure'].iloc[0]
-                    table_data[noise][stv][nrows] = measure
+                if len(subset) == 1 and metric_col in subset.columns:
+                    metric_value = subset[metric_col].iloc[0]
+                    table_data[noise][stv][nrows] = metric_value
                 else:
                     table_data[noise][stv][nrows] = None
     
@@ -58,7 +67,16 @@ def make_noise_min_num_rows_table(df: pd.DataFrame, nqi, note: str, thresh: floa
     print(f"Saved: {text_file}")
     
     # Generate LaTeX table
-    latex_output = _generate_latex_table(table_data, noise_values, supp_thresh_values, nrows_values, note, thresh, nqi)
+    latex_output = _generate_latex_table(
+        table_data,
+        noise_values,
+        supp_thresh_values,
+        nrows_values,
+        note,
+        thresh,
+        nqi,
+        metric_label,
+    )
     latex_file = output_dir / f'noise_supp_thresh_{note}.tex'
     with open(latex_file, 'w') as f:
         f.write(latex_output)
@@ -124,8 +142,16 @@ def _generate_text_table(table_data: dict, noise_values: list, supp_thresh_value
     return '\n'.join(lines)
 
 
-def _generate_latex_table(table_data: dict, noise_values: list, supp_thresh_values: list, 
-                          nrows_values: list, note: str, thresh: float, nqi: int) -> str:
+def _generate_latex_table(
+    table_data: dict,
+    noise_values: list,
+    supp_thresh_values: list,
+    nrows_values: list,
+    note: str,
+    thresh: float,
+    nqi: int,
+    metric_label: str,
+) -> str:
     """Generate a LaTeX table using booktabs."""
     
     lines = []
@@ -177,7 +203,9 @@ def _generate_latex_table(table_data: dict, noise_values: list, supp_thresh_valu
     # Table closing
     lines.append('\\bottomrule')
     lines.append('\\end{tabular}')
-    lines.append(f'\\caption{{Average accuracy by noise $e$, suppression threshold $\\tau$, and number of rows $R$, where the number of QI columns is $C={nqi}$. Accuracy values $\\geq {thresh}$ are shown in bold red.}}')
+    lines.append(
+        f'\\caption{{Average {metric_label} by noise $e$, suppression threshold $\\tau$, and number of rows $R$, where the number of QI columns is $C={nqi}$. {metric_label} values $\\geq {thresh}$ are shown in bold red.}}'
+    )
     lines.append(f'\\label{{tab:noise_supp_thresh_{note}}}')
     lines.append('\\end{table}')
     

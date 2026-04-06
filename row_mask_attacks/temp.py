@@ -1,20 +1,61 @@
 from pathlib import Path
 
-import pandas as pd
+SUBSTRING_REWRITES = {
+    "_0.600_": "_0.800_",
+    "_0.800_": "_0.900_",
+    "_0.900_": "_0.950_",
+}
+
+
+def list_png_names(directory: Path) -> set[str]:
+    return {path.name for path in directory.glob("*.png") if path.is_file()}
+
+
+def print_section(title: str, file_names: list[str]) -> None:
+    print(f"\n{title} ({len(file_names)}):")
+    if not file_names:
+        print("  (none)")
+        return
+    for name in file_names:
+        print(f"  {name}")
+
+
+def rewrite_filename(name: str) -> str:
+    """Apply all substring rewrites without cascading replacements."""
+    tmp_map = {
+        "_0.600_": "__TMP_0600__",
+        "_0.800_": "__TMP_0800__",
+        "_0.900_": "__TMP_0900__",
+    }
+    updated = name
+    for src, tmp in tmp_map.items():
+        updated = updated.replace(src, tmp)
+    for src, dst in SUBSTRING_REWRITES.items():
+        updated = updated.replace(tmp_map[src], dst)
+    return updated
 
 
 def main() -> None:
-    parquet_path = Path("results/result.parquet")
-    df = pd.read_parquet(parquet_path)
+    base_dir = Path(__file__).resolve().parent
+    plots_dir = base_dir / "results" / "plots"
+    plots_alc_dir = base_dir / "results" / "plots_alc"
 
-    if "path_to_dataset" not in df.columns:
-        raise ValueError("Column 'path_to_dataset' does not exist in results/result.parquet")
+    if not plots_dir.exists():
+        raise FileNotFoundError(f"Directory does not exist: {plots_dir}")
+    if not plots_alc_dir.exists():
+        raise FileNotFoundError(f"Directory does not exist: {plots_alc_dir}")
 
-    filtered_df = df[df["path_to_dataset"].isna()].copy()
+    plots_pngs = list_png_names(plots_dir)
+    plots_alc_pngs = list_png_names(plots_alc_dir)
+    plots_alc_repr = {rewrite_filename(name) for name in plots_alc_pngs}
 
-    # remove columns path_to_dataset and target_column
-    filtered_df.drop(columns=["path_to_dataset", "target_column"], inplace=True)
-    filtered_df.to_parquet(parquet_path, index=False)
+    only_in_plots = sorted(plots_pngs - plots_alc_repr)
+    only_in_plots_alc_repr = sorted(plots_alc_repr - plots_pngs)
+
+    print(f"Comparing .png files in:\n  {plots_dir}\n  {plots_alc_dir}")
+    print("Note: plots_alc names are rewritten in-memory for comparison only; files are not renamed.")
+    print_section("Only in results/plots", only_in_plots)
+    print_section("Only in results/plots_alc (after representation rewrite)", only_in_plots_alc_repr)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import argparse
 import pandas as pd
 import numpy as np
 import random
+from dataclasses import dataclass
 from pathlib import Path
 from scipy import stats
 import sys
@@ -12,6 +13,137 @@ grouping_cols = ['max_qi', 'solve_type', 'nrows', 'mask_size', 'nunique', 'noise
 group_max_cols = ['solver_metrics_runtime']
 group_median_cols = ['solver_metrics_runtime']
 grouping_cols_seed = grouping_cols + ['seed']
+
+
+@dataclass(frozen=True)
+class MetricConfig:
+    metric_col: str
+    metric_label: str
+    plots_dir: Path
+    tables_dir: Path
+    agg_plots_dir: Path
+
+
+ALC_THRESH_MAP = {
+    0.95: 0.90,
+    0.90: 0.80,
+    0.80: 0.60,
+    0.75: 0.50,
+}
+
+MEASURE_HEATMAP_THRESHOLDS = (0.99, 0.90, 0.75)
+ALC_HEATMAP_THRESHOLDS = (0.98, 0.80, 0.50)
+
+
+def map_metric_threshold(value: float, metric_cfg: MetricConfig) -> float:
+    if value is None or pd.isna(value):
+        return value
+    if metric_cfg.metric_col != 'alc_alc':
+        return value
+    for src, dst in ALC_THRESH_MAP.items():
+        if np.isclose(float(value), src):
+            return dst
+    return value
+
+
+def get_metric_configs(df_all: pd.DataFrame):
+    configs = [
+        MetricConfig(
+            metric_col='measure',
+            metric_label='Accuracy',
+            plots_dir=Path('./results/plots'),
+            tables_dir=Path('./results/tables'),
+            agg_plots_dir=Path('./results/plots_agg'),
+        ),
+    ]
+    if 'alc_alc' in df_all.columns:
+        configs.append(
+            MetricConfig(
+                metric_col='alc_alc',
+                metric_label='ALC',
+                plots_dir=Path('./results/plots_alc'),
+                tables_dir=Path('./results/tables_alc'),
+                agg_plots_dir=Path('./results/plots_agg_alc'),
+            )
+        )
+    else:
+        print("\nSkipping ALC analysis pass: 'alc_alc' column missing")
+    return configs
+
+
+def metric_df(df: pd.DataFrame, metric_cfg: MetricConfig) -> pd.DataFrame:
+    if metric_cfg.metric_col not in df.columns:
+        return None
+    df_m = df.copy()
+    if metric_cfg.metric_col != 'measure':
+        df_m['measure'] = df_m[metric_cfg.metric_col]
+        if 'target_accuracy' in df_m.columns:
+            df_m['target_accuracy'] = df_m['target_accuracy'].apply(
+                lambda x: map_metric_threshold(x, metric_cfg)
+            )
+    return df_m
+
+
+def metric_threshold(value: float, metric_cfg: MetricConfig) -> float:
+    return map_metric_threshold(value, metric_cfg)
+
+
+def metric_title(metric_cfg: MetricConfig) -> str:
+    if metric_cfg.metric_col == 'measure':
+        return "Measure (Accuracy)"
+    return metric_cfg.metric_label
+
+
+def primary_line_threshold(metric_cfg: MetricConfig) -> float:
+    return 0.9 if metric_cfg.metric_col == 'measure' else 0.8
+
+
+def heatmap_thresholds_for_metric(metric_col: str) -> tuple[float, float, float]:
+    if metric_col == 'alc_alc':
+        return ALC_HEATMAP_THRESHOLDS
+    return MEASURE_HEATMAP_THRESHOLDS
+
+
+def run_plot_by_x_y_lines(
+    df: pd.DataFrame,
+    metric_cfg: MetricConfig,
+    x_col: str,
+    y_col: str,
+    lines_col: str,
+    thresh: float,
+    thresh_direction: str = "highest",
+    tag: str = "",
+    extra_y_cols: list = None,
+):
+    # For standard line-threshold plots, use 0.9 for Accuracy and 0.8 for ALC.
+    if np.isclose(float(thresh), 0.9):
+        mapped_thresh = primary_line_threshold(metric_cfg)
+    else:
+        mapped_thresh = metric_threshold(thresh, metric_cfg)
+    plot_by_x_y_lines(
+        df,
+        x_col=x_col,
+        y_col=y_col,
+        lines_col=lines_col,
+        thresh_direction=thresh_direction,
+        thresh=mapped_thresh,
+        tag=tag,
+        extra_y_cols=extra_y_cols or [],
+        output_dir=metric_cfg.plots_dir,
+        metric_label=metric_cfg.metric_label,
+    )
+
+
+def run_noise_min_num_rows_table(df: pd.DataFrame, nqi: int, note: str, metric_cfg: MetricConfig, thresh: float = 0.9):
+    make_noise_min_num_rows_table(
+        df,
+        nqi,
+        note,
+        thresh=metric_threshold(thresh, metric_cfg),
+        metric_col='measure',
+        metric_label=metric_cfg.metric_label,
+        output_dir=metric_cfg.tables_dir,
+    )
 
 # Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
@@ -37,6 +169,7 @@ from plotters import (
     plot_mixing_by_param,
     plot_elapsed_time_pdf,
     plot_agg_known_heatmaps,
+    plot_scatter_acc_cov,
 )
 
 def print_experiment_group_results(exp_df, exp_group, metrics):
@@ -83,7 +216,7 @@ def print_experiment_group_results(exp_df, exp_group, metrics):
         for col in metric_cols_present:
             print(f"{col}: {row[col]}")
 
-def analyze_single_parameter_variation(df: pd.DataFrame, experiments: list, exp_group: str):
+def analyze_single_parameter_variation(df: pd.DataFrame, experiments: list, exp_group: str, metric_cfg: MetricConfig = None):
     """Analyze how results vary when only one parameter changes.
     
     Args:
@@ -136,7 +269,8 @@ def analyze_single_parameter_variation(df: pd.DataFrame, experiments: list, exp_
     # Group by result column instead of parameter value
     print(f"\n{'-'*80}")
     for col in result_cols:
-        print(f"\n{col}:")
+        col_display = metric_cfg.metric_label if (metric_cfg is not None and col == 'measure') else col
+        print(f"\n{col_display}:")
         print(f"  {varying_param:15s}", end="")
         for param_value in param_values:
             print(f" | {str(param_value):15s}", end="")
@@ -329,8 +463,13 @@ def group_by_experiment_parameters(df_final):
 
     return df_grouped
 
-def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list, write_more_seeds: bool = False):
-    """Check whether each parameter grouping has enough seeds for a tight CI on measure.
+def analyze_seed_effect(
+    df_final: pd.DataFrame,
+    grouping_cols: list,
+    metric_cfg: MetricConfig,
+    write_more_seeds: bool = False,
+):
+    """Check whether each parameter grouping has enough seeds for a tight CI on the selected metric.
     
     A "sample" here is a single seed run. We check the number of unique seeds and
     the width of the 95% confidence interval for measure. Groups that have fewer
@@ -356,7 +495,7 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list, write_more_
     ci_fraction = 3.0  # require CI half-width to be less than mean_measure / ci_fraction
     alpha = 0.05       # 95% confidence
 
-    print("\nSeed effect / sample adequacy check")
+    print(f"\nSeed effect / sample adequacy check ({metric_cfg.metric_label})")
     print(f"  Grouping columns: {grouping_cols_present}")
     print(f"  Criteria: >= {min_seeds} seeds and CI half-width = < max({min_margin}, (1-mean_measure)/{ci_fraction})")
 
@@ -502,7 +641,7 @@ def analyze_seed_effect(df_final: pd.DataFrame, grouping_cols: list, write_more_
         print("All groups meet the sampling criteria.")
 
 
-def analyze_refinement(df_all: pd.DataFrame) -> None:
+def analyze_refinement(df_all: pd.DataFrame, metric_cfg: MetricConfig) -> None:
     """Validate refinement ordering and report num_samples deltas.
 
     For each group, if multiple rows reach target_accuracy, the smallest
@@ -511,12 +650,12 @@ def analyze_refinement(df_all: pd.DataFrame) -> None:
     required_cols = {'measure', 'target_accuracy', 'num_samples', 'final_attack', 'filename', 'attack_index', 'refine'}
     missing_cols = [col for col in required_cols if col not in df_all.columns]
     if missing_cols:
-        print(f"\nSkipping refinement analysis: missing columns {missing_cols}")
+        print(f"\nSkipping refinement analysis ({metric_cfg.metric_label}): missing columns {missing_cols}")
         return
 
     grouping_cols_present = [col for col in grouping_cols_seed if col in df_all.columns]
     if not grouping_cols_present:
-        print("\nSkipping refinement analysis: no grouping columns present")
+        print(f"\nSkipping refinement analysis ({metric_cfg.metric_label}): no grouping columns present")
         return
 
     diffs = []
@@ -546,7 +685,10 @@ def analyze_refinement(df_all: pd.DataFrame) -> None:
                 print(f"\nRefinement check failed for file {filename}:")
                 # print all values of filename in group_df
                 print(group_df['filename'].unique())
-                print(group_df[['measure', 'num_samples', 'final_attack', 'attack_index', 'refine']])
+                display_df = group_df[['measure', 'num_samples', 'final_attack', 'attack_index', 'refine']].rename(
+                    columns={'measure': metric_cfg.metric_label}
+                )
+                print(display_df)
                 raise ValueError(
                     f"Refinement check failed for group {filename}: min num_samples success is not final_attack"
                 )
@@ -560,7 +702,7 @@ def analyze_refinement(df_all: pd.DataFrame) -> None:
                 num_groups_fixed += 1
 
     if not diffs:
-        print("\nRefinement analysis: no groups with multiple successful rows")
+        print(f"\nRefinement analysis ({metric_cfg.metric_label}): no groups with multiple successful rows")
         return
 
     avg_diff = float(np.mean(diffs))
@@ -569,20 +711,23 @@ def analyze_refinement(df_all: pd.DataFrame) -> None:
     print(f"Groups with refine==2: {num_groups_with_refine_2}")
     print(f"Groups with multiple successes: {num_groups_with_multiple_success}")
     print(f"Groups fixed: {num_groups_fixed}")
-    print(f"\nRefinement analysis: {len(diffs)} groups with multiple successes")
+    print(f"\nRefinement analysis ({metric_cfg.metric_label}): {len(diffs)} groups with multiple successes")
     print(f"  num_samples diff avg: {avg_diff:.2f}")
     print(f"  num_samples diff std: {std_diff:.2f}")
 
-def do_agg_dinur_nrows_high_suppression_analysis(exp_df, exp_group):
+def do_agg_dinur_nrows_high_suppression_analysis(exp_df, exp_group, metric_cfg: MetricConfig):
     print(f"\n\nANALYSIS FOR {exp_group} EXPERIMENT GROUP")
     print("=" * 80)
-    # For each distinct value in nrows, print measure, num_samples, and med_solver_metrics_runtime
+    # For each distinct value in nrows, print selected metric, num_samples, and med_solver_metrics_runtime
     distinct_min_num_rows = sorted(exp_df['supp_thresh'].dropna().unique())
     distinct_nrows = sorted(exp_df['nrows'].dropna().unique())
     for nrows in distinct_nrows:
         df_nrows = exp_df[exp_df['nrows'] == nrows]
         print(f"\nnrows = {nrows}:")
-        print(df_nrows[['measure', 'num_samples', 'med_solver_metrics_runtime']].to_string(index=False))
+        display_df = df_nrows[['measure', 'num_samples', 'med_solver_metrics_runtime']].rename(
+            columns={'measure': metric_cfg.metric_label}
+        )
+        print(display_df.to_string(index=False))
 
 def remove_unused_rows(df: pd.DataFrame) -> pd.DataFrame:
     experiments = read_experiments()
@@ -704,8 +849,8 @@ def prep_data() -> pd.DataFrame:
     print(f"Loaded {len(df_all)} rows from {parquet_path}")
     return df_all
 
-def compare_agg_known_to_agg_row(df_known, df_row):
-    print("\n\nCOMPARE agg_known vs agg_row")
+def compare_agg_known_to_agg_row(df_known, df_row, metric_cfg: MetricConfig):
+    print(f"\n\nCOMPARE agg_known vs agg_row ({metric_cfg.metric_label})")
     print("=" * 80)
 
     if df_known is None or len(df_known) == 0:
@@ -827,16 +972,26 @@ def compare_agg_known_to_agg_row(df_known, df_row):
             'agg_known': known_vals,
             'agg_row': row_vals,
         })
+        compare_df = compare_df.rename(index={'measure': metric_cfg.metric_label})
         print(compare_df.to_string(float_format=lambda x: f"{x:0.4f}"))
         match_count += 1
 
     print(f"\nCompared {match_count} group(s)")
 
-def analyze(more_seeds: bool = False):
-    """Read result.parquet and analyze correlations with num_samples."""
-    df_all = prep_data()
-    analyze_refinement(df_all)
-    plot_elapsed_time_pdf(df_all)
+def run_metric_analysis(df_all_raw: pd.DataFrame, more_seeds: bool, metric_cfg: MetricConfig):
+    print(f"\n\n{'='*80}")
+    print(f"METRIC ANALYSIS: {metric_cfg.metric_label} (column={metric_cfg.metric_col})")
+    print(f"{'='*80}")
+
+    df_all = metric_df(df_all_raw, metric_cfg)
+    if df_all is None:
+        print(f"Skipping metric analysis: column '{metric_cfg.metric_col}' missing")
+        return
+
+    if metric_cfg.metric_col == 'measure':
+        analyze_refinement(df_all, metric_cfg)
+    else:
+        print(f"\nSkipping refinement analysis for metric {metric_cfg.metric_label}")
 
     # Make df_final, which removes rows where final_attack is False
     df_final = df_all[df_all['final_attack'] == True].copy()
@@ -844,7 +999,7 @@ def analyze(more_seeds: bool = False):
 
     print(f"\nColumns: {list(df_all.columns)}")
     print(f"\nDataFrame shape: {df_all.shape}")
-    
+
     # Remove unfinished jobs
     unfinished = df_final[df_final['finished'] == False]
     print(f"\nRemoving {len(unfinished)} unfinished jobs (finished==False)")
@@ -856,13 +1011,13 @@ def analyze(more_seeds: bool = False):
     if 'nunique' not in df_final.columns:
         print("\nSkipping example row print: 'nunique' column missing")
     elif 'measure' not in df_final.columns:
-        print("\nSkipping example row print: 'measure' column missing")
+        print("\nSkipping example row print: selected metric column missing")
     elif len(alc_cols) == 0:
         print("\nSkipping example row print: no columns starting with 'alc_' found")
     else:
         sample_cols = ['measure'] + alc_cols
         print(f"\nExample rows for columns: {sample_cols}")
-        print("This is just to validate the ALC computation")
+        print(f"This is just to validate metric computations ({metric_cfg.metric_label})")
         for nunique_val in [2, 4]:
             subset = df_final[df_final['nunique'] == nunique_val]
             if len(subset) == 0:
@@ -872,7 +1027,8 @@ def analyze(more_seeds: bool = False):
             print(f"\nRandom sample ({sample_n} rows) where nunique == {nunique_val}:")
             print(subset[sample_cols].sample(n=sample_n).to_string(index=False))
 
-    analyze_seed_effect(df_final, grouping_cols, write_more_seeds=more_seeds)
+    plot_scatter_acc_cov(df_final)
+    analyze_seed_effect(df_final, grouping_cols, metric_cfg=metric_cfg, write_more_seeds=more_seeds)
     df_grouped = group_by_experiment_parameters(df_final)
     print("\n nrows value counts:")
     print(df_grouped['nrows'].value_counts(dropna=False))
@@ -881,13 +1037,15 @@ def analyze(more_seeds: bool = False):
     print("Columns in df_grouped:")
     print(list(df_grouped.columns))
 
-    
     # print first row of df_grouped using to_string to show all columns
     print(f"\nFirst row of grouped dataframe:\n{df_grouped.iloc[0].to_string()}\n")
 
     print(f"\nRelative difference between max_solver_metrics_runtime and med_solver_metrics_runtime where med_solver_metrics_runtime > 60")
-    df_runtime_check = df_grouped[df_grouped['med_solver_metrics_runtime'] > 60]
-    df_runtime_check['rel_diff'] = (df_runtime_check['max_solver_metrics_runtime'] - df_runtime_check['med_solver_metrics_runtime']) / df_runtime_check['med_solver_metrics_runtime']
+    df_runtime_check = df_grouped[df_grouped['med_solver_metrics_runtime'] > 60].copy()
+    df_runtime_check['rel_diff'] = (
+        (df_runtime_check['max_solver_metrics_runtime'] - df_runtime_check['med_solver_metrics_runtime'])
+        / df_runtime_check['med_solver_metrics_runtime']
+    )
     print(df_runtime_check['rel_diff'].describe())
     print(f"\nTop 5 cases with largest relative difference:")
     print(df_runtime_check.sort_values('rel_diff', ascending=False).head(5)[['med_solver_metrics_runtime', 'max_solver_metrics_runtime', 'rel_diff']])
@@ -896,124 +1054,186 @@ def analyze(more_seeds: bool = False):
     experiments = read_experiments()
     exp_dataframes = get_experiment_dataframes(experiments, df_grouped)
 
-    x_y_group = ['measure', 'num_samples', 'mixing_avg', 'separation_average', 'num_suppressed', 'solver_metrics_simplex_iterations', 'med_solver_metrics_runtime', 'mix_times_sep', 'solver_metrics_num_vars', 'solver_metrics_num_constrs']
-    
+    x_y_group = [
+        'measure',
+        'num_samples',
+        'mixing_avg',
+        'separation_average',
+        'num_suppressed',
+        'solver_metrics_simplex_iterations',
+        'med_solver_metrics_runtime',
+        'mix_times_sep',
+        'solver_metrics_num_vars',
+        'solver_metrics_num_constrs',
+    ]
+
     print(f"\nExperiment groups:")
     for exp_group, exp_df in exp_dataframes.items():
         print(f"  {exp_group}: {len(exp_df)} rows")
-    
+
     # Analyze each experiment group
     for exp_group, exp_df in exp_dataframes.items():
         if len(exp_df) == 0:
             print(f"\nSkipping {exp_group}: no data")
             continue
-        
-        # Determine analysis type based on experiment group name
-        if exp_group == 'pure_dinur_basics':
-            do_pure_dinur_basic_analysis(exp_df, experiments, exp_group)
+
+        if exp_group == 'oa_200_low_distortion':
+            if metric_cfg.metric_col != 'measure':
+                continue
+            metrics = ['alc_alc', 'med_solver_metrics_runtime']
+            print_experiment_group_results(exp_df, exp_group, metrics)
+            high_thresh, medium_thresh, low_thresh = heatmap_thresholds_for_metric('alc_alc')
+            plot_agg_known_heatmaps(
+                exp_df,
+                tag="oa_200_low_distortion",
+                attr_name='alc_alc',
+                output_dir=metric_cfg.plots_dir,
+                high_thresh=high_thresh,
+                medium_thresh=medium_thresh,
+                low_thresh=low_thresh,
+            )
+        elif exp_group == 'oa_500_low_distortion':
+            if metric_cfg.metric_col != 'measure':
+                continue
+            metrics = ['alc_alc', 'med_solver_metrics_runtime']
+            print_experiment_group_results(exp_df, exp_group, metrics)
+            high_thresh, medium_thresh, low_thresh = heatmap_thresholds_for_metric('alc_alc')
+            plot_agg_known_heatmaps(
+                exp_df,
+                tag="oa_500_low_distortion",
+                attr_name='alc_alc',
+                output_dir=metric_cfg.plots_dir,
+                high_thresh=high_thresh,
+                medium_thresh=medium_thresh,
+                low_thresh=low_thresh,
+            )
+        elif exp_group == 'pure_dinur_basics':
+            do_pure_dinur_basic_analysis(exp_df, metric_cfg, experiments, exp_group)
         elif exp_group == 'agg_dinur_nrows_vals_per_qi':
-            # print exp_df for columns measure, supp_thresh, nrows
             for ycol in x_y_group:
-                plot_by_x_y_lines(exp_df, x_col='vals_per_qi', y_col=ycol, lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="big_nrows", )
+                run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='vals_per_qi', y_col=ycol, lines_col='nrows', thresh=0.9, tag="big_nrows")
         elif exp_group == 'agg_dinur_nrows_suppression':
-            # print exp_df for columns measure, supp_thresh, nrows
             for ycol in x_y_group:
-                plot_by_x_y_lines(exp_df, x_col='supp_thresh', y_col=ycol, lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="big_nrows", )
+                run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='supp_thresh', y_col=ycol, lines_col='nrows', thresh=0.9, tag="big_nrows")
         elif exp_group == 'agg_dinur_nrows_high_suppression':
-            # for each distinct value in supp_thresh, print measure, num_samples, and med_solver_metrics_runtime
-            do_agg_dinur_nrows_high_suppression_analysis(exp_df, exp_group)
+            do_agg_dinur_nrows_high_suppression_analysis(exp_df, exp_group, metric_cfg)
         elif exp_group == 'agg_dinur_basics':
-            do_agg_dinur_basic_analysis(exp_df, experiments, exp_group)
+            do_agg_dinur_basic_analysis(exp_df, metric_cfg, experiments, exp_group)
         elif exp_group == 'agg_dinur_explore_vals_per_qi_nrows':
-            do_agg_dinur_explore_vals_per_qi_analysis(exp_df, experiments, exp_group)
+            do_agg_dinur_explore_vals_per_qi_analysis(exp_df, metric_cfg, experiments, exp_group)
         elif exp_group == 'agg_dinur_nrows_low_nqi':
-            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', thresh=0.90, tag="low_nqi")
-            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="low_nqi", )
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', metric_cfg=metric_cfg, thresh=0.90, tag="low_nqi")
+            run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh=0.9, tag="low_nqi")
             for ycol in x_y_group:
-                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="low_nqi", )
+                run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='nqi', y_col=ycol, lines_col='nrows', thresh=0.9, tag="low_nqi")
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nrows_mnr5':
-            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', thresh=0.90, tag="mnr5")
-            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr5")
-            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr5")
-            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='num_samples', lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr5")
-            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='mixing_avg', lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr5")
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', metric_cfg=metric_cfg, thresh=0.90, tag="mnr5")
+            run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh=0.9, tag="mnr5")
+            run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh=0.9, tag="mnr5")
+            run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='nqi', y_col='num_samples', lines_col='nrows', thresh=0.9, tag="mnr5")
+            run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='nqi', y_col='mixing_avg', lines_col='nrows', thresh=0.9, tag="mnr5")
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nunique_mnr5':
-            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nunique', thresh=0.90, tag="mnr5")
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nunique', metric_cfg=metric_cfg, thresh=0.90, tag="mnr5")
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_vals_per_qi_mnr5':
-            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='actual_vals_per_qi', thresh=0.90, tag="mnr5")
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='actual_vals_per_qi', metric_cfg=metric_cfg, thresh=0.90, tag="mnr5")
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nrows_mnr3':
-            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', thresh=0.90, tag="mnr3")
-            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr3")
-            plot_by_x_y_lines(exp_df, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr3")
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nrows', metric_cfg=metric_cfg, thresh=0.90, tag="mnr3")
+            run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh=0.9, tag="mnr3")
+            run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='nqi', y_col='actual_vals_per_qi', lines_col='nrows', thresh=0.9, tag="mnr3")
             for ycol in x_y_group:
                 print(f"\n################## Plotting {ycol} vs nqi with nrows lines for mnr3")
-                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='nrows', thresh_direction="highest", thresh=0.9, tag="mnr3", )
-            plot_mixing_by_param(exp_df, param_col='nrows', tag="mnr3")
+                run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='nqi', y_col=ycol, lines_col='nrows', thresh=0.9, tag="mnr3")
+            plot_mixing_by_param(exp_df, param_col='nrows', tag="mnr3", output_dir=metric_cfg.plots_dir)
         elif exp_group == 'agg_dinur_x_nqi_y_stuff_lines_noise_mnr3':
             for ycol in x_y_group:
-                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='noise', thresh_direction="highest", thresh=0.9, tag="mnr3", )
+                run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='nqi', y_col=ycol, lines_col='noise', thresh=0.9, tag="mnr3")
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_min_num_rows':
-            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='supp_thresh', thresh=0.90)
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='supp_thresh', metric_cfg=metric_cfg, thresh=0.90)
             for ycol in x_y_group:
-                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='supp_thresh', thresh_direction="highest", thresh=0.9, tag="", )
-            plot_mixing_by_param(exp_df, param_col='supp_thresh', tag="")
+                run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='nqi', y_col=ycol, lines_col='supp_thresh', thresh=0.9, tag="")
+            plot_mixing_by_param(exp_df, param_col='supp_thresh', tag="", output_dir=metric_cfg.plots_dir)
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_nunique_mnr3':
-            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nunique', thresh=0.90, tag="mnr3")
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='nunique', metric_cfg=metric_cfg, thresh=0.90, tag="mnr3")
             for ycol in x_y_group:
-                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='nunique', thresh_direction="highest", thresh=0.9, tag="mnr3", )
-            plot_mixing_by_param(exp_df, param_col='nunique', tag="mnr3")
+                run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='nqi', y_col=ycol, lines_col='nunique', thresh=0.9, tag="mnr3")
+            plot_mixing_by_param(exp_df, param_col='nunique', tag="mnr3", output_dir=metric_cfg.plots_dir)
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_corr_strength_mnr3':
-            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='corr_strength', thresh=0.90, tag="mnr3")
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='corr_strength', metric_cfg=metric_cfg, thresh=0.90, tag="mnr3")
             for ycol in x_y_group:
-                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='corr_strength', thresh_direction="highest", thresh=0.9, tag="mnr3", )
+                run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='nqi', y_col=ycol, lines_col='corr_strength', thresh=0.9, tag="mnr3")
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_max_qi_mnr3':
-            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='max_qi', thresh=0.90, tag="mnr3")
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='max_qi', metric_cfg=metric_cfg, thresh=0.90, tag="mnr3")
             for ycol in x_y_group:
-                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='max_qi', thresh_direction="highest", thresh=0.9, tag="mnr3", )
-            plot_mixing_by_param(exp_df, param_col='max_qi', tag="mnr3")
+                run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='nqi', y_col=ycol, lines_col='max_qi', thresh=0.9, tag="mnr3")
+            plot_mixing_by_param(exp_df, param_col='max_qi', tag="mnr3", output_dir=metric_cfg.plots_dir)
         elif exp_group == 'agg_dinur_x_nqi_y_noise_lines_vals_per_qi_mnr3':
-            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='actual_vals_per_qi', thresh=0.90, tag="mnr3")
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='actual_vals_per_qi', metric_cfg=metric_cfg, thresh=0.90, tag="mnr3")
             for ycol in x_y_group:
-                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='actual_vals_per_qi', thresh_direction="highest", thresh=0.9, tag="mnr3", )
-            plot_mixing_by_param(exp_df, param_col='actual_vals_per_qi', tag="mnr3")
+                run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='nqi', y_col=ycol, lines_col='actual_vals_per_qi', thresh=0.9, tag="mnr3")
+            plot_mixing_by_param(exp_df, param_col='actual_vals_per_qi', tag="mnr3", output_dir=metric_cfg.plots_dir)
         elif exp_group == 'agg_dinur_best_case_nrows_nqi3':
-            do_analysis_by_x_y_lines(exp_df, x_col='supp_thresh', y_col='noise', lines_col='nrows', thresh=0.90)
-            make_noise_min_num_rows_table(exp_df, 3, "nqi3")
+            do_analysis_by_x_y_lines(exp_df, x_col='supp_thresh', y_col='noise', lines_col='nrows', metric_cfg=metric_cfg, thresh=0.90)
+            run_noise_min_num_rows_table(exp_df, 3, "nqi3", metric_cfg)
         elif exp_group == 'agg_dinur_best_case_nrows_nqi4':
-            do_analysis_by_x_y_lines(exp_df, x_col='supp_thresh', y_col='noise', lines_col='nrows', thresh=0.90)
-            make_noise_min_num_rows_table(exp_df, 4, "nqi4")
+            do_analysis_by_x_y_lines(exp_df, x_col='supp_thresh', y_col='noise', lines_col='nrows', metric_cfg=metric_cfg, thresh=0.90)
+            run_noise_min_num_rows_table(exp_df, 4, "nqi4", metric_cfg)
         elif exp_group == 'probe_agg_known':
             metrics = ['measure', 'med_solver_metrics_runtime']
             print_experiment_group_results(exp_df, exp_group, metrics)
         elif exp_group == 'agg_known_best':
             metrics = ['measure', 'med_solver_metrics_runtime']
             print_experiment_group_results(exp_df, exp_group, metrics)
-            plot_agg_known_heatmaps(exp_df, "agg_known_best")
-        elif exp_group == 'oa_200_low_distortion':
-            metrics = ['alc_alc', 'med_solver_metrics_runtime']
-            print_experiment_group_results(exp_df, exp_group, metrics)
-            plot_agg_known_heatmaps(exp_df, tag = "oa_200_low_distortion", attr_name = 'alc_alc')
-        elif exp_group == 'oa_500_low_distortion':
-            metrics = ['alc_alc', 'med_solver_metrics_runtime']
-            print_experiment_group_results(exp_df, exp_group, metrics)
-            plot_agg_known_heatmaps(exp_df, tag = "oa_500_low_distortion", attr_name = 'alc_alc')
+            high_thresh, medium_thresh, low_thresh = heatmap_thresholds_for_metric(metric_cfg.metric_col)
+            plot_agg_known_heatmaps(
+                exp_df,
+                tag="agg_known_best",
+                attr_name='measure',
+                output_dir=metric_cfg.plots_dir,
+                high_thresh=high_thresh,
+                medium_thresh=medium_thresh,
+                low_thresh=low_thresh,
+            )
         elif exp_group == 'agg_known_defaults':
-            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='known_qi_fraction', thresh=0.90, tag="mnr3")
+            do_analysis_by_x_y_lines(exp_df, x_col='nqi', y_col='noise', lines_col='known_qi_fraction', metric_cfg=metric_cfg, thresh=0.90, tag="mnr3")
             for ycol in x_y_group:
-                plot_by_x_y_lines(exp_df, x_col='nqi', y_col=ycol, lines_col='actual_vals_per_qi', thresh_direction="highest", thresh=0.9, tag="mnr3", )
-            pass
+                run_plot_by_x_y_lines(exp_df, metric_cfg, x_col='nqi', y_col=ycol, lines_col='known_qi_fraction', thresh=0.9, tag="mnr3")
         elif exp_group == 'agg_known_compare':
-            compare_agg_known_to_agg_row(exp_df, df_final)
+            compare_agg_known_to_agg_row(exp_df, df_final, metric_cfg)
         else:
-            # Generic analysis for other experiment groups
             print(f"\n\n{'='*80}")
             print(f"ANALYSIS FOR {exp_group} EXPERIMENT GROUP")
             print(f"{'='*80}")
-            analyze_single_parameter_variation(exp_df, experiments, exp_group)
-    plot_mixing_by_measure(df_all, Path('./results/plots'))
+            analyze_single_parameter_variation(exp_df, experiments, exp_group, metric_cfg)
 
-def do_analysis_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col: str, thresh: float = 0.95, tag: str = ""):
-    print(f"\n\nANALYSIS BY X={x_col}, Y={y_col}, LINES={lines_col}, THRESH={thresh}")
+    output_stem = 'mixing_avg_vs_measure_agg_row' if metric_cfg.metric_col == 'measure' else 'mixing_avg_vs_alc_agg_row'
+    plot_mixing_by_measure(
+        df_all,
+        metric_cfg.plots_dir,
+        measure_col='measure',
+        metric_label=metric_cfg.metric_label,
+        output_stem=output_stem,
+    )
+
+
+def analyze(more_seeds: bool = False):
+    """Read result.parquet and analyze correlations with num_samples."""
+    df_all = prep_data()
+    plot_elapsed_time_pdf(df_all)
+    metric_configs = get_metric_configs(df_all)
+    for cfg in metric_configs:
+        run_metric_analysis(df_all, more_seeds, cfg)
+
+def do_analysis_by_x_y_lines(
+    df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    lines_col: str,
+    metric_cfg: MetricConfig,
+    thresh: float = 0.95,
+    tag: str = "",
+):
+    mapped_thresh = metric_threshold(thresh, metric_cfg)
+    print(f"\n\nANALYSIS BY X={x_col}, Y={y_col}, LINES={lines_col}, THRESH={mapped_thresh} ({metric_cfg.metric_label})")
     print("=" * 80)
     # sort by x_col, then y_col, then lines_col, and display x_col, y_col, lines_col, and measure
     df_sorted = df.sort_values(by=['measure', x_col, y_col, lines_col])
@@ -1031,26 +1251,35 @@ def do_analysis_by_x_y_lines(df: pd.DataFrame, x_col: str, y_col: str, lines_col
     print(table.to_string())
 
     for thresh in [0.80, 0.90, 0.95]:
-        plot_by_x_y_lines(df, x_col=x_col, y_col=y_col, lines_col=lines_col, thresh_direction="highest", thresh=thresh, tag=tag, extra_y_cols=['mixing_avg'])
-    plot_by_x_y_lines(df, x_col=x_col, y_col='measure', lines_col=lines_col, thresh_direction="highest", thresh=0.9, tag=tag)
+        run_plot_by_x_y_lines(
+            df,
+            metric_cfg,
+            x_col=x_col,
+            y_col=y_col,
+            lines_col=lines_col,
+            thresh=thresh,
+            tag=tag,
+            extra_y_cols=['mixing_avg'],
+        )
+    run_plot_by_x_y_lines(df, metric_cfg, x_col=x_col, y_col='measure', lines_col=lines_col, thresh=0.9, tag=tag)
 
 
-def do_pure_dinur_basic_analysis(df, experiments=None, exp_group=None):
-    print("\n\nANALYSIS FOR pure_dinur_basics EXPERIMENT GROUP")
+def do_pure_dinur_basic_analysis(df, metric_cfg: MetricConfig, experiments=None, exp_group=None):
+    print(f"\n\nANALYSIS FOR pure_dinur_basics EXPERIMENT GROUP ({metric_cfg.metric_label})")
     
     # Check for single parameter variation
     if experiments is not None and exp_group is not None:
-        analyze_single_parameter_variation(df, experiments, exp_group)
+        analyze_single_parameter_variation(df, experiments, exp_group, metric_cfg)
     
     # Check if num_samples exists
     if 'num_samples' not in df.columns:
         print("\nError: num_samples column not found")
         return
     
-    # Check for incomplete jobs (measure < target_accuracy)
+    # Check for incomplete jobs (metric < target_accuracy)
     if 'measure' in df.columns and 'target_accuracy' in df.columns:
         incomplete = df[df['measure'] < df['target_accuracy']]
-        print(f"\n\nINCOMPLETE JOBS (measure < target_accuracy):")
+        print(f"\n\nINCOMPLETE JOBS ({metric_cfg.metric_label} < target_accuracy):")
         print("=" * 80)
         print(f"Number of incomplete jobs: {len(incomplete)}")
         
@@ -1069,13 +1298,13 @@ def do_pure_dinur_basic_analysis(df, experiments=None, exp_group=None):
         
         # Create dataframe with only complete jobs
         df_complete = df[df['measure'] >= df['target_accuracy']].copy()
-        print(f"Complete jobs (measure >= target_accuracy): {len(df_complete)}")
+        print(f"Complete jobs ({metric_cfg.metric_label} >= target_accuracy): {len(df_complete)}")
     else:
         df_complete = df.copy()
-        print("Warning: measure or target_accuracy column not found, using all data")
+        print(f"Warning: selected metric or target_accuracy column not found, using all data ({metric_cfg.metric_label})")
     
     # Create plots directory
-    plots_dir = Path('./results/plots')
+    plots_dir = metric_cfg.plots_dir
     plots_dir.mkdir(exist_ok=True)
     print(f"\nPlots directory: {plots_dir}")
     
@@ -1216,22 +1445,22 @@ def do_pure_dinur_basic_analysis(df, experiments=None, exp_group=None):
     print(f"  Median: {df['num_samples'].median():.2f}")
     print(f"  Std: {df['num_samples'].std():.2f}")
 
-def do_agg_dinur_basic_analysis(df, experiments=None, exp_group=None):
-    print("\n\nANALYSIS FOR aggregated_dinur_basics EXPERIMENT GROUP")
+def do_agg_dinur_basic_analysis(df, metric_cfg: MetricConfig, experiments=None, exp_group=None):
+    print(f"\n\nANALYSIS FOR aggregated_dinur_basics EXPERIMENT GROUP ({metric_cfg.metric_label})")
     
     # Check for single parameter variation
     if experiments is not None and exp_group is not None:
-        analyze_single_parameter_variation(df, experiments, exp_group)
+        analyze_single_parameter_variation(df, experiments, exp_group, metric_cfg)
     
     # Check if num_samples exists
     if 'num_samples' not in df.columns:
         print("\nError: num_samples column not found")
         return
     
-    # Check for incomplete jobs (measure < target_accuracy)
+    # Check for incomplete jobs (metric < target_accuracy)
     if 'measure' in df.columns and 'target_accuracy' in df.columns:
         incomplete = df[df['measure'] < df['target_accuracy']]
-        print(f"\n\nINCOMPLETE JOBS (measure < target_accuracy):")
+        print(f"\n\nINCOMPLETE JOBS ({metric_cfg.metric_label} < target_accuracy):")
         print("=" * 80)
         print(f"Number of incomplete jobs: {len(incomplete)}")
         
@@ -1250,17 +1479,17 @@ def do_agg_dinur_basic_analysis(df, experiments=None, exp_group=None):
         
         # Create dataframe with only complete jobs
         df_complete = df[df['measure'] >= df['target_accuracy']].copy()
-        print(f"Complete jobs (measure >= target_accuracy): {len(df_complete)}")
+        print(f"Complete jobs ({metric_cfg.metric_label} >= target_accuracy): {len(df_complete)}")
         
         # Get target accuracy for plotting
         target_accuracy = df['target_accuracy'].iloc[0] if len(df) > 0 else 0.99
     else:
         df_complete = df.copy()
         target_accuracy = 0.99
-        print("Warning: measure or target_accuracy column not found, using all data")
+        print(f"Warning: selected metric or target_accuracy column not found, using all data ({metric_cfg.metric_label})")
     
     # Create plots directory
-    plots_dir = Path('./results/plots_agg')
+    plots_dir = metric_cfg.agg_plots_dir
     plots_dir.mkdir(exist_ok=True)
     print(f"\nPlots directory: {plots_dir}")
     
@@ -1269,7 +1498,14 @@ def do_agg_dinur_basic_analysis(df, experiments=None, exp_group=None):
     
     # Plot measure by nqi (uses all data, not just complete)
     if 'measure' in df.columns and 'nqi' in df.columns:
-        plot_measure_by_nqi(df, plots_dir, target_accuracy)
+        plot_measure_by_nqi(
+            df,
+            plots_dir,
+            target_accuracy,
+            measure_col='measure',
+            metric_label=metric_title(metric_cfg),
+            output_stem='measure_by_nqi' if metric_cfg.metric_col == 'measure' else 'alc_by_nqi',
+        )
     
     # Generate other plots using complete jobs only
     if len(df_complete) > 0:
@@ -1407,9 +1643,9 @@ def do_agg_dinur_basic_analysis(df, experiments=None, exp_group=None):
     print(f"  Median: {df['num_samples'].median():.2f}")
     print(f"  Std: {df['num_samples'].std():.2f}")
 
-def do_agg_dinur_explore_vals_per_qi_analysis(df, experiments=None, exp_group=None):
+def do_agg_dinur_explore_vals_per_qi_analysis(df, metric_cfg: MetricConfig, experiments=None, exp_group=None):
     """Analyze agg_dinur_explore_vals_per_qi results with text tables."""
-    print("\n\nANALYSIS FOR agg_dinur_explore_vals_per_qi EXPERIMENT GROUP")
+    print(f"\n\nANALYSIS FOR agg_dinur_explore_vals_per_qi EXPERIMENT GROUP ({metric_cfg.metric_label})")
     print("=" * 80)
     
     if len(df) == 0:
@@ -1435,7 +1671,7 @@ def do_agg_dinur_explore_vals_per_qi_analysis(df, experiments=None, exp_group=No
             continue
         
         print("\n" + "="*80)
-        print(f"Table: Measure (Accuracy) for nrows={nrows_val}")
+        print(f"Table: {metric_title(metric_cfg)} for nrows={nrows_val}")
         print("="*80)
         
         # Create header
@@ -1462,7 +1698,7 @@ def do_agg_dinur_explore_vals_per_qi_analysis(df, experiments=None, exp_group=No
     
     # Check for single parameter variation
     if experiments is not None and exp_group is not None:
-        analyze_single_parameter_variation(df, experiments, exp_group)
+        analyze_single_parameter_variation(df, experiments, exp_group, metric_cfg)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze experiment results.")

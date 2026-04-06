@@ -5,14 +5,21 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
 
 
-def plot_agg_known_heatmaps(df: pd.DataFrame, tag: str = "", attr_name: str = 'measure'):
+def plot_agg_known_heatmaps(
+    df: pd.DataFrame,
+    tag: str,
+    attr_name: str,
+    output_dir: Path,
+    high_thresh: float,
+    medium_thresh: float,
+    low_thresh: float,
+):
     required_cols = {attr_name, 'noise', 'supp_thresh', 'known_qi_fraction', 'nqi'}
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
         print(f"plot_agg_known_heatmaps: missing columns {missing}; skipping plot")
         return
 
-    output_dir = Path('./results/plots')
     output_dir.mkdir(parents=True, exist_ok=True)
 
     noise_vals = [0, 1, 2, 3, 4]
@@ -57,11 +64,11 @@ def plot_agg_known_heatmaps(df: pd.DataFrame, tag: str = "", attr_name: str = 'm
 
                     measure = subset[attr_name].mean()
                     labels[i, j] = f"{measure:.2f}"
-                    if measure >= 0.99:
+                    if measure >= high_thresh:
                         category[i, j] = 4
-                    elif measure >= 0.9:
+                    elif measure >= medium_thresh:
                         category[i, j] = 3
-                    elif measure >= 0.75:
+                    elif measure >= low_thresh:
                         category[i, j] = 2
                     else:
                         category[i, j] = 1
