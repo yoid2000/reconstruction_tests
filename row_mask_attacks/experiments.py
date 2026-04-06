@@ -466,7 +466,7 @@ experiments = [
         'slurm_run': 40,
         'mask_size': [0],       # not used
         'solve_type': 'agg_known',
-        'seed': list(range(5)),
+        'seed': list(range(1)),
         'noise': [0,1,2,3,4],
         'min_num_rows': [1,2,3,4,5],
         'known_qi_fraction': [0.0, 0.5, 1.0],
@@ -480,7 +480,7 @@ experiments = [
         'slurm_run': 41,
         'mask_size': [0],       # not used
         'solve_type': 'agg_known',
-        'seed': list(range(5)),
+        'seed': list(range(1)),
         'noise': [0,1,2,3,4],
         'min_num_rows': [1,2,3,4,5],
         'known_qi_fraction': [0.0, 0.5, 1.0],
