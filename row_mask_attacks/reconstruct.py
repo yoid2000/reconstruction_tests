@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Optional
 import pandas as pd
 import pprint as pp
 pp = pp.PrettyPrinter(indent=2)
@@ -13,6 +13,22 @@ except ImportError:
 
 # Import OR-Tools
 from ortools.sat.python import cp_model
+
+
+def _gurobi_stop_on_zero_obj(model, where):
+    """Terminate Gurobi solve as soon as a perfect objective (0) is found."""
+    if where == GRB.Callback.MIPSOL:
+        incumbent_obj = model.cbGet(GRB.Callback.MIPSOL_OBJ)
+        if incumbent_obj <= 1e-9:
+            model.terminate()
+
+
+class _StopAtZeroObjectiveCallback(cp_model.CpSolverSolutionCallback):
+    """Stop CP-SAT search when objective reaches zero."""
+
+    def on_solution_callback(self):
+        if self.ObjectiveValue() <= 1e-9:
+            self.StopSearch()
 
 
 def check_gurobi_available() -> bool:
@@ -34,7 +50,14 @@ def check_gurobi_available() -> bool:
         return False
 
 
-def reconstruct_by_row(samples: List[Dict], noise: int, seed: int = None) -> tuple[List[Dict], int, Dict]:
+def reconstruct_by_row(
+    samples: List[Dict],
+    noise: int,
+    seed: int = None,
+    use_objective: bool = False,
+    time_limit_seconds: Optional[float] = None,
+    slack_limit_multiple: int = 3,
+) -> tuple[List[Dict], int, Dict]:
     """ Reconstructs the value associated with each ID from noisy count samples.
     
     Args:
@@ -43,6 +66,12 @@ def reconstruct_by_row(samples: List[Dict], noise: int, seed: int = None) -> tup
             - 'noisy_counts': list of dicts with 'val' (int) and 'count' (int)
         noise: Integer representing the noise bound (±noise from true count)
         seed: Random seed for solver (default: None)
+        use_objective: If True, soften noisy count bounds with slack variables and
+            minimize total slack. If False, keep exact hard bounds only.
+        time_limit_seconds: Optional solve time limit. If provided, solver returns
+            best incumbent found when limit is reached.
+        slack_limit_multiple: Integer multiplier for per-constraint slack upper bounds.
+            Slack upper bound is (slack_limit_multiple * noise).
     
     Returns:
         Tuple of (reconstructed_values, num_equations, solver_metrics)
@@ -60,6 +89,17 @@ def reconstruct_by_row(samples: List[Dict], noise: int, seed: int = None) -> tup
     
     all_ids = sorted(all_ids)
     all_vals = sorted(all_vals)
+
+    if time_limit_seconds is not None and time_limit_seconds <= 0:
+        raise ValueError("time_limit_seconds must be > 0 when provided")
+    if noise < 0:
+        raise ValueError("noise must be >= 0")
+    if slack_limit_multiple < 0:
+        raise ValueError("slack_limit_multiple must be >= 0")
+    if int(slack_limit_multiple) != slack_limit_multiple:
+        raise ValueError("slack_limit_multiple must be an integer")
+    slack_limit_multiple = int(slack_limit_multiple)
+    slack_limit = slack_limit_multiple * max(1, noise) if use_objective else 0
     
     num_equations = 0
     constraints_list = []
@@ -73,6 +113,8 @@ def reconstruct_by_row(samples: List[Dict], noise: int, seed: int = None) -> tup
         # Set random seed if provided
         if seed is not None:
             model.setParam('Seed', seed)
+        if time_limit_seconds is not None:
+            model.setParam('TimeLimit', float(time_limit_seconds))
         
         # Create binary variables: x[id][val] = 1 if id has value val
         x = {}
@@ -106,11 +148,12 @@ def reconstruct_by_row(samples: List[Dict], noise: int, seed: int = None) -> tup
         print("\n2. Noisy count constraints (for each sample and value):")
         sample_constraints = []
         skipped_constraints = 0
+        objective_terms = []
         for sample_idx, sample in enumerate(samples):
             ids = sample['ids']
             noisy_counts = sample['noisy_counts']
             
-            for count_info in noisy_counts:
+            for count_idx, count_info in enumerate(noisy_counts):
                 val = count_info['val']
                 noisy_count = count_info['count']
                 
@@ -137,8 +180,26 @@ def reconstruct_by_row(samples: List[Dict], noise: int, seed: int = None) -> tup
                 sample_constraints.append(lower_bound)
                 sample_constraints.append(upper_bound)
                 
-                model.addConstr(true_count >= lower_bound_val)
-                model.addConstr(true_count <= upper_bound_val)
+                if use_objective:
+                    under_slack = model.addVar(
+                        vtype=GRB.INTEGER,
+                        lb=0,
+                        ub=slack_limit,
+                        name=f"under_{sample_idx}_{count_idx}_{val}",
+                    )
+                    over_slack = model.addVar(
+                        vtype=GRB.INTEGER,
+                        lb=0,
+                        ub=slack_limit,
+                        name=f"over_{sample_idx}_{count_idx}_{val}",
+                    )
+                    objective_terms.append(under_slack)
+                    objective_terms.append(over_slack)
+                    model.addConstr(true_count + under_slack >= lower_bound_val)
+                    model.addConstr(true_count - over_slack <= upper_bound_val)
+                else:
+                    model.addConstr(true_count >= lower_bound_val)
+                    model.addConstr(true_count <= upper_bound_val)
                 num_equations += 2
         
         print(f"  Total: {len(sample_constraints)} constraints ({len(samples)} samples)")
@@ -181,10 +242,21 @@ def reconstruct_by_row(samples: List[Dict], noise: int, seed: int = None) -> tup
                 print(c)
         
         print(f"\n=== TOTAL EQUATIONS: {num_equations} ===\n")
-        
+
+        if use_objective:
+            model.setObjective(gp.quicksum(objective_terms), GRB.MINIMIZE)
+            print(
+                "Objective enabled: minimize total bound violations "
+                f"(per-side slack <= {slack_limit} = {slack_limit_multiple} * noise)"
+            )
+
         # Solve the model
-        model.optimize()
-        
+        if use_objective:
+            model.optimize(_gurobi_stop_on_zero_obj)
+        else:
+            model.optimize()
+
+        has_solution = model.SolCount > 0
         # Collect Gurobi metrics
         solver_metrics = {
             'solver': 'gurobi',
@@ -194,8 +266,8 @@ def reconstruct_by_row(samples: List[Dict], noise: int, seed: int = None) -> tup
                             9: 'TIME_LIMIT', 10: 'SOLUTION_LIMIT', 11: 'INTERRUPTED', 
                             12: 'NUMERIC', 13: 'SUBOPTIMAL', 14: 'INPROGRESS', 15: 'USER_OBJ_LIMIT'}.get(model.status, 'UNKNOWN'),
             'runtime': model.Runtime,
-            'obj_val': model.ObjVal if model.status == GRB.OPTIMAL else None,
-            'obj_bound': model.ObjBound if model.status == GRB.OPTIMAL else None,
+            'obj_val': model.ObjVal if has_solution else None,
+            'obj_bound': model.ObjBound if has_solution else None,
             'mip_gap': model.MIPGap if hasattr(model, 'MIPGap') else None,
             'node_count': model.NodeCount if hasattr(model, 'NodeCount') else None,
             'simplex_iterations': model.IterCount if hasattr(model, 'IterCount') else None,
@@ -212,11 +284,25 @@ def reconstruct_by_row(samples: List[Dict], noise: int, seed: int = None) -> tup
             'is_qp': model.IsQP,
             'is_qcp': model.IsQCP,
             'skipped_constraints': skipped_constraints,
+            'used_objective': use_objective,
+            'time_limit_seconds': time_limit_seconds,
+            'slack_limit_multiple': slack_limit_multiple,
+            'slack_limit': slack_limit if use_objective else None,
+            'perfect_objective_found': bool(use_objective and has_solution and abs(model.ObjVal) <= 1e-9),
+            'objective_bound': (
+                0.0
+                if (use_objective and has_solution and abs(model.ObjVal) <= 1e-9)
+                else (
+                    float(abs(model.ObjVal))
+                    if (use_objective and has_solution)
+                    else (0.0 if (not use_objective and has_solution) else None)
+                )
+            ),
         }
         
         # Extract solution
         result = []
-        if model.status == GRB.OPTIMAL:
+        if has_solution:
             for id in all_ids:
                 for val in all_vals:
                     if x[id][val].X > 0.5:  # Binary variable is 1
@@ -226,6 +312,7 @@ def reconstruct_by_row(samples: List[Dict], noise: int, seed: int = None) -> tup
         # Use OR-Tools solver
         print("Using OR-Tools CP-SAT solver")
         model = cp_model.CpModel()
+        objective_terms = []
         
         # Create binary variables: x[id][val] = 1 if id has value val
         x = {}
@@ -261,7 +348,7 @@ def reconstruct_by_row(samples: List[Dict], noise: int, seed: int = None) -> tup
             ids = sample['ids']
             noisy_counts = sample['noisy_counts']
             
-            for count_info in noisy_counts:
+            for count_idx, count_info in enumerate(noisy_counts):
                 val = count_info['val']
                 noisy_count = count_info['count']
                 
@@ -288,8 +375,24 @@ def reconstruct_by_row(samples: List[Dict], noise: int, seed: int = None) -> tup
                 sample_constraints.append(lower_bound)
                 sample_constraints.append(upper_bound)
                 
-                model.Add(true_count >= lower_bound_val)
-                model.Add(true_count <= upper_bound_val)
+                if use_objective:
+                    under_slack = model.NewIntVar(
+                        0,
+                        slack_limit,
+                        f'under_{sample_idx}_{count_idx}_{val}',
+                    )
+                    over_slack = model.NewIntVar(
+                        0,
+                        slack_limit,
+                        f'over_{sample_idx}_{count_idx}_{val}',
+                    )
+                    objective_terms.append(under_slack)
+                    objective_terms.append(over_slack)
+                    model.Add(true_count + under_slack >= lower_bound_val)
+                    model.Add(true_count - over_slack <= upper_bound_val)
+                else:
+                    model.Add(true_count >= lower_bound_val)
+                    model.Add(true_count <= upper_bound_val)
                 num_equations += 2
         
         print(f"  Total: {len(sample_constraints)} constraints ({len(samples)} samples)")
@@ -332,15 +435,28 @@ def reconstruct_by_row(samples: List[Dict], noise: int, seed: int = None) -> tup
                 print(c)
         
         print(f"\n=== TOTAL EQUATIONS: {num_equations} ===\n")
-        
+
+        if use_objective:
+            model.Minimize(sum(objective_terms))
+            print(
+                "Objective enabled: minimize total bound violations "
+                f"(per-side slack <= {slack_limit} = {slack_limit_multiple} * noise)"
+            )
+
         # Solve the model
         solver = cp_model.CpSolver()
         
         # Set random seed if provided
         if seed is not None:
             solver.parameters.random_seed = seed
+        if time_limit_seconds is not None:
+            solver.parameters.max_time_in_seconds = float(time_limit_seconds)
         
-        status = solver.Solve(model)
+        if use_objective:
+            zero_obj_callback = _StopAtZeroObjectiveCallback()
+            status = solver.SolveWithSolutionCallback(model, zero_obj_callback)
+        else:
+            status = solver.Solve(model)
         
         # Collect OR-Tools metrics
         solver_metrics = {
@@ -357,6 +473,28 @@ def reconstruct_by_row(samples: List[Dict], noise: int, seed: int = None) -> tup
             'num_binary_propagations': solver.NumBinaryPropagations(),
             'num_integer_propagations': solver.NumIntegerPropagations(),
             'skipped_constraints': skipped_constraints,
+            'used_objective': use_objective,
+            'time_limit_seconds': time_limit_seconds,
+            'slack_limit_multiple': slack_limit_multiple,
+            'slack_limit': slack_limit if use_objective else None,
+            'perfect_objective_found': bool(
+                use_objective
+                and status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
+                and abs(solver.ObjectiveValue()) <= 1e-9
+            ),
+            'objective_bound': (
+                0.0
+                if (
+                    use_objective
+                    and status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
+                    and abs(solver.ObjectiveValue()) <= 1e-9
+                )
+                else (
+                    float(abs(solver.ObjectiveValue()))
+                    if (use_objective and status in [cp_model.OPTIMAL, cp_model.FEASIBLE])
+                    else (0.0 if (not use_objective and status in [cp_model.OPTIMAL, cp_model.FEASIBLE]) else None)
+                )
+            ),
         }
         
         # Extract solution
@@ -455,391 +593,17 @@ def measure_by_row(df: pd.DataFrame, reconstructed: List[Dict]) -> float:
     return correct / total if total > 0 else 0.0
 
 
-def reconstruct_by_aggregate(samples: List[Dict], noise: int, total_rows: int, all_qi_cols: List[str], seed: int = None) -> tuple[List[Dict], int, Dict]:
-    """Reconstructs rows with QI column values and target values from aggregate samples.
-    
-    Args:
-        samples: List of dicts, each containing:
-            - 'qi_cols': list of QI column names (subset of all_qi_cols)
-            - 'qi_vals': list of values for those QI columns (same length as qi_cols)
-            - 'noisy_counts': list of dicts with 'val' (int) and 'count' (int)
-        noise: Integer representing the noise bound (±noise from true count)
-        total_rows: Exact number of rows to reconstruct
-        all_qi_cols: List of all QI column names
-        seed: Random seed for solver (default: None)
-    
-    Returns:
-        Tuple of (reconstructed_rows, num_equations, solver_metrics)
-        - reconstructed_rows: List of dicts with QI columns and 'val' (target value)
-        - num_equations: Number of constraint equations used in the model
-        - solver_metrics: Dict with all solver performance metrics
-    """
-    # Step 1: Validate inputs and extract domains
-    all_qi_cols_set = set(all_qi_cols)
-    qi_domains = {col: set() for col in all_qi_cols}
-    all_target_vals = set()
-    
-    for sample_idx, sample in enumerate(samples):
-        # Validate sample structure
-        if 'qi_cols' not in sample or 'qi_vals' not in sample or 'noisy_counts' not in sample:
-            raise ValueError(f"Sample {sample_idx} missing required keys (qi_cols, qi_vals, or noisy_counts)")
-        
-        qi_cols = sample['qi_cols']
-        qi_vals = sample['qi_vals']
-        
-        # Validate qi_cols and qi_vals lengths match
-        if len(qi_cols) != len(qi_vals):
-            raise ValueError(f"Sample {sample_idx}: qi_cols length ({len(qi_cols)}) != qi_vals length ({len(qi_vals)})")
-        
-        # Validate all qi_cols are in all_qi_cols
-        for col in qi_cols:
-            if col not in all_qi_cols_set:
-                raise ValueError(f"Sample {sample_idx}: qi_col '{col}' not in all_qi_cols")
-        
-        # Collect domain values
-        for col, val in zip(qi_cols, qi_vals):
-            qi_domains[col].add(val)
-        
-        # Collect target values
-        for count_info in sample['noisy_counts']:
-            all_target_vals.add(count_info['val'])
-    
-    # Convert domains to sorted lists
-    qi_domains_sorted = {col: sorted(vals) for col, vals in qi_domains.items()}
-    qi_domains = qi_domains_sorted
-    all_target_vals = sorted(all_target_vals)
-    
-    num_equations = 0
-    
-    if check_gurobi_available():
-        # Use Gurobi solver
-        print("Using Gurobi solver")
-        model = gp.Model("reconstruct_by_aggregate")
-        model.setParam('OutputFlag', 0)  # Suppress output
-        
-        # Set random seed if provided
-        if seed is not None:
-            model.setParam('Seed', seed)
-        
-        # Step 2: Create binary variables
-        x = {}  # x[row_idx][qi_col][qi_val]
-        for row_idx in range(total_rows):
-            x[row_idx] = {}
-            for qi_col in all_qi_cols:
-                x[row_idx][qi_col] = {}
-                for qi_val in qi_domains[qi_col]:
-                    x[row_idx][qi_col][qi_val] = model.addVar(
-                        vtype=GRB.BINARY, 
-                        name=f'x_{row_idx}_{qi_col}_{qi_val}'
-                    )
-        
-        y = {}  # y[row_idx][target_val]
-        for row_idx in range(total_rows):
-            y[row_idx] = {}
-            for target_val in all_target_vals:
-                y[row_idx][target_val] = model.addVar(
-                    vtype=GRB.BINARY,
-                    name=f'y_{row_idx}_{target_val}'
-                )
-        
-        model.update()
-        
-        # Display variables
-        print("\n=== MODEL VARIABLES ===")
-        total_x_vars = sum(len(qi_domains[col]) for col in all_qi_cols) * total_rows
-        total_y_vars = len(all_target_vals) * total_rows
-        print(f"Binary variables x[row][qi_col][qi_val]: {total_x_vars}")
-        print(f"Binary variables y[row][target_val]: {total_y_vars}")
-        print(f"Total variables: {total_x_vars + total_y_vars}")
-        
-        print("\n=== MODEL CONSTRAINTS ===")
-        
-        # Step 3: Add basic assignment constraints
-        print("\n1. Each row must have exactly one value per QI column:")
-        for row_idx in range(total_rows):
-            for qi_col in all_qi_cols:
-                model.addConstr(
-                    gp.quicksum(x[row_idx][qi_col][qi_val] for qi_val in qi_domains[qi_col]) == 1
-                )
-                num_equations += 1
-        print(f"  Total: {total_rows * len(all_qi_cols)} constraints")
-        
-        print("\n2. Each row must have exactly one target value:")
-        for row_idx in range(total_rows):
-            model.addConstr(
-                gp.quicksum(y[row_idx][target_val] for target_val in all_target_vals) == 1
-            )
-            num_equations += 1
-        print(f"  Total: {total_rows} constraints")
-        
-        # Step 4: Add partial-match counting constraints
-        print("\n3. Partial-match counting constraints (with auxiliary variables):")
-        match_constraints_count = 0
-        skipped_constraints = 0
-        
-        for sample_idx, sample in enumerate(samples):
-            qi_cols = sample['qi_cols']
-            qi_vals = sample['qi_vals']
-            noisy_counts = sample['noisy_counts']
-            
-            for count_info in noisy_counts:
-                target_val = count_info['val']
-                noisy_count = count_info['count']
-                
-                # Clamp bounds: lower >= 0, upper <= total_rows
-                lower_bound_val = max(0, noisy_count - noise)
-                upper_bound_val = min(total_rows, noisy_count + noise)
-                
-                # Skip if constraint provides no information (covers entire range)
-                if lower_bound_val == 0 and upper_bound_val == total_rows:
-                    skipped_constraints += 2
-                    continue
-                
-                # Create auxiliary match variables for each row
-                match_vars = []
-                for row_idx in range(total_rows):
-                    match_var = model.addVar(
-                        vtype=GRB.BINARY,
-                        name=f'match_{sample_idx}_{row_idx}_{target_val}'
-                    )
-                    
-                    # Build list of variables that must all be 1 for a match
-                    and_vars = []
-                    for col, val in zip(qi_cols, qi_vals):
-                        and_vars.append(x[row_idx][col][val])
-                    and_vars.append(y[row_idx][target_val])
-                    
-                    # Add AND constraint
-                    model.addGenConstrAnd(match_var, and_vars)
-                    num_equations += 1  # Count the AND constraint
-                    
-                    match_vars.append(match_var)
-                
-                # Add counting constraints
-                total_matches = gp.quicksum(match_vars)
-                model.addConstr(total_matches >= lower_bound_val)
-                model.addConstr(total_matches <= upper_bound_val)
-                num_equations += 2
-                match_constraints_count += 2
-        
-        print(f"  Auxiliary match variables created for each sample-target-row combination")
-        print(f"  Counting constraints (upper and lower bounds): {match_constraints_count}")
-        if skipped_constraints > 0:
-            print(f"  Skipped: {skipped_constraints} redundant constraints (covering entire range)")
-        
-        print(f"\n=== TOTAL EQUATIONS: {num_equations} ===\n")
-        
-        # Step 5: Solve and extract solution
-        model.optimize()
-        
-        # Collect Gurobi metrics
-        solver_metrics = {
-            'solver': 'gurobi',
-            'status': model.status,
-            'status_string': {1: 'LOADED', 2: 'OPTIMAL', 3: 'INFEASIBLE', 4: 'INF_OR_UNBD', 
-                            5: 'UNBOUNDED', 6: 'CUTOFF', 7: 'ITERATION_LIMIT', 8: 'NODE_LIMIT',
-                            9: 'TIME_LIMIT', 10: 'SOLUTION_LIMIT', 11: 'INTERRUPTED', 
-                            12: 'NUMERIC', 13: 'SUBOPTIMAL', 14: 'INPROGRESS', 15: 'USER_OBJ_LIMIT'}.get(model.status, 'UNKNOWN'),
-            'runtime': model.Runtime,
-            'obj_val': model.ObjVal if model.status == GRB.OPTIMAL else None,
-            'obj_bound': model.ObjBound if model.status == GRB.OPTIMAL else None,
-            'mip_gap': model.MIPGap if hasattr(model, 'MIPGap') else None,
-            'node_count': model.NodeCount if hasattr(model, 'NodeCount') else None,
-            'simplex_iterations': model.IterCount if hasattr(model, 'IterCount') else None,
-            'barrier_iterations': model.BarIterCount if hasattr(model, 'BarIterCount') else None,
-            'num_vars': model.NumVars,
-            'num_constrs': model.NumConstrs,
-            'num_sos': model.NumSOS if hasattr(model, 'NumSOS') else None,
-            'num_qconstrs': model.NumQConstrs if hasattr(model, 'NumQConstrs') else None,
-            'num_genconstrs': model.NumGenConstrs if hasattr(model, 'NumGenConstrs') else None,
-            'num_nzs': model.NumNZs if hasattr(model, 'NumNZs') else None,
-            'num_int_vars': model.NumIntVars if hasattr(model, 'NumIntVars') else None,
-            'num_bin_vars': model.NumBinVars if hasattr(model, 'NumBinVars') else None,
-            'is_mip': model.IsMIP,
-            'is_qp': model.IsQP,
-            'is_qcp': model.IsQCP,
-            'skipped_constraints': skipped_constraints,
-        }
-        
-        result = []
-        if model.status == GRB.OPTIMAL:
-            for row_idx in range(total_rows):
-                row_dict = {}
-                
-                # Extract QI column values
-                for qi_col in all_qi_cols:
-                    for qi_val in qi_domains[qi_col]:
-                        if x[row_idx][qi_col][qi_val].X > 0.5:
-                            row_dict[qi_col] = qi_val
-                            break
-                
-                # Extract target value
-                for target_val in all_target_vals:
-                    if y[row_idx][target_val].X > 0.5:
-                        row_dict['val'] = target_val
-                        break
-                
-                result.append(row_dict)
-        
-    else:
-        # Use OR-Tools solver
-        print("Using OR-Tools CP-SAT solver")
-        model = cp_model.CpModel()
-        
-        # Step 2: Create binary variables
-        x = {}  # x[row_idx][qi_col][qi_val]
-        for row_idx in range(total_rows):
-            x[row_idx] = {}
-            for qi_col in all_qi_cols:
-                x[row_idx][qi_col] = {}
-                for qi_val in qi_domains[qi_col]:
-                    x[row_idx][qi_col][qi_val] = model.NewBoolVar(
-                        f'x_{row_idx}_{qi_col}_{qi_val}'
-                    )
-        
-        y = {}  # y[row_idx][target_val]
-        for row_idx in range(total_rows):
-            y[row_idx] = {}
-            for target_val in all_target_vals:
-                y[row_idx][target_val] = model.NewBoolVar(
-                    f'y_{row_idx}_{target_val}'
-                )
-        
-        # Display variables
-        print("\n=== MODEL VARIABLES ===")
-        total_x_vars = sum(len(qi_domains[col]) for col in all_qi_cols) * total_rows
-        total_y_vars = len(all_target_vals) * total_rows
-        print(f"Binary variables x[row][qi_col][qi_val]: {total_x_vars}")
-        print(f"Binary variables y[row][target_val]: {total_y_vars}")
-        print(f"Total variables: {total_x_vars + total_y_vars}")
-        
-        print("\n=== MODEL CONSTRAINTS ===")
-        
-        # Step 3: Add basic assignment constraints
-        print("\n1. Each row must have exactly one value per QI column:")
-        for row_idx in range(total_rows):
-            for qi_col in all_qi_cols:
-                model.Add(
-                    sum(x[row_idx][qi_col][qi_val] for qi_val in qi_domains[qi_col]) == 1
-                )
-                num_equations += 1
-        print(f"  Total: {total_rows * len(all_qi_cols)} constraints")
-        
-        print("\n2. Each row must have exactly one target value:")
-        for row_idx in range(total_rows):
-            model.Add(
-                sum(y[row_idx][target_val] for target_val in all_target_vals) == 1
-            )
-            num_equations += 1
-        print(f"  Total: {total_rows} constraints")
-        
-        # Step 4: Add partial-match counting constraints
-        print("\n3. Partial-match counting constraints (with auxiliary variables):")
-        match_constraints_count = 0
-        skipped_constraints = 0
-        
-        for sample_idx, sample in enumerate(samples):
-            qi_cols = sample['qi_cols']
-            qi_vals = sample['qi_vals']
-            noisy_counts = sample['noisy_counts']
-            
-            for count_info in noisy_counts:
-                target_val = count_info['val']
-                noisy_count = count_info['count']
-                
-                # Clamp bounds: lower >= 0, upper <= total_rows
-                lower_bound_val = max(0, noisy_count - noise)
-                upper_bound_val = min(total_rows, noisy_count + noise)
-                
-                # Skip if constraint provides no information (covers entire range)
-                if lower_bound_val == 0 and upper_bound_val == total_rows:
-                    skipped_constraints += 2
-                    continue
-                
-                # Create auxiliary match variables for each row
-                match_vars = []
-                for row_idx in range(total_rows):
-                    match_var = model.NewBoolVar(
-                        f'match_{sample_idx}_{row_idx}_{target_val}'
-                    )
-                    
-                    # Build list of variables that must all be 1 for a match
-                    and_vars = []
-                    for col, val in zip(qi_cols, qi_vals):
-                        and_vars.append(x[row_idx][col][val])
-                    and_vars.append(y[row_idx][target_val])
-                    
-                    # Add AND constraint using AddBoolAnd
-                    model.AddBoolAnd(and_vars).OnlyEnforceIf(match_var)
-                    model.AddBoolOr([v.Not() for v in and_vars]).OnlyEnforceIf(match_var.Not())
-                    num_equations += 2  # Count both implications
-                    
-                    match_vars.append(match_var)
-                
-                # Add counting constraints
-                total_matches = sum(match_vars)
-                model.Add(total_matches >= lower_bound_val)
-                model.Add(total_matches <= upper_bound_val)
-                num_equations += 2
-                match_constraints_count += 2
-        
-        print(f"  Auxiliary match variables created for each sample-target-row combination")
-        print(f"  Counting constraints (upper and lower bounds): {match_constraints_count}")
-        if skipped_constraints > 0:
-            print(f"  Skipped: {skipped_constraints} redundant constraints (covering entire range)")
-        
-        print(f"\n=== TOTAL EQUATIONS: {num_equations} ===\n")
-        
-        # Step 5: Solve and extract solution
-        solver = cp_model.CpSolver()
-        
-        # Set random seed if provided
-        if seed is not None:
-            solver.parameters.random_seed = seed
-        
-        status = solver.Solve(model)
-        
-        # Collect OR-Tools metrics
-        solver_metrics = {
-            'solver': 'ortools',
-            'status': status,
-            'status_string': {0: 'UNKNOWN', 1: 'MODEL_INVALID', 2: 'FEASIBLE', 3: 'INFEASIBLE', 4: 'OPTIMAL'}.get(status, 'UNKNOWN'),
-            'runtime': solver.WallTime(),
-            'user_time': solver.UserTime(),
-            'obj_val': solver.ObjectiveValue() if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else None,
-            'best_obj_bound': solver.BestObjectiveBound() if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else None,
-            'num_booleans': solver.NumBooleans(),
-            'num_conflicts': solver.NumConflicts(),
-            'num_branches': solver.NumBranches(),
-            'num_binary_propagations': solver.NumBinaryPropagations(),
-            'num_integer_propagations': solver.NumIntegerPropagations(),
-            'skipped_constraints': skipped_constraints,
-        }
-        
-        result = []
-        if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-            for row_idx in range(total_rows):
-                row_dict = {}
-                
-                # Extract QI column values
-                for qi_col in all_qi_cols:
-                    for qi_val in qi_domains[qi_col]:
-                        if solver.Value(x[row_idx][qi_col][qi_val]) == 1:
-                            row_dict[qi_col] = qi_val
-                            break
-                
-                # Extract target value
-                for target_val in all_target_vals:
-                    if solver.Value(y[row_idx][target_val]) == 1:
-                        row_dict['val'] = target_val
-                        break
-                
-                result.append(row_dict)
-    
-    return result, num_equations, solver_metrics
-
-
-def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total_rows: int, all_qi_cols: List[str], known_qi_rows: List[Dict], seed: int = None) -> tuple[List[Dict], int, Dict]:
+def reconstruct_by_aggregate_and_known_qi(
+    samples: List[Dict],
+    noise: int,
+    total_rows: int,
+    all_qi_cols: List[str],
+    known_qi_rows: List[Dict],
+    seed: int = None,
+    use_objective: bool = False,
+    time_limit_seconds: Optional[float] = None,
+    slack_limit_multiple: int = 3,
+) -> tuple[List[Dict], int, Dict]:
     """Reconstructs rows with QI column values and target values from aggregate samples with known QI constraints.
     
     This extends reconstruct_by_aggregate by adding constraints that force specific QI column value
@@ -857,6 +621,12 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
             At least one reconstructed row must match each known QI row combination.
             Can be empty list.
         seed: Random seed for solver (default: None)
+        use_objective: If True, soften noisy count bounds with slack variables and
+            minimize total slack. If False, keep exact hard bounds only.
+        time_limit_seconds: Optional solve time limit. If provided, solver returns
+            best incumbent found when limit is reached.
+        slack_limit_multiple: Integer multiplier for per-constraint slack upper bounds.
+            Slack upper bound is (slack_limit_multiple * noise).
     
     Returns:
         Tuple of (reconstructed_rows, num_equations, solver_metrics)
@@ -867,6 +637,17 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
     Raises:
         ValueError: If validation fails (structure issues, infeasibility, invalid values)
     """
+    if time_limit_seconds is not None and time_limit_seconds <= 0:
+        raise ValueError("time_limit_seconds must be > 0 when provided")
+    if noise < 0:
+        raise ValueError("noise must be >= 0")
+    if slack_limit_multiple < 0:
+        raise ValueError("slack_limit_multiple must be >= 0")
+    if int(slack_limit_multiple) != slack_limit_multiple:
+        raise ValueError("slack_limit_multiple must be an integer")
+    slack_limit_multiple = int(slack_limit_multiple)
+    slack_limit = slack_limit_multiple * max(1, noise) if use_objective else 0
+
     # Step 1: Validate inputs and extract domains
     all_qi_cols_set = set(all_qi_cols)
     qi_domains = {col: set() for col in all_qi_cols}
@@ -942,6 +723,8 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
         # Set random seed if provided
         if seed is not None:
             model.setParam('Seed', seed)
+        if time_limit_seconds is not None:
+            model.setParam('TimeLimit', float(time_limit_seconds))
         
         # Track auxiliary variable counts (created later)
         match_aux_vars = 0
@@ -1002,13 +785,14 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
         print("\n3. Partial-match counting constraints (with auxiliary variables):")
         match_constraints_count = 0
         skipped_constraints = 0
+        objective_terms = []
         
         for sample_idx, sample in enumerate(samples):
             qi_cols = sample['qi_cols']
             qi_vals = sample['qi_vals']
             noisy_counts = sample['noisy_counts']
             
-            for count_info in noisy_counts:
+            for count_idx, count_info in enumerate(noisy_counts):
                 target_val = count_info['val']
                 noisy_count = count_info['count']
                 
@@ -1045,8 +829,26 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
                 
                 # Add counting constraints
                 total_matches = gp.quicksum(match_vars)
-                model.addConstr(total_matches >= lower_bound_val)
-                model.addConstr(total_matches <= upper_bound_val)
+                if use_objective:
+                    under_slack = model.addVar(
+                        vtype=GRB.INTEGER,
+                        lb=0,
+                        ub=slack_limit,
+                        name=f"under_{sample_idx}_{count_idx}_{target_val}",
+                    )
+                    over_slack = model.addVar(
+                        vtype=GRB.INTEGER,
+                        lb=0,
+                        ub=slack_limit,
+                        name=f"over_{sample_idx}_{count_idx}_{target_val}",
+                    )
+                    objective_terms.append(under_slack)
+                    objective_terms.append(over_slack)
+                    model.addConstr(total_matches + under_slack >= lower_bound_val)
+                    model.addConstr(total_matches - over_slack <= upper_bound_val)
+                else:
+                    model.addConstr(total_matches >= lower_bound_val)
+                    model.addConstr(total_matches <= upper_bound_val)
                 num_equations += 2
                 match_constraints_count += 2
         
@@ -1092,10 +894,21 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
         print(f"  Gurobi NumConstrs                 : {model.NumConstrs}")
 
         print(f"\n=== TOTAL EQUATIONS: {num_equations} ===\n")
-        
+
+        if use_objective:
+            model.setObjective(gp.quicksum(objective_terms), GRB.MINIMIZE)
+            print(
+                "Objective enabled: minimize total bound violations "
+                f"(per-side slack <= {slack_limit} = {slack_limit_multiple} * noise)"
+            )
+
         # Step 7: Solve and extract solution
-        model.optimize()
-        
+        if use_objective:
+            model.optimize(_gurobi_stop_on_zero_obj)
+        else:
+            model.optimize()
+
+        has_solution = model.SolCount > 0
         # Collect Gurobi metrics
         solver_metrics = {
             'solver': 'gurobi',
@@ -1105,8 +918,8 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
                             9: 'TIME_LIMIT', 10: 'SOLUTION_LIMIT', 11: 'INTERRUPTED', 
                             12: 'NUMERIC', 13: 'SUBOPTIMAL', 14: 'INPROGRESS', 15: 'USER_OBJ_LIMIT'}.get(model.status, 'UNKNOWN'),
             'runtime': model.Runtime,
-            'obj_val': model.ObjVal if model.status == GRB.OPTIMAL else None,
-            'obj_bound': model.ObjBound if model.status == GRB.OPTIMAL else None,
+            'obj_val': model.ObjVal if has_solution else None,
+            'obj_bound': model.ObjBound if has_solution else None,
             'mip_gap': model.MIPGap if hasattr(model, 'MIPGap') else None,
             'node_count': model.NodeCount if hasattr(model, 'NodeCount') else None,
             'simplex_iterations': model.IterCount if hasattr(model, 'IterCount') else None,
@@ -1124,10 +937,24 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
             'is_qcp': model.IsQCP,
             'skipped_constraints': skipped_constraints,
             'num_known_qi_rows': len(known_qi_rows),
+            'used_objective': use_objective,
+            'time_limit_seconds': time_limit_seconds,
+            'slack_limit_multiple': slack_limit_multiple,
+            'slack_limit': slack_limit if use_objective else None,
+            'perfect_objective_found': bool(use_objective and has_solution and abs(model.ObjVal) <= 1e-9),
+            'objective_bound': (
+                0.0
+                if (use_objective and has_solution and abs(model.ObjVal) <= 1e-9)
+                else (
+                    float(abs(model.ObjVal))
+                    if (use_objective and has_solution)
+                    else (0.0 if (not use_objective and has_solution) else None)
+                )
+            ),
         }
         
         result = []
-        if model.status == GRB.OPTIMAL:
+        if has_solution:
             for row_idx in range(total_rows):
                 row_dict = {}
                 
@@ -1153,6 +980,7 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
         
         # Track auxiliary variable counts (created later)
         match_aux_vars = 0
+        objective_terms = []
 
         # Step 3: Create binary variables
         x = {}  # x[row_idx][qi_col][qi_val]
@@ -1211,7 +1039,7 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
             qi_vals = sample['qi_vals']
             noisy_counts = sample['noisy_counts']
             
-            for count_info in noisy_counts:
+            for count_idx, count_info in enumerate(noisy_counts):
                 target_val = count_info['val']
                 noisy_count = count_info['count']
                 
@@ -1247,8 +1075,24 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
                 
                 # Add counting constraints
                 total_matches = sum(match_vars)
-                model.Add(total_matches >= lower_bound_val)
-                model.Add(total_matches <= upper_bound_val)
+                if use_objective:
+                    under_slack = model.NewIntVar(
+                        0,
+                        slack_limit,
+                        f'under_{sample_idx}_{count_idx}_{target_val}',
+                    )
+                    over_slack = model.NewIntVar(
+                        0,
+                        slack_limit,
+                        f'over_{sample_idx}_{count_idx}_{target_val}',
+                    )
+                    objective_terms.append(under_slack)
+                    objective_terms.append(over_slack)
+                    model.Add(total_matches + under_slack >= lower_bound_val)
+                    model.Add(total_matches - over_slack <= upper_bound_val)
+                else:
+                    model.Add(total_matches >= lower_bound_val)
+                    model.Add(total_matches <= upper_bound_val)
                 num_equations += 2
                 match_constraints_count += 2
         
@@ -1287,15 +1131,28 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
         print(f"  Counted equations (num_equations): {num_equations}")
 
         print(f"\n=== TOTAL EQUATIONS: {num_equations} ===\n")
-        
+
+        if use_objective:
+            model.Minimize(sum(objective_terms))
+            print(
+                "Objective enabled: minimize total bound violations "
+                f"(per-side slack <= {slack_limit} = {slack_limit_multiple} * noise)"
+            )
+
         # Step 7: Solve and extract solution
         solver = cp_model.CpSolver()
         
         # Set random seed if provided
         if seed is not None:
             solver.parameters.random_seed = seed
+        if time_limit_seconds is not None:
+            solver.parameters.max_time_in_seconds = float(time_limit_seconds)
         
-        status = solver.Solve(model)
+        if use_objective:
+            zero_obj_callback = _StopAtZeroObjectiveCallback()
+            status = solver.SolveWithSolutionCallback(model, zero_obj_callback)
+        else:
+            status = solver.Solve(model)
         
         # Collect OR-Tools metrics
         solver_metrics = {
@@ -1313,6 +1170,28 @@ def reconstruct_by_aggregate_and_known_qi(samples: List[Dict], noise: int, total
             'num_integer_propagations': solver.NumIntegerPropagations(),
             'skipped_constraints': skipped_constraints,
             'num_known_qi_rows': len(known_qi_rows),
+            'used_objective': use_objective,
+            'time_limit_seconds': time_limit_seconds,
+            'slack_limit_multiple': slack_limit_multiple,
+            'slack_limit': slack_limit if use_objective else None,
+            'perfect_objective_found': bool(
+                use_objective
+                and status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
+                and abs(solver.ObjectiveValue()) <= 1e-9
+            ),
+            'objective_bound': (
+                0.0
+                if (
+                    use_objective
+                    and status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
+                    and abs(solver.ObjectiveValue()) <= 1e-9
+                )
+                else (
+                    float(abs(solver.ObjectiveValue()))
+                    if (use_objective and status in [cp_model.OPTIMAL, cp_model.FEASIBLE])
+                    else (0.0 if (not use_objective and status in [cp_model.OPTIMAL, cp_model.FEASIBLE]) else None)
+                )
+            ),
         }
         
         result = []
