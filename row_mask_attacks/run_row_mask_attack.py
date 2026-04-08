@@ -25,9 +25,10 @@ solve_type_map = {
     'agg_known': 'ak',
 }
 
-DEFAULT_USE_OBJECTIVE = False
+DEFAULT_USE_OBJECTIVE = True
 DEFAULT_TIME_LIMIT_SECONDS = 432000
-DEFAULT_SLACK_LIMIT_MULTIPLE = 3
+DEFAULT_SLACK_LIMIT_MULTIPLE = 2
+DEFAULT_SLACK_LIMIT_MIN = 10
 
 def _sanitize_filename_part(value: str) -> str:
     """Keep only filename-safe characters and collapse others to underscores."""
@@ -610,6 +611,7 @@ def attack_loop(nrows: int,
                 use_objective: bool = DEFAULT_USE_OBJECTIVE,
                 time_limit_seconds: int = DEFAULT_TIME_LIMIT_SECONDS,
                 slack_limit_multiple: int = DEFAULT_SLACK_LIMIT_MULTIPLE,
+                slack_limit_min: int = DEFAULT_SLACK_LIMIT_MIN,
                 path_to_dataset: str = '',
                 target_column: str = '',
                 output_file: Path = None,
@@ -633,6 +635,7 @@ def attack_loop(nrows: int,
         use_objective: If True, use slack-minimization objective in reconstruction.
         time_limit_seconds: Solver time limit in seconds for each reconstruction call.
         slack_limit_multiple: Per-side slack upper bound multiplier on noise.
+        slack_limit_min: Minimum slack limit (default: 10)
         path_to_dataset: Relative or absolute path to .parquet dataset (default: '')
         target_column: Target column name in dataset to map to 'val' (default: '')
         output_file: Path to JSON file to save results incrementally (default: None)
@@ -890,6 +893,7 @@ def attack_loop(nrows: int,
                 use_objective=use_objective,
                 time_limit_seconds=time_limit_seconds,
                 slack_limit_multiple=slack_limit_multiple,
+                slack_limit_min=slack_limit_min,
             )
             accuracy = measure_by_row(df, reconstructed)
         elif solve_type == 'agg_known':
@@ -901,6 +905,7 @@ def attack_loop(nrows: int,
                     use_objective=use_objective,
                     time_limit_seconds=time_limit_seconds,
                     slack_limit_multiple=slack_limit_multiple,
+                    slack_limit_min=slack_limit_min,
                 )
                 accuracy = measure_by_row(df, reconstructed)
                 qi_match_accuracy = 1.0
@@ -941,6 +946,7 @@ def attack_loop(nrows: int,
                     use_objective=use_objective,
                     time_limit_seconds=time_limit_seconds,
                     slack_limit_multiple=slack_limit_multiple,
+                    slack_limit_min=slack_limit_min,
                 )
                 accuracy_measure = measure_by_aggregate(df, reconstructed)
                 accuracy = accuracy_measure['qi_and_val_match']
@@ -1062,6 +1068,7 @@ def attack_loop(nrows: int,
             'use_objective': use_objective,
             'time_limit_seconds': time_limit_seconds,
             'slack_limit_multiple': slack_limit_multiple,
+            'slack_limit_min': slack_limit_min,
             'path_to_dataset': path_to_dataset,
             'target_column': target_column,
             'max_samples': max_samples,
@@ -1126,6 +1133,8 @@ def main():
                        help='Solver time limit in seconds')
     parser.add_argument('--slack_limit_multiple', type=int, default=None,
                        help='Per-side slack upper bound multiplier on noise')
+    parser.add_argument('--slack_limit_min', type=int, default=None,
+                       help='Minimum slack limit')
     parser.add_argument('--path_to_dataset', type=str, default=None,
                        help='Path to a .parquet dataset, relative to current working directory')
     parser.add_argument('--target_column', type=str, default=None,
@@ -1206,6 +1215,7 @@ def main():
         args.use_objective is not None,
         args.time_limit_seconds is not None,
         args.slack_limit_multiple is not None,
+        args.slack_limit_min is not None,
         args.path_to_dataset is not None,
         args.target_column is not None,
     ])
@@ -1229,6 +1239,7 @@ def main():
             'use_objective': args.use_objective if args.use_objective is not None else defaults['use_objective'],
             'time_limit_seconds': args.time_limit_seconds if args.time_limit_seconds is not None else defaults['time_limit_seconds'],
             'slack_limit_multiple': args.slack_limit_multiple if args.slack_limit_multiple is not None else defaults['slack_limit_multiple'],
+            'slack_limit_min': args.slack_limit_min if args.slack_limit_min is not None else defaults['slack_limit_min'],
             'path_to_dataset': args.path_to_dataset if args.path_to_dataset is not None else defaults['path_to_dataset'],
             'target_column': args.target_column if args.target_column is not None else defaults['target_column'],
         }
@@ -1283,6 +1294,7 @@ def main():
             slack_limit_multiple=params['slack_limit_multiple'],
             path_to_dataset=params['path_to_dataset'],
             target_column=params['target_column'],
+            slack_limit_min=params['slack_limit_min'],
             output_file=file_path,
             cur_attack_results=cur_attack_results_list,
         )
@@ -1334,6 +1346,7 @@ def main():
                 'use_objective',
                 'time_limit_seconds',
                 'slack_limit_multiple',
+                'slack_limit_min',
                 'path_to_dataset',
                 'target_column',
                 'target_accuracy',
@@ -1360,6 +1373,9 @@ def main():
             if 'slack_limit_multiple' in missing_cols:
                 results_df['slack_limit_multiple'] = defaults['slack_limit_multiple']
                 missing_cols.remove('slack_limit_multiple')
+            if 'slack_limit_min' in missing_cols:
+                results_df['slack_limit_min'] = defaults['slack_limit_min']
+                missing_cols.remove('slack_limit_min')
             if missing_cols:
                 print(f"Warning: {result_parquet} missing columns {missing_cols}; skipping finished filter.")
             else:
@@ -1375,6 +1391,7 @@ def main():
                     'max_samples',
                     'time_limit_seconds',
                     'slack_limit_multiple',
+                    'slack_limit_min',
                     'seed',
                 }
                 results_df.loc[results_df['solve_type'] != 'agg_known', 'known_qi_fraction'] = 1.0
@@ -1437,6 +1454,7 @@ def main():
         use_objective_list = normalize_grid_value(exp.get('use_objective', [defaults['use_objective']]))
         time_limit_seconds_list = normalize_grid_value(exp.get('time_limit_seconds', [defaults['time_limit_seconds']]))
         slack_limit_multiple_list = normalize_grid_value(exp.get('slack_limit_multiple', [defaults['slack_limit_multiple']]))
+        slack_limit_min_list = normalize_grid_value(exp.get('slack_limit_min', [defaults['slack_limit_min']]))
         path_to_dataset_list = [
             '' if _is_missing_dataset_arg(path) else str(path)
             for path in normalize_grid_value(exp.get('path_to_dataset', [defaults['path_to_dataset']]))

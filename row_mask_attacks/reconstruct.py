@@ -56,7 +56,8 @@ def reconstruct_by_row(
     seed: int = None,
     use_objective: bool = False,
     time_limit_seconds: Optional[float] = None,
-    slack_limit_multiple: int = 3,
+    slack_limit_multiple: int = 2,
+    slack_limit_min: int = 10,
 ) -> tuple[List[Dict], int, Dict]:
     """ Reconstructs the value associated with each ID from noisy count samples.
     
@@ -72,7 +73,7 @@ def reconstruct_by_row(
             best incumbent found when limit is reached.
         slack_limit_multiple: Integer multiplier for per-constraint slack upper bounds.
             Slack upper bound is (slack_limit_multiple * noise).
-    
+        slack_limit_min: Minimum slack limit. If the calculated slack limit is below this value, it will be set to this minimum.
     Returns:
         Tuple of (reconstructed_values, num_equations, solver_metrics)
         - reconstructed_values: List of dicts with 'id' (int) and 'val' (int)
@@ -99,7 +100,12 @@ def reconstruct_by_row(
     if int(slack_limit_multiple) != slack_limit_multiple:
         raise ValueError("slack_limit_multiple must be an integer")
     slack_limit_multiple = int(slack_limit_multiple)
-    slack_limit = slack_limit_multiple * max(1, noise) if use_objective else 0
+    if slack_limit_min < 0:
+        raise ValueError("slack_limit_min must be >= 0")
+    if int(slack_limit_min) != slack_limit_min:
+        raise ValueError("slack_limit_min must be an integer")
+    slack_limit_min = int(slack_limit_min)
+    slack_limit = slack_limit_multiple * max(slack_limit_min, noise) if use_objective else 0
     
     num_equations = 0
     constraints_list = []
@@ -247,7 +253,7 @@ def reconstruct_by_row(
             model.setObjective(gp.quicksum(objective_terms), GRB.MINIMIZE)
             print(
                 "Objective enabled: minimize total bound violations "
-                f"(per-side slack <= {slack_limit} = {slack_limit_multiple} * noise)"
+                f"(per-side slack <= {slack_limit} = max({slack_limit_min}, {slack_limit_multiple} * noise))"
             )
 
         # Solve the model
@@ -287,6 +293,7 @@ def reconstruct_by_row(
             'used_objective': use_objective,
             'time_limit_seconds': time_limit_seconds,
             'slack_limit_multiple': slack_limit_multiple,
+            'slack_limit_min': slack_limit_min,
             'slack_limit': slack_limit if use_objective else None,
             'perfect_objective_found': bool(use_objective and has_solution and abs(model.ObjVal) <= 1e-9),
             'objective_bound': (
@@ -440,7 +447,7 @@ def reconstruct_by_row(
             model.Minimize(sum(objective_terms))
             print(
                 "Objective enabled: minimize total bound violations "
-                f"(per-side slack <= {slack_limit} = {slack_limit_multiple} * noise)"
+                f"(per-side slack <= {slack_limit} = max({slack_limit_min}, {slack_limit_multiple} * noise))"
             )
 
         # Solve the model
@@ -476,6 +483,7 @@ def reconstruct_by_row(
             'used_objective': use_objective,
             'time_limit_seconds': time_limit_seconds,
             'slack_limit_multiple': slack_limit_multiple,
+            'slack_limit_min': slack_limit_min,
             'slack_limit': slack_limit if use_objective else None,
             'perfect_objective_found': bool(
                 use_objective
@@ -603,6 +611,7 @@ def reconstruct_by_aggregate_and_known_qi(
     use_objective: bool = False,
     time_limit_seconds: Optional[float] = None,
     slack_limit_multiple: int = 3,
+    slack_limit_min: int = 10,
 ) -> tuple[List[Dict], int, Dict]:
     """Reconstructs rows with QI column values and target values from aggregate samples with known QI constraints.
     
@@ -627,6 +636,7 @@ def reconstruct_by_aggregate_and_known_qi(
             best incumbent found when limit is reached.
         slack_limit_multiple: Integer multiplier for per-constraint slack upper bounds.
             Slack upper bound is (slack_limit_multiple * noise).
+        slack_limit_min: Minimum slack limit. If the calculated slack limit is below this value, it will be set to this minimum.
     
     Returns:
         Tuple of (reconstructed_rows, num_equations, solver_metrics)
@@ -646,7 +656,12 @@ def reconstruct_by_aggregate_and_known_qi(
     if int(slack_limit_multiple) != slack_limit_multiple:
         raise ValueError("slack_limit_multiple must be an integer")
     slack_limit_multiple = int(slack_limit_multiple)
-    slack_limit = slack_limit_multiple * max(1, noise) if use_objective else 0
+    if slack_limit_min < 0:
+        raise ValueError("slack_limit_min must be >= 0")
+    if int(slack_limit_min) != slack_limit_min:
+        raise ValueError("slack_limit_min must be an integer")
+    slack_limit_min = int(slack_limit_min)
+    slack_limit = slack_limit_multiple * max(slack_limit_min, noise) if use_objective else 0
 
     # Step 1: Validate inputs and extract domains
     all_qi_cols_set = set(all_qi_cols)
@@ -899,7 +914,7 @@ def reconstruct_by_aggregate_and_known_qi(
             model.setObjective(gp.quicksum(objective_terms), GRB.MINIMIZE)
             print(
                 "Objective enabled: minimize total bound violations "
-                f"(per-side slack <= {slack_limit} = {slack_limit_multiple} * noise)"
+                f"(per-side slack <= {slack_limit} = max({slack_limit_min}, {slack_limit_multiple} * noise))"
             )
 
         # Step 7: Solve and extract solution
@@ -940,6 +955,7 @@ def reconstruct_by_aggregate_and_known_qi(
             'used_objective': use_objective,
             'time_limit_seconds': time_limit_seconds,
             'slack_limit_multiple': slack_limit_multiple,
+            'slack_limit_min': slack_limit_min,
             'slack_limit': slack_limit if use_objective else None,
             'perfect_objective_found': bool(use_objective and has_solution and abs(model.ObjVal) <= 1e-9),
             'objective_bound': (
@@ -1136,7 +1152,7 @@ def reconstruct_by_aggregate_and_known_qi(
             model.Minimize(sum(objective_terms))
             print(
                 "Objective enabled: minimize total bound violations "
-                f"(per-side slack <= {slack_limit} = {slack_limit_multiple} * noise)"
+                f"(per-side slack <= {slack_limit} = max({slack_limit_min}, {slack_limit_multiple} * noise))"
             )
 
         # Step 7: Solve and extract solution
@@ -1173,6 +1189,7 @@ def reconstruct_by_aggregate_and_known_qi(
             'used_objective': use_objective,
             'time_limit_seconds': time_limit_seconds,
             'slack_limit_multiple': slack_limit_multiple,
+            'slack_limit_min': slack_limit_min,
             'slack_limit': slack_limit if use_objective else None,
             'perfect_objective_found': bool(
                 use_objective

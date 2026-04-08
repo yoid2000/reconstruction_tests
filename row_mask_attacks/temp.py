@@ -3,6 +3,14 @@ from pathlib import Path
 import pandas as pd
 
 
+def _coerce_bool(series: pd.Series) -> pd.Series:
+    if series.dtype == bool:
+        return series.fillna(False)
+
+    lowered = series.astype(str).str.strip().str.lower()
+    return lowered.isin({"true", "1", "yes", "y", "t"})
+
+
 def main() -> None:
     base_dir = Path(__file__).resolve().parent
     results_dir = base_dir / "results"
@@ -15,24 +23,33 @@ def main() -> None:
         raise FileNotFoundError(f"Missing files directory: {files_dir}")
 
     df = pd.read_parquet(parquet_path)
-    required_cols = {"solver_metrics_status", "filename"}
-    missing_cols = required_cols - set(df.columns)
-    if missing_cols:
-        raise ValueError(f"result.parquet is missing required columns: {sorted(missing_cols)}")
+    required_cols = {"filename", "final_attack"}
+    missing = required_cols - set(df.columns)
+    if missing:
+        raise ValueError(f"result.parquet missing required columns: {sorted(missing)}")
 
-    infeasible_mask = pd.to_numeric(df["solver_metrics_status"], errors="coerce") == 3
-    rows_to_remove = int(infeasible_mask.sum())
-    if rows_to_remove == 0:
-        print("No rows with solver_metrics_status == 3. Nothing to do.")
+    filename_series = df["filename"].astype("string")
+    valid_filename_mask = filename_series.notna()
+    final_attack_true = _coerce_bool(df["final_attack"])
+    has_true_per_filename = final_attack_true[valid_filename_mask].groupby(filename_series[valid_filename_mask]).any()
+    missing_true_filenames = sorted(has_true_per_filename[~has_true_per_filename].index.astype(str))
+
+    print(
+        "Number of distinct filenames with no row where final_attack==True: "
+        f"{len(missing_true_filenames)}"
+    )
+    for name in missing_true_filenames:
+        print(name)
+
+    if len(missing_true_filenames) == 0:
+        print("No cleanup required.")
         return
-
-    target_filenames = sorted(set(df.loc[infeasible_mask, "filename"].dropna().astype(str)))
 
     deleted_files = 0
     missing_files = 0
     delete_failures: list[tuple[str, Exception]] = []
-    for file_name in target_filenames:
-        target_path = files_dir / Path(file_name).name
+    for filename in missing_true_filenames:
+        target_path = files_dir / Path(filename).name
         if not target_path.exists():
             missing_files += 1
             continue
@@ -43,21 +60,23 @@ def main() -> None:
             delete_failures.append((str(target_path), exc))
 
     if delete_failures:
-        print("Failed to delete one or more files; result.parquet was not modified.")
+        print("Failed to delete one or more files; parquet file was not modified.")
         for path, exc in delete_failures:
             print(f"  {path}: {exc}")
         raise RuntimeError(f"Could not delete {len(delete_failures)} files.")
 
-    df_clean = df.loc[~infeasible_mask].copy()
-    tmp_path = parquet_path.with_name(f"{parquet_path.stem}.tmp.parquet")
-    df_clean.to_parquet(tmp_path, index=False)
-    tmp_path.replace(parquet_path)
+    rows_before = len(df)
+    keep_mask = ~filename_series.isin(missing_true_filenames)
+    cleaned_df = df.loc[keep_mask].copy()
 
-    print(f"Rows removed from result.parquet: {rows_to_remove}")
-    print(f"Unique target files: {len(target_filenames)}")
+    tmp_parquet_path = parquet_path.with_name(f"{parquet_path.stem}.tmp.parquet")
+    cleaned_df.to_parquet(tmp_parquet_path, index=False)
+    tmp_parquet_path.replace(parquet_path)
+
     print(f"Files deleted: {deleted_files}")
     print(f"Files already missing: {missing_files}")
-    print(f"Rows remaining: {len(df_clean)}")
+    print(f"Rows removed from result.parquet: {rows_before - len(cleaned_df)}")
+    print(f"Rows remaining in result.parquet: {len(cleaned_df)}")
 
 
 if __name__ == "__main__":
