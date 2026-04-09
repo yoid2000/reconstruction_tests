@@ -22,18 +22,18 @@ def main() -> None:
 
     filename_series = df["filename"].astype("string")
     valid_filename_mask = filename_series.notna()
-    exit_reason_is_empty = (
-        df["exit_reason"].fillna("").astype(str).str.strip().eq("")
-    )
-    has_empty_exit_reason = (
+    exit_reason_is_empty = df["exit_reason"].fillna("").astype(str).str.strip().eq("")
+    all_rows_empty_exit_reason = (
         exit_reason_is_empty[valid_filename_mask]
         .groupby(filename_series[valid_filename_mask])
-        .any()
+        .all()
     )
-    target_filenames = sorted(has_empty_exit_reason[has_empty_exit_reason].index.astype(str))
+    target_filenames = sorted(
+        all_rows_empty_exit_reason[all_rows_empty_exit_reason].index.astype(str)
+    )
 
     print(
-        "Number of distinct filenames with at least one row where exit_reason=='': "
+        "Number of distinct filenames where all rows have exit_reason=='': "
         f"{len(target_filenames)}"
     )
     for name in target_filenames:
