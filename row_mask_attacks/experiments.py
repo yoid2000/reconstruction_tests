@@ -80,7 +80,7 @@ experiments = [
         'known_qi_fraction': [1.0],
     },
     {   # Agg known test known_qi_fraction with defaults
-        'dont_run': True,
+        'dont_run': False,
         'used_in_paper': True,
         'experiment_group': 'agg_known_defaults',
         'slurm_run': 5,
@@ -96,7 +96,7 @@ experiments = [
         'known_qi_fraction': [0, 0.25, 0.5, 0.75, 1.0],
     },
     {   # Agg known best, known_qi_fraction
-        'dont_run': True,
+        'dont_run': False,
         'used_in_paper': True,
         'experiment_group': 'agg_known_best',
         'slurm_run': 6,
@@ -112,7 +112,7 @@ experiments = [
         'known_qi_fraction': [0.0, 0.25, 0.5, 0.75, 1.0],
     },
     {   # Agg known probe overall
-        'dont_run': True,
+        'dont_run': False,
         'used_in_paper': True,
         'experiment_group': 'probe_agg_known',
         'slurm_run': 7,
