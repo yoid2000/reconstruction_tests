@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 import pprint
 import argparse
+from itertools import product
 from anonymity_loss_coefficient import brm_attack_simple
 
 pp = pprint.PrettyPrinter(indent=2)
@@ -26,7 +27,7 @@ solve_type_map = {
 }
 
 DEFAULT_USE_OBJECTIVE = True
-DEFAULT_TIME_LIMIT_SECONDS = 432000
+DEFAULT_TIME_LIMIT_SECONDS = (3 * 24 * 60 * 60)  # 3 days in seconds
 DEFAULT_SLACK_LIMIT_MULTIPLE = 2
 DEFAULT_SLACK_LIMIT_MIN = 10
 
@@ -72,6 +73,10 @@ def get_dataset_generation_params(path_to_dataset: str, target_column: str) -> D
         
 def generate_filename(params, target_accuracy) -> str:
     """ Generate a filename string based on attack parameters. """
+    slack_limit_multiple = int(params.get('slack_limit_multiple', DEFAULT_SLACK_LIMIT_MULTIPLE))
+    slack_limit_min = int(params.get('slack_limit_min', DEFAULT_SLACK_LIMIT_MIN))
+    slack_str = f"_slm{slack_limit_multiple}_sln{slack_limit_min}"
+
     path_to_dataset = params.get('path_to_dataset')
     target_column = params.get('target_column')
     if not _is_missing_dataset_arg(path_to_dataset) and not _is_missing_dataset_arg(target_column):
@@ -95,7 +100,7 @@ def generate_filename(params, target_accuracy) -> str:
             f"ds{dataset_stem}_tc{target_label}_h{dataset_hash}_"
             f"mf{params['mask_size']}_n{params['noise']}_mnr{params['min_num_rows']}{max_qi_str}_"
             f"st{solve_type_map[params['solve_type']]}_"
-            f"ms{params['max_samples']}_ta{int(target_accuracy*100)}{kqf_str}{seed_str}"
+            f"ms{params['max_samples']}_ta{int(target_accuracy*100)}{kqf_str}{seed_str}{slack_str}"
         )
 
     vals_per_qi = params['vals_per_qi']
@@ -120,7 +125,7 @@ def generate_filename(params, target_accuracy) -> str:
                 f"nu{params['nunique']}_qi{params['nqi']}_n{params['noise']}_"
                 f"mnr{params['min_num_rows']}_vpq{vals_per_qi}{max_qi_str}{corr_strength_str}_"
                 f"st{solve_type_map[params['solve_type']]}_"
-                f"ms{params['max_samples']}_ta{int(target_accuracy*100)}{kqf_str}{seed_str}")
+                f"ms{params['max_samples']}_ta{int(target_accuracy*100)}{kqf_str}{seed_str}{slack_str}")
     return file_name
 
 def get_and_process_data(path_to_dataset: str,
@@ -477,14 +482,21 @@ def initialize_samples(df, mask_size, nunique, noise):
         })
     return initial_samples
 
-def initialize_qi_samples(df: pd.DataFrame, nunique: int, noise: int, qi_subsets: List[Dict]) -> tuple[List[Dict], int]:
-    """Create initial samples from QI subsets ensuring all IDs appear at once.
+def initialize_qi_samples(
+    df: pd.DataFrame,
+    nunique: int,
+    noise: int,
+    qi_subsets: List[Dict],
+    solve_type: str,
+) -> tuple[List[Dict], int]:
+    """Create initial samples from QI subsets for aggregate reconstruction.
     
     Args:
         df: DataFrame with 'id' and 'val' columns
         nunique: Number of unique values
         noise: Noise bound for counts (±noise)
         qi_subsets: List of QI subsets from get_qi_subset_list()
+        solve_type: Aggregate solve type ('agg_row' or 'agg_known')
     
     Returns:
         Tuple of (initial_samples, next_qi_index)
@@ -495,18 +507,25 @@ def initialize_qi_samples(df: pd.DataFrame, nunique: int, noise: int, qi_subsets
     all_ids = set(df['id'].values)
     covered_ids = set()
     qi_index = 0
-    
-    # Loop through qi_subsets until all IDs are covered
-    while len(covered_ids) < len(all_ids) and qi_index < len(qi_subsets):
-        # Get masked IDs for this subset
-        masked_ids = get_qi_subsets_mask(df, qi_subsets, qi_index)
-        qi_cols = qi_subsets[qi_index]['qi_cols']
-        qi_vals = qi_subsets[qi_index]['qi_vals']
-        
+
+    if solve_type == 'agg_known':
+        # Prioritize single-column predicates so QI value coverage can be reached quickly.
+        one_col_subsets = [subset for subset in qi_subsets if len(subset.get('qi_cols', [])) == 1]
+        other_subsets = [subset for subset in qi_subsets if len(subset.get('qi_cols', [])) != 1]
+        qi_subsets[:] = one_col_subsets + other_subsets
+
+    all_qi_cols = sorted([col for col in df.columns if col.startswith('qi')])
+    all_qi_values = {
+        col: set(int(val) for val in df[col].drop_duplicates().tolist())
+        for col in all_qi_cols
+    }
+    covered_qi_values = {col: set() for col in all_qi_cols}
+
+    def add_sample(masked_ids: Set[int], qi_cols: List[str], qi_vals: List[int]) -> None:
         # Get exact counts for each value in the masked subset
         masked_df = df[df['id'].isin(masked_ids)]
         exact_counts = masked_df['val'].value_counts().to_dict()
-        
+
         # Add noise to counts
         noisy_counts = []
         for val in range(nunique):
@@ -514,7 +533,7 @@ def initialize_qi_samples(df: pd.DataFrame, nunique: int, noise: int, qi_subsets
             noise_delta = np.random.randint(-noise, noise + 1)
             noisy_count = max(0, exact_count + noise_delta)
             noisy_counts.append({'val': val, 'count': noisy_count})
-        
+
         # Add sample
         initial_samples.append({
             'ids': masked_ids,
@@ -522,11 +541,25 @@ def initialize_qi_samples(df: pd.DataFrame, nunique: int, noise: int, qi_subsets
             'qi_vals': qi_vals,
             'noisy_counts': noisy_counts
         })
-        
-        # Update covered IDs
+
+        # Update covered IDs and covered QI values
         covered_ids.update(masked_ids)
+        for col, val in zip(qi_cols, qi_vals):
+            covered_qi_values[col].add(int(val))
+
+    # Consume qi_subsets in order until required coverage is met, or subsets are exhausted.
+    while qi_index < len(qi_subsets):
+        needs_id_coverage = len(covered_ids) < len(all_ids)
+        needs_qi_value_coverage = solve_type == 'agg_known' and (len(qi_subsets[qi_index]['qi_cols']) == 1)
+        if not (needs_id_coverage or needs_qi_value_coverage):
+            break
+        masked_ids = get_qi_subsets_mask(df, qi_subsets, qi_index)
+        qi_cols = qi_subsets[qi_index]['qi_cols']
+        qi_vals = [int(v) for v in qi_subsets[qi_index]['qi_vals']]
+        print(f"sample {qi_cols} and {qi_vals}")
+        add_sample(masked_ids, qi_cols, qi_vals)
         qi_index += 1
-    
+
     return initial_samples, qi_index
 
 def get_best_refine(attack_results: List[Dict]) -> int:
@@ -757,7 +790,7 @@ def attack_loop(nrows: int,
     all_qi_cols = [col for col in df.columns if col.startswith('qi')]
     if solve_type in ['agg_row', 'agg_known']:
         qi_subsets = get_qi_subset_list(df, min_num_rows, int(round(min_num_rows * nunique * 1.5)), max_qi)
-        working_samples, qi_index = initialize_qi_samples(df, nunique, noise, qi_subsets)
+        working_samples, qi_index = initialize_qi_samples(df, nunique, noise, qi_subsets, solve_type)
         print(f"Total QI subsets available: {len(qi_subsets)}. qi_index {qi_index}.")
     else:
         working_samples = initialize_samples(df, mask_size, nunique, noise)
@@ -768,49 +801,78 @@ def attack_loop(nrows: int,
     
     num_suppressed = 0
 
-    def add_next_aggregate_sample(samples: List[Dict], qi_index: int, avg_num_masked: float) -> tuple[bool, int, float]:
-        """Append the next usable aggregate sample from qi_subsets.
+    def add_aggregate_sample_once(samples: List[Dict], qi_index: int, avg_num_masked: float) -> tuple[bool, int, float]:
+        """Try exactly one subset index and advance qi_index by one.
 
         Returns:
             (added, next_qi_index, updated_avg_num_masked)
-            - added: True if a sample was appended, False if no more usable subsets exist.
+            - added: True if a sample was appended, False if subset produced no usable noisy counts.
         """
         nonlocal num_suppressed
-        while qi_index < len(qi_subsets):
-            masked_ids = get_qi_subsets_mask(df, qi_subsets, qi_index)
-            avg_num_masked += len(masked_ids)
-            qi_cols = qi_subsets[qi_index]['qi_cols']
-            qi_vals = qi_subsets[qi_index]['qi_vals']
-            qi_index += 1
+        if qi_index >= len(qi_subsets):
+            return False, qi_index, avg_num_masked
 
-            # Get exact counts for each value in the masked subset
-            masked_df = df[df['id'].isin(masked_ids)]
-            exact_counts = masked_df['val'].value_counts().to_dict()
+        masked_ids = get_qi_subsets_mask(df, qi_subsets, qi_index)
+        avg_num_masked += len(masked_ids)
+        qi_cols = qi_subsets[qi_index]['qi_cols']
+        qi_vals = qi_subsets[qi_index]['qi_vals']
+        qi_index += 1
 
-            # Add noise to counts
-            noisy_counts = []
-            for val in range(nunique):
-                exact_count = exact_counts.get(val, 0)
-                if exact_count < min_num_rows:
-                    num_suppressed += 1
-                    continue
-                noise_delta = np.random.randint(-noise, noise + 1)
-                noisy_count = max(0, exact_count + noise_delta)
-                noisy_counts.append({'val': val, 'count': noisy_count})
+        # Get exact counts for each value in the masked subset
+        masked_df = df[df['id'].isin(masked_ids)]
+        exact_counts = masked_df['val'].value_counts().to_dict()
 
-            if len(noisy_counts) == 0:
-                # No counts above min_num_rows, skip this subset and keep searching.
+        # Add noise to counts
+        noisy_counts = []
+        for val in range(nunique):
+            exact_count = exact_counts.get(val, 0)
+            if exact_count < min_num_rows:
+                num_suppressed += 1
                 continue
+            noise_delta = np.random.randint(-noise, noise + 1)
+            noisy_count = max(0, exact_count + noise_delta)
+            noisy_counts.append({'val': val, 'count': noisy_count})
 
-            samples.append({
-                'ids': masked_ids,
-                'qi_cols': qi_cols,            # for agg_known attacks
-                'qi_vals': qi_vals,            # for agg_known attacks
-                'noisy_counts': noisy_counts
-            })
-            return True, qi_index, avg_num_masked
+        if len(noisy_counts) == 0:
+            return False, qi_index, avg_num_masked
 
+        samples.append({
+            'ids': masked_ids,
+            'qi_cols': qi_cols,            # for agg_known attacks
+            'qi_vals': qi_vals,            # for agg_known attacks
+            'noisy_counts': noisy_counts
+        })
+        return True, qi_index, avg_num_masked
+
+    def add_next_aggregate_sample(samples: List[Dict], qi_index: int, avg_num_masked: float) -> tuple[bool, int, float]:
+        """Append the next usable aggregate sample from qi_subsets."""
+        while qi_index < len(qi_subsets):
+            added, qi_index, avg_num_masked = add_aggregate_sample_once(samples, qi_index, avg_num_masked)
+            if added:
+                return True, qi_index, avg_num_masked
         return False, qi_index, avg_num_masked
+
+    def choose_best_subset_index_for_missing(qi_index: int, missing_qi_cols: Set[str]) -> tuple[Optional[int], int]:
+        """Pick remaining subset index that covers the most currently-missing QI columns."""
+        best_index = None
+        best_gain = 0
+        for candidate_index in range(qi_index, len(qi_subsets)):
+            candidate_cols = set(qi_subsets[candidate_index]['qi_cols'])
+            gain = len(candidate_cols & missing_qi_cols)
+            if gain > best_gain:
+                best_gain = gain
+                best_index = candidate_index
+                if gain == len(missing_qi_cols):
+                    break
+        return best_index, best_gain
+
+    def get_qi_coverage(samples: List[Dict]) -> tuple[set[str], List[str]]:
+        """Return covered QI columns and missing QI columns for current samples."""
+        covered_qi_cols = set()
+        for sample in samples:
+            covered_qi_cols.update(sample.get('qi_cols', []))
+        missing_qi_cols = [col for col in all_qi_cols if col not in covered_qi_cols]
+        return covered_qi_cols, missing_qi_cols
 
     while True:
         current_refine = refine_count
@@ -863,24 +925,69 @@ def attack_loop(nrows: int,
 
         # For aggregate-known reconstruction, ensure sampled predicates touch all QI columns.
         if solve_type == 'agg_known' and known_qi_fraction != 1.0:
-            covered_qi_cols = set()
-            for sample in samples:
-                covered_qi_cols.update(sample.get('qi_cols', []))
-            missing_qi_cols = [col for col in all_qi_cols if col not in covered_qi_cols]
+            covered_qi_cols, missing_qi_cols = get_qi_coverage(samples)
+            print(
+                "QI coverage check before solve: "
+                f"covered={len(covered_qi_cols)}/{len(all_qi_cols)}, "
+                f"missing={len(missing_qi_cols)}, qi_index={qi_index}/{len(qi_subsets)}"
+            )
             if len(missing_qi_cols) > 0:
                 print(
                     f"QI coverage incomplete before solve ({len(missing_qi_cols)} missing columns). "
                     "Adding more aggregate samples."
                 )
+                print(f"Missing QI columns: {missing_qi_cols}")
+            coverage_samples_added = 0
             while len(missing_qi_cols) > 0:
-                added, qi_index, avg_num_masked = add_next_aggregate_sample(samples, qi_index, avg_num_masked)
-                if not added:
-                    print("Could not achieve full QI column coverage; proceeding to solver.")
+                missing_set = set(missing_qi_cols)
+                best_index, best_gain = choose_best_subset_index_for_missing(qi_index, missing_set)
+                if best_index is None or best_gain == 0:
+                    print(
+                        "No remaining QI subset can cover missing columns; proceeding to solver. "
+                        f"missing={len(missing_qi_cols)}, qi_index={qi_index}/{len(qi_subsets)}"
+                    )
+                    print(f"Still missing QI columns: {missing_qi_cols}")
                     break
-                covered_qi_cols = set()
-                for sample in samples:
-                    covered_qi_cols.update(sample.get('qi_cols', []))
-                missing_qi_cols = [col for col in all_qi_cols if col not in covered_qi_cols]
+
+                if best_index != qi_index:
+                    qi_subsets[qi_index], qi_subsets[best_index] = qi_subsets[best_index], qi_subsets[qi_index]
+
+                selected_cols = qi_subsets[qi_index]['qi_cols']
+                print(
+                    "Selected targeted coverage subset "
+                    f"at qi_index={qi_index} covering up to {best_gain} missing columns: "
+                    f"qi_cols={selected_cols}"
+                )
+
+                added, qi_index, avg_num_masked = add_aggregate_sample_once(samples, qi_index, avg_num_masked)
+                if not added:
+                    print(
+                        "Targeted subset produced no usable noisy counts (suppressed); "
+                        f"qi_index advanced to {qi_index}/{len(qi_subsets)}"
+                    )
+                    continue
+
+                coverage_samples_added += 1
+                new_sample = samples[-1]
+                print(
+                    "Added coverage sample "
+                    f"#{coverage_samples_added} using subset_index={qi_index - 1}: "
+                    f"qi_cols={new_sample.get('qi_cols', [])}, "
+                    f"matched_rows={len(new_sample.get('ids', []))}, "
+                    f"noisy_count_bins={len(new_sample.get('noisy_counts', []))}"
+                )
+                pp.pprint(new_sample)
+                covered_qi_cols, missing_qi_cols = get_qi_coverage(samples)
+                print(
+                    "QI coverage progress: "
+                    f"covered={len(covered_qi_cols)}/{len(all_qi_cols)}, "
+                    f"missing={len(missing_qi_cols)}, qi_index={qi_index}/{len(qi_subsets)}"
+                )
+            if len(missing_qi_cols) == 0:
+                print(
+                    "QI coverage satisfied before solve. "
+                    f"Coverage samples added in this pass: {coverage_samples_added}."
+                )
         
         # Reconstruct and measure
         print(f"Begin {solve_type} reconstruction with {len(samples)} samples\n    (current_num_samples={current_num_samples}, working_samples={len(working_samples)}, qi_index={qi_index}, num_suppressed={num_suppressed})")
@@ -994,11 +1101,7 @@ def attack_loop(nrows: int,
         solver_status_string = solver_metrics.get('status_string', 'UNKNOWN')
 
         # Check stopping conditions
-        if solve_type in ['agg_row', 'agg_known'] and qi_index >= len(qi_subsets):
-            print("Exit loop: No more QI subsets to use")
-            finished = True
-            exit_reason = 'no_more_qi_subsets'
-        elif solver_status == 3:
+        if solver_status == 3:
             print(
                 "Exit loop: Solver returned infeasible "
                 f"(status={solver_status}, {solver_status_string})"
@@ -1012,6 +1115,10 @@ def attack_loop(nrows: int,
             )
             finished = True
             exit_reason = 'out_of_bounds_solution'
+        elif solve_type in ['agg_row', 'agg_known'] and qi_index >= len(qi_subsets):
+            print("Exit loop: No more QI subsets to use")
+            finished = True
+            exit_reason = 'no_more_qi_subsets'
         else:
             if has_target_accuracy:
                 best_failure, best_success = get_refine_bounds()
@@ -1185,6 +1292,7 @@ def main():
         'use_objective': DEFAULT_USE_OBJECTIVE,
         'time_limit_seconds': DEFAULT_TIME_LIMIT_SECONDS,
         'slack_limit_multiple': DEFAULT_SLACK_LIMIT_MULTIPLE,
+        'slack_limit_min': DEFAULT_SLACK_LIMIT_MIN,
         'path_to_dataset': '',
         'target_column': '',
     }
@@ -1492,68 +1600,96 @@ def main():
         max_qi_list = normalize_grid_value(exp.get('max_qi', [defaults['max_qi']]))
         corr_strength_list = normalize_grid_value(exp.get('corr_strength', [defaults['corr_strength']]))
 
-        for nrows in exp['nrows']:
-            for mask_size in exp['mask_size']:
-                for nunique in exp['nunique']:
-                    for noise in exp['noise']:
-                        for nqi in exp['nqi']:
-                            for max_qi in max_qi_list:
-                                for min_num_rows in exp['min_num_rows']:
-                                    for vals_per_qi in exp['vals_per_qi']:
-                                        for corr_strength in corr_strength_list:
-                                            for known_qi_fraction in known_qi_fraction_list:
-                                                for use_objective in use_objective_list:
-                                                    for time_limit_seconds in time_limit_seconds_list:
-                                                        for slack_limit_multiple in slack_limit_multiple_list:
-                                                            for path_to_dataset in path_to_dataset_list:
-                                                                for target_column in target_column_list:
-                                                                    path_missing = _is_missing_dataset_arg(path_to_dataset)
-                                                                    target_missing = _is_missing_dataset_arg(target_column)
-                                                                    if path_missing != target_missing:
-                                                                        continue
-                                                                    for seed in seed_list:
-                                                                        effective_nrows = nrows
-                                                                        effective_nunique = nunique
-                                                                        effective_nqi = nqi
-                                                                        effective_vals_per_qi = vals_per_qi
-                                                                        effective_corr_strength = corr_strength
-                                                                        if not path_missing:
-                                                                            dataset_params = get_dataset_params_cached(path_to_dataset, target_column)
-                                                                            effective_nrows = dataset_params['nrows']
-                                                                            effective_nunique = dataset_params['nunique']
-                                                                            effective_nqi = dataset_params['nqi']
-                                                                            # Revert synthetic generation knobs to defaults.
-                                                                            effective_vals_per_qi = defaults['vals_per_qi']
-                                                                            effective_corr_strength = defaults['corr_strength']
-                                                                        params = {
-                                                                            'nrows': effective_nrows,
-                                                                            'solve_type': exp['solve_type'],
-                                                                            'mask_size': mask_size,
-                                                                            'nunique': effective_nunique,
-                                                                            'noise': noise,
-                                                                            'nqi': effective_nqi,
-                                                                            'min_num_rows': min_num_rows,
-                                                                            'vals_per_qi': effective_vals_per_qi,
-                                                                            'corr_strength': effective_corr_strength,
-                                                                            'known_qi_fraction': known_qi_fraction,
-                                                                            'max_qi': max_qi,
-                                                                            'max_samples': max_samples,
-                                                                            'seed': seed,
-                                                                            'use_objective': bool(use_objective),
-                                                                            'time_limit_seconds': int(time_limit_seconds),
-                                                                            'slack_limit_multiple': int(slack_limit_multiple),
-                                                                            'path_to_dataset': path_to_dataset,
-                                                                            'target_column': target_column,
-                                                                        }
-                                                                        key = generate_filename(params, target_accuracy)
-                                                                        if key in finished_param_keys:
-                                                                            num_finished_jobs += 1
-                                                                            #print(f"Matched: {key}")
-                                                                            continue
-                                                                        if key not in seen:
-                                                                            seen.add(key)
-                                                                            #print(f"Adding: {key}")
-                                                                            test_params.append(params)
+        valid_dataset_pairs = []
+        for path_to_dataset in path_to_dataset_list:
+            for target_column in target_column_list:
+                path_missing = _is_missing_dataset_arg(path_to_dataset)
+                target_missing = _is_missing_dataset_arg(target_column)
+                if path_missing != target_missing:
+                    continue
+                valid_dataset_pairs.append((path_to_dataset, target_column, path_missing))
+
+        grid_axes = [
+            exp['nrows'],
+            exp['mask_size'],
+            exp['nunique'],
+            exp['noise'],
+            exp['nqi'],
+            max_qi_list,
+            exp['min_num_rows'],
+            exp['vals_per_qi'],
+            corr_strength_list,
+            known_qi_fraction_list,
+            use_objective_list,
+            time_limit_seconds_list,
+            slack_limit_multiple_list,
+            slack_limit_min_list,
+            valid_dataset_pairs,
+            seed_list,
+        ]
+
+        for (
+            nrows,
+            mask_size,
+            nunique,
+            noise,
+            nqi,
+            max_qi,
+            min_num_rows,
+            vals_per_qi,
+            corr_strength,
+            known_qi_fraction,
+            use_objective,
+            time_limit_seconds,
+            slack_limit_multiple,
+            slack_limit_min,
+            dataset_pair,
+            seed,
+        ) in product(*grid_axes):
+            path_to_dataset, target_column, path_missing = dataset_pair
+            effective_nrows = nrows
+            effective_nunique = nunique
+            effective_nqi = nqi
+            effective_vals_per_qi = vals_per_qi
+            effective_corr_strength = corr_strength
+            if not path_missing:
+                dataset_params = get_dataset_params_cached(path_to_dataset, target_column)
+                effective_nrows = dataset_params['nrows']
+                effective_nunique = dataset_params['nunique']
+                effective_nqi = dataset_params['nqi']
+                # Revert synthetic generation knobs to defaults.
+                effective_vals_per_qi = defaults['vals_per_qi']
+                effective_corr_strength = defaults['corr_strength']
+            params = {
+                'nrows': effective_nrows,
+                'solve_type': exp['solve_type'],
+                'mask_size': mask_size,
+                'nunique': effective_nunique,
+                'noise': noise,
+                'nqi': effective_nqi,
+                'min_num_rows': min_num_rows,
+                'vals_per_qi': effective_vals_per_qi,
+                'corr_strength': effective_corr_strength,
+                'known_qi_fraction': known_qi_fraction,
+                'max_qi': max_qi,
+                'max_samples': max_samples,
+                'seed': seed,
+                'use_objective': bool(use_objective),
+                'time_limit_seconds': int(time_limit_seconds),
+                'slack_limit_multiple': int(slack_limit_multiple),
+                'slack_limit_min': int(slack_limit_min),
+                'path_to_dataset': path_to_dataset,
+                'target_column': target_column,
+            }
+            key = generate_filename(params, target_accuracy)
+            if key in finished_param_keys:
+                num_finished_jobs += 1
+                #print(f"Matched: {key}")
+                continue
+            if key not in seen:
+                seen.add(key)
+                #print(f"Adding: {key}")
+                test_params.append(params)
     
     # If no job_num, just print all combinations
     if job_num is None:
@@ -1634,6 +1770,7 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
         use_objective=params['use_objective'],
         time_limit_seconds=params['time_limit_seconds'],
         slack_limit_multiple=params['slack_limit_multiple'],
+        slack_limit_min=params['slack_limit_min'],
         path_to_dataset=params.get('path_to_dataset'),
         target_column=params.get('target_column'),
         output_file=file_path,

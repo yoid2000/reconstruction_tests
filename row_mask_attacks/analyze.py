@@ -9,7 +9,7 @@ import sys
 import pprint as pp
 pp = pp.PrettyPrinter(indent=2)
 
-grouping_cols = ['max_qi', 'solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'use_objective', 'time_limit_seconds', 'slack_limit_multiple', 'target_accuracy', 'supp_thresh', 'known_qi_fraction', 'corr_strength', 'path_to_dataset', 'target_column']
+grouping_cols = ['max_qi', 'solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'use_objective', 'time_limit_seconds', 'slack_limit_multiple', 'slack_limit_min', 'target_accuracy', 'supp_thresh', 'known_qi_fraction', 'corr_strength', 'path_to_dataset', 'target_column']
 group_max_cols = ['solver_metrics_runtime']
 group_median_cols = ['solver_metrics_runtime']
 grouping_cols_seed = grouping_cols + ['seed']
@@ -789,8 +789,9 @@ def prep_data() -> pd.DataFrame:
                     {'col': 'solver_metrics_skipped_constraints', 'value': -1},
                     {'col': 'corr_strength', 'value': 0.0},
                     {'col': 'use_objective', 'value': False},
-                    {'col': 'time_limit_seconds', 'value': 432000},
-                    {'col': 'slack_limit_multiple', 'value': 3},
+                    {'col': 'time_limit_seconds', 'value': (3 * 24 * 60 * 60)},  # 3 days in seconds
+                    {'col': 'slack_limit_multiple', 'value': 2},
+                    {'col': 'slack_limit_min', 'value': 10},
                     {'col': 'path_to_dataset', 'value': ""},
                     {'col': 'target_column', 'value': ""},
                     {'col': 'actual_vals_per_qi', 'value': 0},

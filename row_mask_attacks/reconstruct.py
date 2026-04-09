@@ -55,7 +55,7 @@ def reconstruct_by_row(
     noise: int,
     seed: int = None,
     use_objective: bool = False,
-    time_limit_seconds: Optional[float] = None,
+    time_limit_seconds: Optional[float] = (3 * 24 * 60 * 60),  # 3 days in seconds
     slack_limit_multiple: int = 2,
     slack_limit_min: int = 10,
 ) -> tuple[List[Dict], int, Dict]:
@@ -105,7 +105,7 @@ def reconstruct_by_row(
     if int(slack_limit_min) != slack_limit_min:
         raise ValueError("slack_limit_min must be an integer")
     slack_limit_min = int(slack_limit_min)
-    slack_limit = slack_limit_multiple * max(slack_limit_min, noise) if use_objective else 0
+    slack_limit = max(slack_limit_min, slack_limit_multiple * noise) if use_objective else 0
     
     num_equations = 0
     constraints_list = []
@@ -609,8 +609,8 @@ def reconstruct_by_aggregate_and_known_qi(
     known_qi_rows: List[Dict],
     seed: int = None,
     use_objective: bool = False,
-    time_limit_seconds: Optional[float] = None,
-    slack_limit_multiple: int = 3,
+    time_limit_seconds: Optional[float] = (3 * 24 * 60 * 60),  # 3 days in seconds
+    slack_limit_multiple: int = 2,
     slack_limit_min: int = 10,
 ) -> tuple[List[Dict], int, Dict]:
     """Reconstructs rows with QI column values and target values from aggregate samples with known QI constraints.
@@ -661,7 +661,7 @@ def reconstruct_by_aggregate_and_known_qi(
     if int(slack_limit_min) != slack_limit_min:
         raise ValueError("slack_limit_min must be an integer")
     slack_limit_min = int(slack_limit_min)
-    slack_limit = slack_limit_multiple * max(slack_limit_min, noise) if use_objective else 0
+    slack_limit = max(slack_limit_min, slack_limit_multiple * noise) if use_objective else 0
 
     # Step 1: Validate inputs and extract domains
     all_qi_cols_set = set(all_qi_cols)
