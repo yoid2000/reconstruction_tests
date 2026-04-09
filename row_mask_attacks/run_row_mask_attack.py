@@ -556,7 +556,6 @@ def initialize_qi_samples(
         masked_ids = get_qi_subsets_mask(df, qi_subsets, qi_index)
         qi_cols = qi_subsets[qi_index]['qi_cols']
         qi_vals = [int(v) for v in qi_subsets[qi_index]['qi_vals']]
-        print(f"sample {qi_cols} and {qi_vals}")
         add_sample(masked_ids, qi_cols, qi_vals)
         qi_index += 1
 
