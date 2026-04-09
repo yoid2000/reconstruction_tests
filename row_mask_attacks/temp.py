@@ -3,14 +3,6 @@ from pathlib import Path
 import pandas as pd
 
 
-def _coerce_bool(series: pd.Series) -> pd.Series:
-    if series.dtype == bool:
-        return series.fillna(False)
-
-    lowered = series.astype(str).str.strip().str.lower()
-    return lowered.isin({"true", "1", "yes", "y", "t"})
-
-
 def main() -> None:
     base_dir = Path(__file__).resolve().parent
     results_dir = base_dir / "results"
@@ -23,32 +15,38 @@ def main() -> None:
         raise FileNotFoundError(f"Missing files directory: {files_dir}")
 
     df = pd.read_parquet(parquet_path)
-    required_cols = {"filename", "final_attack"}
+    required_cols = {"filename", "exit_reason"}
     missing = required_cols - set(df.columns)
     if missing:
         raise ValueError(f"result.parquet missing required columns: {sorted(missing)}")
 
     filename_series = df["filename"].astype("string")
     valid_filename_mask = filename_series.notna()
-    final_attack_true = _coerce_bool(df["final_attack"])
-    has_true_per_filename = final_attack_true[valid_filename_mask].groupby(filename_series[valid_filename_mask]).any()
-    missing_true_filenames = sorted(has_true_per_filename[~has_true_per_filename].index.astype(str))
+    exit_reason_is_empty = (
+        df["exit_reason"].fillna("").astype(str).str.strip().eq("")
+    )
+    has_empty_exit_reason = (
+        exit_reason_is_empty[valid_filename_mask]
+        .groupby(filename_series[valid_filename_mask])
+        .any()
+    )
+    target_filenames = sorted(has_empty_exit_reason[has_empty_exit_reason].index.astype(str))
 
     print(
-        "Number of distinct filenames with no row where final_attack==True: "
-        f"{len(missing_true_filenames)}"
+        "Number of distinct filenames with at least one row where exit_reason=='': "
+        f"{len(target_filenames)}"
     )
-    for name in missing_true_filenames:
+    for name in target_filenames:
         print(name)
 
-    if len(missing_true_filenames) == 0:
+    if len(target_filenames) == 0:
         print("No cleanup required.")
         return
 
     deleted_files = 0
     missing_files = 0
     delete_failures: list[tuple[str, Exception]] = []
-    for filename in missing_true_filenames:
+    for filename in target_filenames:
         target_path = files_dir / Path(filename).name
         if not target_path.exists():
             missing_files += 1
@@ -66,7 +64,7 @@ def main() -> None:
         raise RuntimeError(f"Could not delete {len(delete_failures)} files.")
 
     rows_before = len(df)
-    keep_mask = ~filename_series.isin(missing_true_filenames)
+    keep_mask = ~filename_series.isin(target_filenames)
     cleaned_df = df.loc[keep_mask].copy()
 
     tmp_parquet_path = parquet_path.with_name(f"{parquet_path.stem}.tmp.parquet")

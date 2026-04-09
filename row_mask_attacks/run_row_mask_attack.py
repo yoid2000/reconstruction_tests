@@ -1422,7 +1422,7 @@ def main():
     
     # Generate test parameter combinations
     max_time_minutes = int((60*24) * (24/24) * 7)   # We'll set slurm to this
-    max_memory = '20G'
+    max_memory = '10G'
     # 2 minutes for overhead, convert to seconds, then divide by 20 to safely allow for multiple runs
     time_include_threshold_seconds =  ((max_time_minutes-2) * 60) / 20
     test_params = []
