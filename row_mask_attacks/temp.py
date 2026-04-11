@@ -1,9 +1,23 @@
+import argparse
 from pathlib import Path
 
 import pandas as pd
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=(
+            "List filenames whose rows all have empty exit_reason. "
+            "Use --replace to delete files and rewrite result.parquet."
+        )
+    )
+    parser.add_argument(
+        "--replace",
+        action="store_true",
+        help="Apply cleanup: delete matching files and rewrite result.parquet.",
+    )
+    args = parser.parse_args()
+
     base_dir = Path(__file__).resolve().parent
     results_dir = base_dir / "results"
     parquet_path = results_dir / "result.parquet"
@@ -32,15 +46,21 @@ def main() -> None:
         all_rows_empty_exit_reason[all_rows_empty_exit_reason].index.astype(str)
     )
 
-    print(
-        "Number of distinct filenames where all rows have exit_reason=='': "
-        f"{len(target_filenames)}"
-    )
     for name in target_filenames:
         print(name)
 
     if len(target_filenames) == 0:
         print("No cleanup required.")
+        print(
+            "Number of distinct filenames where all rows have exit_reason=='': 0"
+        )
+        return
+    if not args.replace:
+        print("--replace not set. Dry run only: no files deleted and result.parquet unchanged.")
+        print(
+            "Number of distinct filenames where all rows have exit_reason=='': "
+            f"{len(target_filenames)}"
+        )
         return
 
     deleted_files = 0
@@ -75,6 +95,10 @@ def main() -> None:
     print(f"Files already missing: {missing_files}")
     print(f"Rows removed from result.parquet: {rows_before - len(cleaned_df)}")
     print(f"Rows remaining in result.parquet: {len(cleaned_df)}")
+    print(
+        "Number of distinct filenames where all rows have exit_reason=='': "
+        f"{len(target_filenames)}"
+    )
 
 
 if __name__ == "__main__":

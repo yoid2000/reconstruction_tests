@@ -1,6 +1,7 @@
 import pandas as pd
 from typing import Any, List, Dict, Set, Optional
 import numpy as np
+import gc
 import json
 import hashlib
 import os
@@ -10,10 +11,12 @@ import time
 from pathlib import Path
 import pprint
 import argparse
+from functools import partial
 from itertools import product
 from anonymity_loss_coefficient import brm_attack_simple
 
 pp = pprint.PrettyPrinter(indent=2)
+print = partial(print, flush=True)
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from df_builds.build_row_masks import build_row_masks, build_row_masks_qi, get_required_num_distinct
@@ -30,6 +33,38 @@ DEFAULT_USE_OBJECTIVE = True
 DEFAULT_TIME_LIMIT_SECONDS = (3 * 24 * 60 * 60)  # 3 days in seconds
 DEFAULT_SLACK_LIMIT_MULTIPLE = 2
 DEFAULT_SLACK_LIMIT_MIN = 10
+
+
+def _get_process_memory_mb() -> Optional[float]:
+    """Best-effort current process RSS in MB."""
+    try:
+        import psutil  # type: ignore
+        return float(psutil.Process(os.getpid()).memory_info().rss) / (1024 * 1024)
+    except Exception:
+        pass
+
+    status_path = "/proc/self/status"
+    if os.path.exists(status_path):
+        try:
+            with open(status_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            rss_kb = float(parts[1])
+                            return rss_kb / 1024.0
+        except Exception:
+            pass
+    return None
+
+
+def _print_memory_usage(label: str) -> None:
+    mem_mb = _get_process_memory_mb()
+    if mem_mb is None:
+        print(f"{label}: memory usage unavailable")
+    else:
+        print(f"{label}: memory usage {mem_mb:.2f} MB")
+
 
 def _sanitize_filename_part(value: str) -> str:
     """Keep only filename-safe characters and collapse others to underscores."""
@@ -1189,6 +1224,18 @@ def attack_loop(nrows: int,
         if output_file is not None:
             with open(output_file, 'w') as f:
                 json.dump(save_dict, f, indent=2)
+
+        # Encourage prompt memory reclamation between repeated solver calls.
+        _print_memory_usage("Before attack_loop iteration cleanup")
+        reconstructed = None
+        solver_metrics = None
+        samples = None
+        mixing = None
+        sep = None
+        current_result = None
+        alc_result = None
+        collected = gc.collect()
+        _print_memory_usage(f"After attack_loop iteration cleanup (gc_collected={collected})")
             
         if finished:
             break

@@ -1,7 +1,11 @@
 from typing import List, Dict, Optional
+import gc
+import os
+from functools import partial
 import pandas as pd
 import pprint as pp
 pp = pp.PrettyPrinter(indent=2)
+print = partial(print, flush=True)
 
 # Try to import Gurobi
 try:
@@ -29,6 +33,48 @@ class _StopAtZeroObjectiveCallback(cp_model.CpSolverSolutionCallback):
     def on_solution_callback(self):
         if self.ObjectiveValue() <= 1e-9:
             self.StopSearch()
+
+
+def _dispose_gurobi_model(model) -> None:
+    """Best-effort disposal of a Gurobi model."""
+    if model is None:
+        return
+    if hasattr(model, "dispose"):
+        try:
+            model.dispose()
+        except Exception:
+            pass
+
+
+def _get_process_memory_mb() -> Optional[float]:
+    """Best-effort current process RSS in MB."""
+    try:
+        import psutil  # type: ignore
+        return float(psutil.Process(os.getpid()).memory_info().rss) / (1024 * 1024)
+    except Exception:
+        pass
+
+    status_path = "/proc/self/status"
+    if os.path.exists(status_path):
+        try:
+            with open(status_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            rss_kb = float(parts[1])
+                            return rss_kb / 1024.0
+        except Exception:
+            pass
+    return None
+
+
+def _print_memory_usage(label: str) -> None:
+    mem_mb = _get_process_memory_mb()
+    if mem_mb is None:
+        print(f"{label}: memory usage unavailable")
+    else:
+        print(f"{label}: memory usage {mem_mb:.2f} MB")
 
 
 def check_gurobi_available() -> bool:
@@ -514,6 +560,21 @@ def reconstruct_by_row(
                         result.append({'id': id, 'val': val})
                         break
     
+    # Best-effort cleanup for long-running loops (for example, SLURM jobs).
+    _print_memory_usage("Before reconstruct_by_row cleanup")
+    x = None
+    constraints_list = None
+    sample_constraints = None
+    sum_constraints = None
+    objective_terms = None
+    if 'model' in locals():
+        _dispose_gurobi_model(model)
+        model = None
+    if 'solver' in locals():
+        solver = None
+    collected = gc.collect()
+    _print_memory_usage(f"After reconstruct_by_row cleanup (gc_collected={collected})")
+
     return result, num_equations, solver_metrics
 
 def measure_by_aggregate(df: pd.DataFrame, reconstructed: List[Dict]) -> Dict[str, float]:
@@ -1231,4 +1292,19 @@ def reconstruct_by_aggregate_and_known_qi(
                 
                 result.append(row_dict)
     
+    # Best-effort cleanup for long-running loops (for example, SLURM jobs).
+    _print_memory_usage("Before reconstruct_by_aggregate_and_known_qi cleanup")
+    x = None
+    y = None
+    objective_terms = None
+    if 'model' in locals():
+        _dispose_gurobi_model(model)
+        model = None
+    if 'solver' in locals():
+        solver = None
+    collected = gc.collect()
+    _print_memory_usage(
+        f"After reconstruct_by_aggregate_and_known_qi cleanup (gc_collected={collected})"
+    )
+
     return result, num_equations, solver_metrics
