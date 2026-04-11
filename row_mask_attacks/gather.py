@@ -101,11 +101,14 @@ def main():
 
     existing_df = None
     existing_filenames = set()
+    filenames_to_replace = set()
 
     if args.force:
         json_files_to_process = json_files
     else:
+        parquet_mtime = None
         if output_path.exists():
+            parquet_mtime = output_path.stat().st_mtime
             try:
                 existing_df = pd.read_parquet(output_path)
                 if 'filename' in existing_df.columns:
@@ -121,17 +124,32 @@ def main():
                 print(f"Error reading {output_path}: {e}. Rebuilding from scratch.")
                 existing_df = None
 
+        # Incremental mode:
+        # - always process new filenames
+        # - also reprocess existing filenames if their JSON is newer than result.parquet
         json_files_to_process = [
-            path for path in json_files if path.name not in existing_filenames
+            path
+            for path in json_files
+            if (
+                path.name not in existing_filenames
+                or (parquet_mtime is not None and path.stat().st_mtime > parquet_mtime)
+            )
         ]
+        filenames_to_replace = {
+            path.name for path in json_files_to_process if path.name in existing_filenames
+        }
 
         if existing_df is not None:
             print(
                 f"Loaded {len(existing_df)} existing rows from {len(existing_filenames)} files."
             )
+        if filenames_to_replace:
+            print(
+                f"Will refresh {len(filenames_to_replace)} file(s) newer than {output_path.name}."
+            )
 
         if not json_files_to_process:
-            print("No new JSON files to append.")
+            print("No new or updated JSON files to process.")
             if existing_df is not None:
                 print(f"Results already up to date at {output_path}")
             return
@@ -144,6 +162,10 @@ def main():
         return
 
     if existing_df is not None:
+        if filenames_to_replace:
+            existing_df = existing_df[
+                ~existing_df['filename'].astype(str).isin(filenames_to_replace)
+            ]
         df = pd.concat([existing_df, df_new], ignore_index=True)
     else:
         df = df_new
@@ -152,7 +174,7 @@ def main():
     df.to_parquet(output_path, index=False)
     
     if existing_df is not None:
-        print(f"\nAppended {len(df_new)} new rows. Total is now {len(df)} rows.")
+        print(f"\nMerged {len(df_new)} processed rows. Total is now {len(df)} rows.")
     else:
         print(f"\nSaved {len(df)} results to {output_path}")
     print(f"\nFirst few rows:")
