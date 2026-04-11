@@ -133,7 +133,7 @@ experiments = [
         'experiment_group': 'temp_',
         'slurm_run': 116,
         'solve_type': 'agg_known',
-        'seed': [0,1],
+        'seed': [0],
         'nrows': [50],
         'mask_size': [0],
         'nunique': [2],

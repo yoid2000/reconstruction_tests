@@ -1469,7 +1469,7 @@ def main():
     # Generate test parameter combinations
     max_time_minutes = int((60*24) * (24/24) * 7)   # We'll set slurm to this
     time_include_threshold_seconds = int((60*60*24) * (24/24) * 7)
-    max_memory = '20G'
+    max_memory = '30G'
     test_params = []
     
     seen = set()
