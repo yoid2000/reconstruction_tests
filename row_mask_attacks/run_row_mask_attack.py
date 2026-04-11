@@ -1468,14 +1468,20 @@ def main():
     
     # Generate test parameter combinations
     max_time_minutes = int((60*24) * (24/24) * 7)   # We'll set slurm to this
-    max_memory = '10G'
-    # 2 minutes for overhead, convert to seconds, then divide by 20 to safely allow for multiple runs
-    time_include_threshold_seconds =  ((max_time_minutes-2) * 60) / 20
+    time_include_threshold_seconds = int((60*60*24) * (24/24) * 7)
+    max_memory = '20G'
     test_params = []
     
     seen = set()
 
     finished_param_keys = set()
+    finished_param_keys_from_finished_true = set()
+    finished_param_keys_from_overtime = set()
+    finished_filter_applied = False
+    finished_filter_missing_cols: list[str] = []
+    overtime_rule_available = False
+    source_finished_rows = 0
+    source_overtime_rows = 0
     result_parquet = Path('./results/result.parquet')
     if result_parquet.exists():
         try:
@@ -1532,7 +1538,9 @@ def main():
                 missing_cols.remove('slack_limit_min')
             if missing_cols:
                 print(f"Warning: {result_parquet} missing columns {missing_cols}; skipping finished filter.")
+                finished_filter_missing_cols = list(missing_cols)
             else:
+                finished_filter_applied = True
                 int_cols = {
                     'nrows',
                     'mask_size',
@@ -1551,15 +1559,16 @@ def main():
                 results_df.loc[results_df['solve_type'] != 'agg_known', 'known_qi_fraction'] = 1.0
                 finished_df = results_df[results_df['finished'] == True]
                 print(f"Found {len(finished_df)} finished jobs in prior results.")
+                source_finished_rows = len(finished_df)
                 overtime_df = pd.DataFrame()
-                if 'final_attack' in results_df.columns and 'solver_metrics_runtime' in results_df.columns:
+                overtime_rule_available = 'solver_metrics_runtime' in results_df.columns
+                if overtime_rule_available:
                     overtime_df = results_df[
                         (results_df['finished'] == False)
-                        & (results_df['final_attack'] == True)
                         & (results_df['solver_metrics_runtime'] > time_include_threshold_seconds)
                     ]
+                    source_overtime_rows = len(overtime_df)
                 print(f"Including {len(overtime_df)} additional jobs to filter based on time threshold of {time_include_threshold_seconds} seconds.")
-                combined_df = pd.concat([finished_df, overtime_df], ignore_index=True)
 
                 def is_missing_value(value):
                     if isinstance(value, (list, dict, tuple, set)):
@@ -1569,7 +1578,7 @@ def main():
                     except (TypeError, ValueError):
                         return False
 
-                for _, row in combined_df.iterrows():
+                def row_to_filename(row: pd.Series) -> str:
                     row_params = {}
                     for col in param_cols:
                         val = row[col]
@@ -1585,10 +1594,24 @@ def main():
                             row_params[col] = bool(val)
                         else:
                             row_params[col] = val
-                    file_name = generate_filename(row_params, row_params['target_accuracy'])
-                    finished_param_keys.add(file_name)
+                    return generate_filename(row_params, row_params['target_accuracy'])
+
+                for _, row in finished_df.iterrows():
+                    file_name = row_to_filename(row)
+                    finished_param_keys_from_finished_true.add(file_name)
+                for _, row in overtime_df.iterrows():
+                    file_name = row_to_filename(row)
+                    finished_param_keys_from_overtime.add(file_name)
+
+                finished_param_keys = (
+                    finished_param_keys_from_finished_true
+                    | finished_param_keys_from_overtime
+                )
     
     num_finished_jobs = 0
+    num_finished_jobs_from_finished_true = 0
+    num_finished_jobs_from_overtime = 0
+    num_finished_jobs_from_both = 0
     for key in finished_param_keys:
         #print(f"Finished: {key}")
         pass
@@ -1730,11 +1753,17 @@ def main():
             key = generate_filename(params, target_accuracy)
             if key in finished_param_keys:
                 num_finished_jobs += 1
-                #print(f"Matched: {key}")
+                in_finished_true = key in finished_param_keys_from_finished_true
+                in_overtime = key in finished_param_keys_from_overtime
+                if in_finished_true and in_overtime:
+                    num_finished_jobs_from_both += 1
+                elif in_finished_true:
+                    num_finished_jobs_from_finished_true += 1
+                elif in_overtime:
+                    num_finished_jobs_from_overtime += 1
                 continue
             if key not in seen:
                 seen.add(key)
-                #print(f"Adding: {key}")
                 test_params.append(params)
     
     # If no job_num, just print all combinations
@@ -1772,6 +1801,47 @@ python /INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run
         
         print(f"\nSLURM file created: {slurm_file}")
         print(f"Total jobs: {len(test_params)} (array: 0-{num_jobs}). {num_finished_jobs} are already finished.")
+        print("Finished-job filter summary:")
+        if not result_parquet.exists():
+            print(f"  No prior results file found at {result_parquet}.")
+        elif not finished_filter_applied:
+            if finished_filter_missing_cols:
+                print(
+                    "  Filter skipped because result.parquet is missing required columns: "
+                    f"{finished_filter_missing_cols}"
+                )
+            else:
+                print("  Filter not applied (could not read or parse prior results).")
+        else:
+            overlap_keys = (
+                finished_param_keys_from_finished_true
+                & finished_param_keys_from_overtime
+            )
+            print(
+                "  Source condition A (finished==True): "
+                f"{source_finished_rows} rows -> {len(finished_param_keys_from_finished_true)} unique file keys"
+            )
+            if overtime_rule_available:
+                print(
+                    "  Source condition B (finished==False, "
+                    f"solver_metrics_runtime>{time_include_threshold_seconds}): "
+                    f"{source_overtime_rows} rows -> {len(finished_param_keys_from_overtime)} unique file keys"
+                )
+            else:
+                print(
+                    "  Source condition B unavailable: requires columns "
+                    "'solver_metrics_runtime'"
+                )
+            print(f"  Overlap between A and B: {len(overlap_keys)} unique file keys")
+            print(
+                "  In current parameter grid, skipped as already finished: "
+                f"{num_finished_jobs} total"
+            )
+            print(
+                f"    A only: {num_finished_jobs_from_finished_true}, "
+                f"B only: {num_finished_jobs_from_overtime}, "
+                f"A and B: {num_finished_jobs_from_both}"
+            )
         return
     
     # Check if job_num is valid

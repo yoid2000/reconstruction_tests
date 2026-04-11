@@ -4,6 +4,15 @@ from pathlib import Path
 import pandas as pd
 
 
+def _coerce_to_bool_series(series: pd.Series) -> pd.Series:
+    """Convert heterogeneous values to booleans with common true tokens."""
+    if pd.api.types.is_bool_dtype(series):
+        return series.fillna(False)
+    true_tokens = {"true", "1", "t", "yes", "y"}
+    normalized = series.fillna("").astype(str).str.strip().str.lower()
+    return normalized.isin(true_tokens)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -45,6 +54,23 @@ def main() -> None:
     target_filenames = sorted(
         all_rows_empty_exit_reason[all_rows_empty_exit_reason].index.astype(str)
     )
+    target_rows_mask = valid_filename_mask & filename_series.isin(target_filenames)
+    target_filename_series = filename_series[target_rows_mask]
+
+    filenames_with_any_final_attack_true = 0
+    filenames_with_any_finished_true = 0
+    has_final_attack_col = "final_attack" in df.columns
+    has_finished_col = "finished" in df.columns
+    if has_final_attack_col:
+        final_attack_true = _coerce_to_bool_series(df.loc[target_rows_mask, "final_attack"])
+        filenames_with_any_final_attack_true = int(
+            final_attack_true.groupby(target_filename_series).any().sum()
+        )
+    if has_finished_col:
+        finished_true = _coerce_to_bool_series(df.loc[target_rows_mask, "finished"])
+        filenames_with_any_finished_true = int(
+            finished_true.groupby(target_filename_series).any().sum()
+        )
 
     for name in target_filenames:
         print(name)
@@ -54,6 +80,10 @@ def main() -> None:
         print(
             "Number of distinct filenames where all rows have exit_reason=='': 0"
         )
+        print(
+            "Of those, filenames with at least one row where final_attack==True: 0"
+        )
+        print("Of those, filenames with at least one row where finished==True: 0")
         return
     if not args.replace:
         print("--replace not set. Dry run only: no files deleted and result.parquet unchanged.")
@@ -61,6 +91,26 @@ def main() -> None:
             "Number of distinct filenames where all rows have exit_reason=='': "
             f"{len(target_filenames)}"
         )
+        if has_final_attack_col:
+            print(
+                "Of those, filenames with at least one row where final_attack==True: "
+                f"{filenames_with_any_final_attack_true}"
+            )
+        else:
+            print(
+                "Of those, filenames with at least one row where final_attack==True: "
+                "N/A (column missing)"
+            )
+        if has_finished_col:
+            print(
+                "Of those, filenames with at least one row where finished==True: "
+                f"{filenames_with_any_finished_true}"
+            )
+        else:
+            print(
+                "Of those, filenames with at least one row where finished==True: "
+                "N/A (column missing)"
+            )
         return
 
     deleted_files = 0
@@ -99,6 +149,26 @@ def main() -> None:
         "Number of distinct filenames where all rows have exit_reason=='': "
         f"{len(target_filenames)}"
     )
+    if has_final_attack_col:
+        print(
+            "Of those, filenames with at least one row where final_attack==True: "
+            f"{filenames_with_any_final_attack_true}"
+        )
+    else:
+        print(
+            "Of those, filenames with at least one row where final_attack==True: "
+            "N/A (column missing)"
+        )
+    if has_finished_col:
+        print(
+            "Of those, filenames with at least one row where finished==True: "
+            f"{filenames_with_any_finished_true}"
+        )
+    else:
+        print(
+            "Of those, filenames with at least one row where finished==True: "
+            "N/A (column missing)"
+        )
 
 
 if __name__ == "__main__":

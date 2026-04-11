@@ -59,3 +59,4 @@ The general workflow for running experiments is then as follows:
 7. Repeat 3-6 until all experiments are run, or until the maximum `max_time_minutes` allowed by the SLURM configuration is run.
 8. Run `analyze.py --more_seeds`. If this causes additional experiments to be configured in `more_seeds_experiments.py`, then do the 3-6 loop again, using the flag `--slurm_run 0` until these are completed.
 
+Note that final_attack is set merely for the last attack in the series, and has no other meaning. Note that finished is set only when the attack loop has completed with a final result (i.e. there are no more reconstructions to try).
