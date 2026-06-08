@@ -9,7 +9,7 @@ import sys
 import pprint as pp
 pp = pp.PrettyPrinter(indent=2)
 
-grouping_cols = ['max_qi', 'solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'use_objective', 'time_limit_seconds', 'slack_limit_multiple', 'slack_limit_min', 'target_accuracy', 'supp_thresh', 'known_qi_fraction', 'corr_strength', 'path_to_dataset', 'target_column']
+grouping_cols = ['max_qi', 'solve_type', 'nrows', 'mask_size', 'nunique', 'noise', 'nqi', 'vals_per_qi', 'max_samples', 'target_accuracy', 'supp_thresh', 'known_qi_fraction', 'corr_strength', 'path_to_dataset', 'target_column']
 group_max_cols = ['solver_metrics_runtime']
 group_median_cols = ['solver_metrics_runtime']
 grouping_cols_seed = grouping_cols + ['seed']
@@ -114,6 +114,7 @@ def run_plot_by_x_y_lines(
     thresh_direction: str = "highest",
     tag: str = "",
     extra_y_cols: list = None,
+    use_thresh_mode: bool = False,
 ):
     # For standard line-threshold plots, use 0.9 for Accuracy and 0.8 for ALC.
     if np.isclose(float(thresh), 0.9):
@@ -131,6 +132,7 @@ def run_plot_by_x_y_lines(
         extra_y_cols=extra_y_cols or [],
         output_dir=metric_cfg.plots_dir,
         metric_label=metric_cfg.metric_label,
+        use_thresh_mode=use_thresh_mode,
     )
 
 
@@ -1240,11 +1242,11 @@ def do_analysis_by_x_y_lines(
     print(f"\n\nANALYSIS BY X={x_col}, Y={y_col}, LINES={lines_col}, THRESH={mapped_thresh} ({metric_cfg.metric_label})")
     print("=" * 80)
     # sort by x_col, then y_col, then lines_col, and display x_col, y_col, lines_col, and measure
-    df_sorted = df.sort_values(by=['measure', x_col, y_col, lines_col])
-    #print(df_sorted[[x_col, y_col, lines_col, 'measure']].to_string())
     exit_reasons_map = {'target_accuracy': 'targ', 
                     'no_more_qi_subsets': 'no_qi', 
-                    'max_samples': 'max', }
+                    'max_samples': 'max',
+                    'solution_infeasible': 'infe',
+                    'out_of_bounds_solution': 'oobs',}
     # make a table with x_col as rows, lines_col as columns, and exit_reason as values
     # use the exit_reasons_map to shorten the exit_reason values
     use_noise = 2
@@ -1254,17 +1256,20 @@ def do_analysis_by_x_y_lines(
     print(f"\nExit reasons table when noise = {use_noise} (x={x_col}, lines={lines_col}):")
     print(table.to_string())
 
-    for thresh in [0.80, 0.90, 0.95]:
-        run_plot_by_x_y_lines(
-            df,
-            metric_cfg,
-            x_col=x_col,
-            y_col=y_col,
-            lines_col=lines_col,
-            thresh=thresh,
-            tag=tag,
-            extra_y_cols=['mixing_avg'],
-        )
+    #for y_col_plot in ['noise', 'supp_thresh']:
+    for y_col_plot in ['noise']:
+        for thresh in [0.80, 0.90, 0.95]:
+            run_plot_by_x_y_lines(
+                df,
+                metric_cfg,
+                x_col=x_col,
+                y_col=y_col_plot,
+                lines_col=lines_col,
+                thresh=thresh,
+                tag=tag,
+                extra_y_cols=['mixing_avg'],
+                use_thresh_mode=True,
+            )
     run_plot_by_x_y_lines(df, metric_cfg, x_col=x_col, y_col='measure', lines_col=lines_col, thresh=0.9, tag=tag)
 
 

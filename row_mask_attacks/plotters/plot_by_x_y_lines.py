@@ -114,6 +114,7 @@ def plot_by_x_y_lines(
     output_dir: Optional[Path] = None,
     measure_col: str = 'measure',
     metric_label: str = 'Accuracy',
+    use_thresh_mode: bool = False,
 ):
     """Plot lowest/highest y value where measure >= threshold for each (x, lines) pair.
     
@@ -129,6 +130,9 @@ def plot_by_x_y_lines(
         thresh: Threshold for measure column (default: 0.95)
         thresh_direction: 'lowest' or 'highest' - which y value to select (default: 'lowest')
         output_dir: Directory to save plot (default: results/plots)
+        use_thresh_mode: If True, select y values via threshold mode
+            (lowest/highest y among rows with measure >= thresh). If False,
+            require one row per (x, lines) pair and use that row directly.
     """
 
     if extra_y_cols is None:
@@ -139,7 +143,7 @@ def plot_by_x_y_lines(
     output_dir.mkdir(parents=True, exist_ok=True)
     thresh_str = ''
     dir_str = ''
-    if y_col == 'noise' or x_col == 'noise':
+    if use_thresh_mode:
         thresh_str = f"{thresh:.3f}"
         dir_str = thresh_direction
     filename = f'x_{x_col}_y_{y_col}_l_{lines_col}_{thresh_str}_{dir_str}_{tag}.png'
@@ -161,7 +165,7 @@ def plot_by_x_y_lines(
                       'mixing_avg': "Mixing average",
                       'separation_average': "Separation average",
                       'max_qi': "Max QI columns",
-                      'num_suppressed': "Number suppressed",
+                      'num_suppressed': "Suppressed noisy counts",
                       'med_solver_metrics_runtime': "Median solver runtime (s)",
                    }
     dashed_columns = {'nrows': 150,
@@ -243,7 +247,7 @@ def plot_by_x_y_lines(
                 continue
             
             ylabel_note = ''
-            if lines_col == 'noise' or (y_col != 'noise' and x_col != 'noise'):
+            if not use_thresh_mode:
                 if len(df_subset) != 1:
                     # throw exception
                     for col in df_subset.columns:
