@@ -1,0 +1,38 @@
+{
+    "conductor": {
+        "poll_interval_seconds": 20,
+        "kill_signals": [
+            "SIGTERM",
+            "SIGUSR1"
+        ]
+    },
+    "remote_execution": {
+        "host": "sws-grid-submit1"
+    },
+    "defaults": {
+        "seeds": {
+            "initial_count": 1,
+            "max_count": 1
+        },
+        "resources": {
+            "time_ladder": [
+                "03:00",
+                "06:00",
+                "10:00"
+            ],
+            "memory_ladder": [
+                "256M",
+                "256M",
+                "256M"
+            ],
+            "cpus": 1,
+            "gpus": 0,
+            "partition": null,
+            "qos": null,
+            "account": null
+        }
+    },
+    "significance": {
+        "method": "none"
+    }
+}

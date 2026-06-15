@@ -833,7 +833,7 @@ def attack_loop(nrows: int,
     mixing = mixing_stats(samples)
     sep = compute_separation_metrics(samples)
 
-    actual_num_rows = int(np.mean([len(sample['ids']) for sample in samples])) if len(samples) > 0 else 0
+    mean_cell_size = int(np.mean([len(sample['ids']) for sample in samples])) if len(samples) > 0 else 0
     
     alc_result = compute_alc_measures(df, reconstructed, target_column, path_to_dataset, accuracy)
     # Record results
@@ -844,7 +844,7 @@ def attack_loop(nrows: int,
         'qi_match_accuracy': qi_match_accuracy,
         'alc': alc_result,
         'mixing': mixing,
-        'actual_num_rows': actual_num_rows,
+        'mean_cell_size': mean_cell_size,
         'solver_metrics': solver_metrics,
         'separation': sep,
         'refine': 0,
