@@ -4,7 +4,7 @@
     "venv_target": "/INS/syndiffix/work/paul/github/reconstruction_tests/.venv",
     "exp_target": "/INS/syndiffix/work/paul/github/reconstruction_tests/row_mask_attacks/run_row_mask_attack.py",
     "jobs_dir": "/INS/syndiffix/work/paul/testing/recon/jobs",
-    "recon": "/INS/syndiffix/work/paul/testing/recon/slurm_run",
+    "slurm_run_dir": "/INS/syndiffix/work/paul/testing/recon/slurm_run",
     "slurm_out_dir": "/INS/syndiffix/work/paul/testing/recon/slurm_out",
     "bookkeeping_dir": "/INS/syndiffix/work/paul/testing/recon/bookkeeping",
     "results_dir": "/INS/syndiffix/work/paul/testing/recon/results",
