@@ -17,8 +17,10 @@
         "resources": {
             "time_ladder": [
                 "05:00",
-                "60:00",
-                "10:00"
+                "01:00:00",
+                "04:00:00",
+                "1-00:00:00",
+                "6-12:00:00",
             ],
             "memory_ladder": [
                 "2G",
@@ -33,6 +35,9 @@
         }
     },
     "significance": {
-        "method": "none"
+        "method": "dynamic-wilson",
+        "success_field": "alc_attack_prc",
+        "confidence": 0.95,
+        "min_interval_width": 0.025
     }
 }
