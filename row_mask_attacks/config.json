@@ -39,6 +39,7 @@
     "metric_field": "alc_alc",
     "confidence": 0.95,
     "min_interval_width": 0.025,
+    "upper_bound": 1.0,
     "min_sample_count": 5
     }
 }
