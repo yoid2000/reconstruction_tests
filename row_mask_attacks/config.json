@@ -35,9 +35,11 @@
         }
     },
     "significance": {
-        "method": "dynamic-wilson",
-        "success_field": "alc_attack_prc",
+        "method": "dynamic-hoeffding",
+        "success_field": "alc_alc",
         "confidence": 0.95,
+        "lower_bound": -1.0,
+        "upper_bound": 1.0,
         "min_interval_width": 0.025
     }
 }
