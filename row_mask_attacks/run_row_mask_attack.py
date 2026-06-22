@@ -412,7 +412,7 @@ def get_qi_subset_list(
     max_qi: int = 1000,
     max_num_contingency_tables: int = DEFAULT_MAX_NUM_CONTINGENCY_TABLES,
     contingency_tables: Optional[List[List[str]]] = None,
-) -> List[Dict]:
+) -> tuple[List[Dict], int]:
     """ Generates list of QI column subsets grouped by qi_cols.
     
     Args:
@@ -424,20 +424,21 @@ def get_qi_subset_list(
         contingency_tables: Optional ordered QI column groups to use as contingency tables
     
     Returns:
-        List of subsets in the order their column groups appear in contingency_tables.
+        Tuple of subset list and number of suppressed QI value combinations.
     """
     # Find all QI columns
     all_qi_cols = sorted([col for col in df.columns if col.startswith('qi')])
     
     if len(all_qi_cols) == 0:
-        return []
+        return [], 0
     
     qi_subsets = []
+    num_suppressed = 0
     
     # Iterate through selected contingency tables.
     max_subset_size = min(len(all_qi_cols), max_qi)
     if max_subset_size < 1 or max_num_contingency_tables < 1:
-        return []
+        return [], 0
     if contingency_tables is None:
         contingency_tables = contingency_table_columns(df, max_num_contingency_tables)
     for qi_cols in contingency_tables:
@@ -465,8 +466,10 @@ def get_qi_subset_list(
                     'qi_vals': [int(val) for val in qi_vals],
                     'num_rows': int(num_rows)
                 })
+            else:
+                num_suppressed += 1
     
-    return qi_subsets
+    return qi_subsets, num_suppressed
 
 def get_qi_subsets_mask(df: pd.DataFrame, qi_subsets: List[Dict], index: int) -> Set[int]:
     """ Returns set of IDs matching the QI subset at the specified index.
@@ -743,7 +746,7 @@ def attack_loop(nrows: int,
         max_available_contingency_tables,
     )
     contingency_tables = contingency_table_columns(df, num_contingency_tables)
-    qi_subsets = get_qi_subset_list(
+    qi_subsets, num_suppressed = get_qi_subset_list(
         df,
         min_num_rows,
         int(round(min_num_rows * nunique * 1.5)),
@@ -754,8 +757,6 @@ def attack_loop(nrows: int,
     samples = create_qi_samples(df, nunique, noise, qi_subsets)
     print(f"Total QI subsets available: {len(qi_subsets)}. Created {len(samples)} samples.")
     
-    num_suppressed = 0
-    
     # Start timing
     start_time = time.time()
 
@@ -763,7 +764,7 @@ def attack_loop(nrows: int,
     print(f"Begin {solve_type} reconstruction with {len(samples)} samples\n    (qi_subsets={len(qi_subsets)}, num_suppressed={num_suppressed})")
     qi_match_accuracy = 0.0
     if solve_type == 'agg_row':
-        reconstructed, num_equations, solver_metrics = reconstruct_by_row(
+        reconstructed, _, solver_metrics = reconstruct_by_row(
             samples,
             noise,
             seed,
@@ -775,7 +776,7 @@ def attack_loop(nrows: int,
         accuracy = measure_by_row(df, reconstructed)
     elif solve_type == 'agg_known':
         if known_qi_fraction == 1.0:
-            reconstructed, num_equations, solver_metrics = reconstruct_by_row(
+            reconstructed, _, solver_metrics = reconstruct_by_row(
                 samples,
                 noise,
                 seed,
@@ -813,7 +814,7 @@ def attack_loop(nrows: int,
                 print("Filtered known QI rows:")
                 pp.pprint(known_qi_rows)
                 raise ValueError(f"Known QI rows used in reconstruction ({len(known_qi_rows)}) does not match total known QI rows ({len(complete_known_qi_rows)})")
-            reconstructed, num_equations, solver_metrics = reconstruct_by_aggregate_and_known_qi(
+            reconstructed, _, solver_metrics = reconstruct_by_aggregate_and_known_qi(
                 samples,
                 noise,
                 nrows,
@@ -838,8 +839,6 @@ def attack_loop(nrows: int,
     alc_result = compute_alc_measures(df, reconstructed, target_column, path_to_dataset, accuracy)
     # Record results
     result = {
-        'num_samples': len(samples),
-        'num_equations': num_equations,
         'accuracy': accuracy,
         'qi_match_accuracy': qi_match_accuracy,
         'alc': alc_result,
