@@ -3,6 +3,7 @@
 
 `run_row_mask_attack.py` runs a reconstruction attack whereby the attacker has the ability to select individual rows and obtain a noisy count. 
 
+
 When run with no command line arguments, it lists the attacks (jobs) and their associated parameters, and generates the file `run.slurm`, which can be used to run all the attacks in a SLURM cluster.
 
 To enable multiple independent SLURM runs, each experiment entry in `experiments.py` includes a unique `slurm_run` integer. Use:
