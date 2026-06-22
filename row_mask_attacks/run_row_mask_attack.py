@@ -26,7 +26,6 @@ print = partial(print, flush=True)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from df_builds.build_row_masks import build_row_masks_qi, get_required_num_distinct
 from reconstruct import reconstruct_by_row, measure_by_row, measure_by_aggregate, reconstruct_by_aggregate_and_known_qi
-from compute_separation import compute_separation_metrics
 
 solve_type_map = {
     'agg_row': 'ar',
@@ -787,7 +786,6 @@ def attack_loop(nrows: int,
             qi_match_accuracy = accuracy_measure['qi_match']
     else:
         raise ValueError(f"Unsupported solve_type: {solve_type}")
-    sep = compute_separation_metrics(samples)
 
     mean_cell_size = int(np.mean([len(sample['ids']) for sample in samples])) if len(samples) > 0 else 0
     
@@ -799,7 +797,6 @@ def attack_loop(nrows: int,
         'alc': alc_result,
         'mean_cell_size': mean_cell_size,
         'solver_metrics': solver_metrics,
-        'separation': sep,
         'refine': 0,
     }
     pp.pprint(result)
