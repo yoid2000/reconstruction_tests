@@ -343,50 +343,6 @@ def convert_from_id_val_tuples(df: pd.DataFrame, reconstructed: List[Dict[str, A
     qi_val_rows = merged[qi_cols + ['val']].to_dict('records')
     return convert_from_qi_val_tuples(df, qi_val_rows)
 
-def mixing_stats(samples: List[Dict]) -> Dict:
-    """ Computes mixing statistics for IDs across samples.
-
-    Mixing is a measure of how many times each pair of IDs appears together in the samples.
-    
-    Args:
-        samples: List of dicts, each containing 'ids' (set of integer IDs)
-    
-    Returns:
-        Dict with 'min', 'max', 'avg', 'stddev', 'median' statistics
-    """
-    # Track how many times each pair of IDs appears together
-    from collections import defaultdict
-    pair_counts = defaultdict(int)
-    
-    for sample in samples:
-        ids = list(sample['ids'])
-        # Count each unique pair in this sample
-        for i, id1 in enumerate(ids):
-            for id2 in ids[i+1:]:
-                # Use sorted tuple to ensure consistent pair representation
-                pair = tuple(sorted([id1, id2]))
-                pair_counts[pair] += 1
-    
-    # Get all count values
-    counts = list(pair_counts.values())
-    
-    if len(counts) == 0:
-        return {
-            'min': 0,
-            'max': 0,
-            'avg': 0.0,
-            'stddev': 0.0,
-            'median': 0.0
-        }
-    
-    return {
-        'min': int(np.min(counts)),
-        'max': int(np.max(counts)),
-        'avg': float(np.mean(counts)),
-        'stddev': float(np.std(counts)),
-        'median': float(np.median(counts))
-    }
-
 def contingency_table_columns(df: pd.DataFrame, num_contingency_tables: int) -> List[List[str]]:
     """Return QI column groups ordered by distinct value-vector count."""
     import itertools
@@ -831,7 +787,6 @@ def attack_loop(nrows: int,
             qi_match_accuracy = accuracy_measure['qi_match']
     else:
         raise ValueError(f"Unsupported solve_type: {solve_type}")
-    mixing = mixing_stats(samples)
     sep = compute_separation_metrics(samples)
 
     mean_cell_size = int(np.mean([len(sample['ids']) for sample in samples])) if len(samples) > 0 else 0
@@ -842,7 +797,6 @@ def attack_loop(nrows: int,
         'accuracy': accuracy,
         'qi_match_accuracy': qi_match_accuracy,
         'alc': alc_result,
-        'mixing': mixing,
         'mean_cell_size': mean_cell_size,
         'solver_metrics': solver_metrics,
         'separation': sep,
