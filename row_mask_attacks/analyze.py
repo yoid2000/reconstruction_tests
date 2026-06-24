@@ -12,8 +12,11 @@ from pandas.api.types import (
     is_timedelta64_dtype,
 )
 
+from plotters.solver_metric_scatterplots import plot_solver_metric_scatterplots
+
 
 DEFAULT_RESULTS_PATH = Path(__file__).parent / "results" / "results.parquet"
+DEFAULT_PLOTS_DIR = Path(__file__).parent / "plots"
 
 
 def values_all_same(series: pd.Series) -> bool:
@@ -89,7 +92,7 @@ def print_alc_tables(df_group: pd.DataFrame) -> None:
         ).sort_index().sort_index(axis=1)
 
         print(f"\np__max_num_contingency_tables = {max_tables}")
-        print(table.to_string(float_format=lambda value: f"{value:.6g}"))
+        print(table.to_string(float_format=lambda value: f"{value:.3g}"))
 
 
 def parse_args() -> argparse.Namespace:
@@ -100,6 +103,12 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_RESULTS_PATH,
         help="Path to results.parquet.",
     )
+    parser.add_argument(
+        "--plots-dir",
+        type=Path,
+        default=DEFAULT_PLOTS_DIR,
+        help="Directory where PNG plots are written.",
+    )
     return parser.parse_args()
 
 
@@ -108,6 +117,8 @@ def main() -> None:
     df = pd.read_parquet(args.results)
     df_group = build_grouped_dataframe(df)
     print_alc_tables(df_group)
+    plot_path = plot_solver_metric_scatterplots(df_group, args.plots_dir)
+    print(f"\nWrote plot: {plot_path}")
 
 
 if __name__ == "__main__":
