@@ -9,6 +9,9 @@ from typing import Any
 from experiments import read_experiments
 
 
+NOT_JOB_KEYS = {"not_params"}
+
+
 def _as_values(value: Any) -> list[Any]:
     if isinstance(value, list):
         return value
@@ -24,7 +27,7 @@ def expand_experiments(experiments: list[dict[str, Any]]) -> list[dict[str, Any]
     seen = set()
 
     for experiment in experiments:
-        keys = list(experiment.keys())
+        keys = [key for key in experiment.keys() if key not in NOT_JOB_KEYS]
         value_lists = [_as_values(experiment[key]) for key in keys]
         for values in product(*value_lists):
             job = dict(zip(keys, values))
