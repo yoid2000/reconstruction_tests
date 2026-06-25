@@ -701,6 +701,7 @@ def attack_loop(nrows: int,
         max_available_contingency_tables,
     )
     contingency_tables = contingency_table_columns(df, num_contingency_tables)
+    num_contingency_tables_used = len(contingency_tables)
     qi_subsets, num_suppressed = get_qi_subset_list(
         df,
         min_num_rows,
@@ -710,7 +711,10 @@ def attack_loop(nrows: int,
         contingency_tables,
     )
     samples = create_qi_samples(df, nunique, noise, qi_subsets)
-    print(f"Total QI subsets available: {len(qi_subsets)}. Created {len(samples)} samples.")
+    print(
+        f"Using {num_contingency_tables_used} contingency tables. "
+        f"Total QI subsets available: {len(qi_subsets)}. Created {len(samples)} samples."
+    )
     
     # Start timing
     start_time = time.time()
@@ -819,6 +823,7 @@ def attack_loop(nrows: int,
         'elapsed_time': elapsed_time,
         'finished': finished,
         'num_suppressed': num_suppressed,
+        'num_contingency_tables_used': num_contingency_tables_used,
     }
     save_dict.update(result)
 

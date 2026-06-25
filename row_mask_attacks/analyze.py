@@ -21,6 +21,8 @@ DEFAULT_RESULTS_PATH = Path(__file__).parent / "results" / "results.parquet"
 DEFAULT_PLOTS_DIR = Path(__file__).parent / "plots"
 NOT_PARAM_KEYS = {"not_params"}
 RESULT_FIELD = "alc_alc"
+SUPPRESSION_FIELD = "num_suppressed"
+TABLE_VALUE_FIELDS = [RESULT_FIELD, SUPPRESSION_FIELD]
 IGNORED_TABLE_COLUMNS = {"p__supp_thresh"}
 
 
@@ -183,20 +185,21 @@ def remaining_value_combinations(
     ]
 
 
-def print_alc_pivot(
+def print_value_pivot(
     df_table: pd.DataFrame,
     row_column: str,
     column_column: str,
+    value_column: str,
 ) -> None:
     table = df_table.pivot_table(
         index=row_column,
         columns=column_column,
-        values=RESULT_FIELD,
+        values=value_column,
         aggfunc="mean",
     )
     table = table.reindex(index=sorted_unique_values(df_table[row_column]))
     table = table.reindex(columns=sorted_unique_values(df_table[column_column]))
-    print(table.to_string(float_format=lambda value: f"{value:.3g}"))
+    print(table.to_string(float_format=lambda value: f"{value:10.3f}"))
 
 
 def print_experiment_group_tables(
@@ -207,8 +210,14 @@ def print_experiment_group_tables(
     if df_experiment_group.empty:
         print("No matching rows.")
         return
-    if RESULT_FIELD not in df_experiment_group.columns:
-        raise ValueError(f"df_experiment_group is missing required column: {RESULT_FIELD}")
+    missing_value_fields = [
+        column for column in TABLE_VALUE_FIELDS
+        if column not in df_experiment_group.columns
+    ]
+    if missing_value_fields:
+        raise ValueError(
+            f"df_experiment_group is missing required columns: {missing_value_fields}"
+        )
 
     varying_columns = varying_parameter_columns(df_experiment_group)
     print(f"varying variables: {varying_columns}")
@@ -228,12 +237,18 @@ def print_experiment_group_tables(
             df_table = filter_by_values(df_experiment_group, remaining_values)
             print(f"\nrows={row_column}, columns={column_column}")
             print(f"fixed: {format_filter_values(remaining_values)}")
-            print_alc_pivot(df_table, row_column, column_column)
+            for value_column in TABLE_VALUE_FIELDS:
+                print(f"value={value_column}")
+                print_value_pivot(df_table, row_column, column_column, value_column)
 
 
 def handle_experiment_group(experiment_group: Any, df_experiment_group: pd.DataFrame) -> None:
     print_experiment_group_tables(experiment_group, df_experiment_group)
     # Placeholder for future logic keyed by experiment_group.
+    if experiment_group == "agg_dinur_noise_no_supp":
+        pass
+    elif experiment_group == "agg_dinur_supp_no_noise":
+        pass
 
 
 def parse_args() -> argparse.Namespace:

@@ -36,8 +36,10 @@ def plot_solver_metric_scatterplots(df: pd.DataFrame, output_dir: Path) -> Path:
     for axis, x_column in zip(axes_flat, X_COLUMNS):
         x_values = pd.to_numeric(df[x_column], errors="coerce")
         plot_df = pd.DataFrame({"x": x_values, "y": y_values}).dropna()
+        plot_df = plot_df[plot_df["x"] > 0]
 
         axis.scatter(plot_df["x"], plot_df["y"], alpha=0.75)
+        axis.set_xscale("log")
         axis.set_xlabel(x_column)
         axis.set_ylabel(Y_COLUMN)
         axis.set_title(f"{Y_COLUMN} vs {x_column}")
