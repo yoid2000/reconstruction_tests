@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from itertools import combinations
 from pathlib import Path
 from typing import Any
 
@@ -12,11 +13,15 @@ from pandas.api.types import (
     is_timedelta64_dtype,
 )
 
+from experiments import read_experiments
 from plotters.solver_metric_scatterplots import plot_solver_metric_scatterplots
 
 
 DEFAULT_RESULTS_PATH = Path(__file__).parent / "results" / "results.parquet"
 DEFAULT_PLOTS_DIR = Path(__file__).parent / "plots"
+NOT_PARAM_KEYS = {"not_params"}
+RESULT_FIELD = "alc_alc"
+IGNORED_TABLE_COLUMNS = {"p__supp_thresh"}
 
 
 def values_all_same(series: pd.Series) -> bool:
@@ -71,28 +76,164 @@ def build_grouped_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=df.columns)
 
 
-def print_alc_tables(df_group: pd.DataFrame) -> None:
-    required_columns = {
-        "p__max_num_contingency_tables",
-        "p__noise",
-        "p__min_num_rows",
-        "alc_alc",
-    }
-    missing_columns = sorted(required_columns - set(df_group.columns))
-    if missing_columns:
-        raise ValueError(f"df_group is missing required columns: {missing_columns}")
+def as_values(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    return [value]
 
-    for max_tables in sorted(df_group["p__max_num_contingency_tables"].dropna().unique()):
-        table_df = df_group[df_group["p__max_num_contingency_tables"] == max_tables]
-        table = table_df.pivot_table(
-            index="p__noise",
-            columns="p__min_num_rows",
-            values="alc_alc",
-            aggfunc="mean",
-        ).sort_index().sort_index(axis=1)
 
-        print(f"\np__max_num_contingency_tables = {max_tables}")
-        print(table.to_string(float_format=lambda value: f"{value:.3g}"))
+def experiment_group_value(experiment: dict[str, Any]) -> Any:
+    return experiment.get(
+        "experiment_group",
+        experiment.get("not_params", {}).get("experiment_group"),
+    )
+
+
+def distinct_experiment_groups(experiments: list[dict[str, Any]]) -> list[Any]:
+    groups = []
+    seen = set()
+    for experiment in experiments:
+        group = experiment_group_value(experiment)
+        if group is None or group in seen:
+            continue
+        seen.add(group)
+        groups.append(group)
+    return groups
+
+
+def matching_rows_for_experiment(
+    df_group: pd.DataFrame,
+    experiment: dict[str, Any],
+) -> pd.Series:
+    matches = pd.Series(True, index=df_group.index)
+    for key, value in experiment.items():
+        if key in NOT_PARAM_KEYS:
+            continue
+
+        column = f"p__{key}"
+        if column not in df_group.columns:
+            continue
+
+        matches &= df_group[column].isin(as_values(value))
+    return matches
+
+
+def rows_for_experiment_group(
+    df_group: pd.DataFrame,
+    experiments: list[dict[str, Any]],
+    experiment_group: Any,
+) -> pd.DataFrame:
+    matches = pd.Series(False, index=df_group.index)
+    for experiment in experiments:
+        if experiment_group_value(experiment) != experiment_group:
+            continue
+        matches |= matching_rows_for_experiment(df_group, experiment)
+    return df_group[matches].copy()
+
+
+def varying_parameter_columns(df_experiment_group: pd.DataFrame) -> list[str]:
+    return [
+        column
+        for column in df_experiment_group.columns
+        if (
+            column.startswith("p__")
+            and column not in IGNORED_TABLE_COLUMNS
+            and df_experiment_group[column].nunique(dropna=False) > 1
+        )
+    ]
+
+
+def sorted_unique_values(series: pd.Series) -> list[Any]:
+    values = series.drop_duplicates().tolist()
+    try:
+        return sorted(values)
+    except TypeError:
+        return sorted(values, key=lambda value: str(value))
+
+
+def matching_value_rows(df: pd.DataFrame, column: str, value: Any) -> pd.Series:
+    if pd.isna(value):
+        return df[column].isna()
+    return df[column] == value
+
+
+def filter_by_values(df: pd.DataFrame, values_by_column: dict[str, Any]) -> pd.DataFrame:
+    matches = pd.Series(True, index=df.index)
+    for column, value in values_by_column.items():
+        matches &= matching_value_rows(df, column, value)
+    return df[matches]
+
+
+def format_filter_values(values_by_column: dict[str, Any]) -> str:
+    if not values_by_column:
+        return "all rows"
+    return ", ".join(f"{column}={value}" for column, value in values_by_column.items())
+
+
+def remaining_value_combinations(
+    df_experiment_group: pd.DataFrame,
+    remaining_columns: list[str],
+) -> list[dict[str, Any]]:
+    if not remaining_columns:
+        return [{}]
+
+    return [
+        row.to_dict()
+        for _, row in df_experiment_group[remaining_columns].drop_duplicates().iterrows()
+    ]
+
+
+def print_alc_pivot(
+    df_table: pd.DataFrame,
+    row_column: str,
+    column_column: str,
+) -> None:
+    table = df_table.pivot_table(
+        index=row_column,
+        columns=column_column,
+        values=RESULT_FIELD,
+        aggfunc="mean",
+    )
+    table = table.reindex(index=sorted_unique_values(df_table[row_column]))
+    table = table.reindex(columns=sorted_unique_values(df_table[column_column]))
+    print(table.to_string(float_format=lambda value: f"{value:.3g}"))
+
+
+def print_experiment_group_tables(
+    experiment_group: Any,
+    df_experiment_group: pd.DataFrame,
+) -> None:
+    print(f"\nexperiment_group: {experiment_group}")
+    if df_experiment_group.empty:
+        print("No matching rows.")
+        return
+    if RESULT_FIELD not in df_experiment_group.columns:
+        raise ValueError(f"df_experiment_group is missing required column: {RESULT_FIELD}")
+
+    varying_columns = varying_parameter_columns(df_experiment_group)
+    print(f"varying variables: {varying_columns}")
+    if len(varying_columns) < 2:
+        print("Fewer than two varying variables; no 2D tables generated.")
+        return
+
+    for row_column, column_column in combinations(varying_columns, 2):
+        remaining_columns = [
+            column for column in varying_columns
+            if column not in {row_column, column_column}
+        ]
+        for remaining_values in remaining_value_combinations(
+            df_experiment_group,
+            remaining_columns,
+        ):
+            df_table = filter_by_values(df_experiment_group, remaining_values)
+            print(f"\nrows={row_column}, columns={column_column}")
+            print(f"fixed: {format_filter_values(remaining_values)}")
+            print_alc_pivot(df_table, row_column, column_column)
+
+
+def handle_experiment_group(experiment_group: Any, df_experiment_group: pd.DataFrame) -> None:
+    print_experiment_group_tables(experiment_group, df_experiment_group)
+    # Placeholder for future logic keyed by experiment_group.
 
 
 def parse_args() -> argparse.Namespace:
@@ -116,7 +257,14 @@ def main() -> None:
     args = parse_args()
     df = pd.read_parquet(args.results)
     df_group = build_grouped_dataframe(df)
-    print_alc_tables(df_group)
+    experiment_definitions = read_experiments()
+    for experiment_group in distinct_experiment_groups(experiment_definitions):
+        df_experiment_group = rows_for_experiment_group(
+            df_group,
+            experiment_definitions,
+            experiment_group,
+        )
+        handle_experiment_group(experiment_group, df_experiment_group)
     plot_path = plot_solver_metric_scatterplots(df_group, args.plots_dir)
     print(f"\nWrote plot: {plot_path}")
 
