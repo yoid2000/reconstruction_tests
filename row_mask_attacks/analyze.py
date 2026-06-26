@@ -22,7 +22,12 @@ DEFAULT_PLOTS_DIR = Path(__file__).parent / "plots"
 NOT_PARAM_KEYS = {"not_params"}
 RESULT_FIELD = "alc_alc"
 SUPPRESSION_FIELD = "num_suppressed"
-TABLE_VALUE_FIELDS = [RESULT_FIELD, SUPPRESSION_FIELD]
+CONTINGENCY_TABLES_USED_FIELD = "num_contingency_tables_used"
+TABLE_VALUE_FIELDS = [
+    RESULT_FIELD,
+    SUPPRESSION_FIELD,
+    CONTINGENCY_TABLES_USED_FIELD,
+]
 IGNORED_TABLE_COLUMNS = {"p__supp_thresh"}
 
 
