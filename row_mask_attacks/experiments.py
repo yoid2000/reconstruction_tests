@@ -73,7 +73,7 @@ experiments = [
         'vals_per_qi': [2],
         'mask_size': [0],
         'noise': [1, 2, 4],
-        'max_num_contingency_tables': [200],
+        'max_num_contingency_tables': [50, 75, 100, 150, 200],
         'min_num_rows': [2, 3, 5],
         'corr_strength': [0.0],
         'known_qi_fraction': [1.0],
