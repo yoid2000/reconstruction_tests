@@ -2,6 +2,36 @@
     "entries": [
         {
             "job_num": 0,
+            "experiment_id": "tabs_150_rows_150_noise_7_nqi_11_vals_per_qi_2_nunique_2",
+            "parameters": {
+                "dont_run": true,
+                "used_in_paper": true,
+                "experiment_group": "agg_dinur_nrows_vals_per_qi",
+                "solve_type": "agg_row",
+                "nrows": 150,
+                "mask_size": 0,
+                "nunique": 2,
+                "noise": 7,
+                "max_num_contingency_tables": 150,
+                "nqi": 11,
+                "min_num_rows": 1,
+                "vals_per_qi": 2,
+                "corr_strength": 0,
+                "known_qi_fraction": 1,
+                "max_qi": 1000,
+                "max_samples": 20000,
+                "use_objective": true,
+                "time_limit_seconds": 259200,
+                "slack_limit_multiple": 2,
+                "slack_limit_min": 10,
+                "path_to_dataset": "",
+                "target_column": "",
+                "supp_thresh": 2
+            },
+            "seed": 0
+        },
+        {
+            "job_num": 0,
             "experiment_id": "cc6c78cd68b94e6d1db1b4661de4c8701c64258419ceea497ce2067a7416576a",
             "parameters": {
                 "dont_run": true,
