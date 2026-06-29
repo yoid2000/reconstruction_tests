@@ -98,7 +98,7 @@ experiments = [
         'nunique': [2],
         'vals_per_qi': [2],
         'mask_size': [0],
-        'noise': [2],
+        'noise': [0, 2, 4],
         'max_num_contingency_tables': [200],
         'min_num_rows': [1],
         'corr_strength': [0.0],
