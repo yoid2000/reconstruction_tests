@@ -29,6 +29,8 @@ TABLE_VALUE_FIELDS = [
     CONTINGENCY_TABLES_USED_FIELD,
 ]
 IGNORED_TABLE_COLUMNS = {"p__supp_thresh"}
+PREFERRED_ROW_COLUMN = "p__min_num_rows"
+PREFERRED_COLUMN_COLUMN = "p__noise"
 
 
 def values_all_same(series: pd.Series) -> bool:
@@ -190,12 +192,12 @@ def remaining_value_combinations(
     ]
 
 
-def print_value_pivot(
+def build_value_pivot(
     df_table: pd.DataFrame,
     row_column: str,
     column_column: str,
     value_column: str,
-) -> None:
+) -> pd.DataFrame:
     table = df_table.pivot_table(
         index=row_column,
         columns=column_column,
@@ -204,7 +206,47 @@ def print_value_pivot(
     )
     table = table.reindex(index=sorted_unique_values(df_table[row_column]))
     table = table.reindex(columns=sorted_unique_values(df_table[column_column]))
+    return table
+
+
+def values_match(left: Any, right: Any) -> bool:
+    if pd.isna(left) or pd.isna(right):
+        return False
+    try:
+        return float(left) == float(right)
+    except (TypeError, ValueError):
+        return left == right
+
+
+def table_cells_match_fixed_value(table: pd.DataFrame, fixed_value: Any) -> bool:
+    cell_values = pd.Series(table.to_numpy().ravel()).dropna()
+    if cell_values.empty:
+        return False
+    return all(values_match(cell_value, fixed_value) for cell_value in cell_values)
+
+
+def table_matches_any_fixed_value(
+    table: pd.DataFrame,
+    fixed_values: dict[str, Any],
+) -> bool:
+    return any(
+        table_cells_match_fixed_value(table, fixed_value)
+        for fixed_value in fixed_values.values()
+    )
+
+
+def print_value_pivot(table: pd.DataFrame) -> None:
     print(table.to_string(float_format=lambda value: f"{value:10.3f}"))
+
+
+def table_axis_pairs(varying_columns: list[str]) -> list[tuple[str, str]]:
+    if (
+        len(varying_columns) >= 3
+        and PREFERRED_ROW_COLUMN in varying_columns
+        and PREFERRED_COLUMN_COLUMN in varying_columns
+    ):
+        return [(PREFERRED_ROW_COLUMN, PREFERRED_COLUMN_COLUMN)]
+    return list(combinations(varying_columns, 2))
 
 
 def print_experiment_group_tables(
@@ -230,7 +272,7 @@ def print_experiment_group_tables(
         print("Fewer than two varying variables; no 2D tables generated.")
         return
 
-    for row_column, column_column in combinations(varying_columns, 2):
+    for row_column, column_column in table_axis_pairs(varying_columns):
         remaining_columns = [
             column for column in varying_columns
             if column not in {row_column, column_column}
@@ -240,11 +282,22 @@ def print_experiment_group_tables(
             remaining_columns,
         ):
             df_table = filter_by_values(df_experiment_group, remaining_values)
-            print(f"\nrows={row_column}, columns={column_column}")
-            print(f"fixed: {format_filter_values(remaining_values)}")
+            printed_table_header = False
             for value_column in TABLE_VALUE_FIELDS:
+                table = build_value_pivot(
+                    df_table,
+                    row_column,
+                    column_column,
+                    value_column,
+                )
+                if table_matches_any_fixed_value(table, remaining_values):
+                    continue
+                if not printed_table_header:
+                    print(f"\nrows={row_column}, columns={column_column}")
+                    print(f"fixed: {format_filter_values(remaining_values)}")
+                    printed_table_header = True
                 print(f"value={value_column}")
-                print_value_pivot(df_table, row_column, column_column, value_column)
+                print_value_pivot(table)
 
 
 def handle_experiment_group(experiment_group: Any, df_experiment_group: pd.DataFrame) -> None:

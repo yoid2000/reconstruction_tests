@@ -86,6 +86,32 @@ experiments = [
         'path_to_dataset': [''],
         'target_column': [''],
     },
+    {   # Agg Dinur-style, test num rows
+        'not_params': {
+            'dont_run': True,
+            'used_in_paper': True,
+            'experiment_group': 'agg_dinur_num_rows',
+        },
+        'solve_type': 'agg_row',
+        'nrows': [35, 75, 150, 300, 600, 1200],
+        'nqi': [11],
+        'nunique': [2],
+        'vals_per_qi': [2],
+        'mask_size': [0],
+        'noise': [2],
+        'max_num_contingency_tables': [200],
+        'min_num_rows': [1],
+        'corr_strength': [0.0],
+        'known_qi_fraction': [1.0],
+        'max_qi': [1000],
+        'max_samples': [20000],
+        'use_objective': [DEFAULT_USE_OBJECTIVE],
+        'time_limit_seconds': [DEFAULT_TIME_LIMIT_SECONDS],
+        'slack_limit_multiple': [DEFAULT_SLACK_LIMIT_MULTIPLE],
+        'slack_limit_min': [DEFAULT_SLACK_LIMIT_MIN],
+        'path_to_dataset': [''],
+        'target_column': [''],
+    },
 ]
 
 def read_experiments(used_only_in_paper: bool = True) -> list[dict]:
