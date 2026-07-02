@@ -15,7 +15,6 @@ from pathlib import Path
 import pprint
 import argparse
 from functools import partial
-from itertools import product
 from anonymity_loss_coefficient import brm_attack_simple
 from slurm_manager.core import RunManifestBuilder, init_payload, clean_payload
 
@@ -24,6 +23,7 @@ pp = pprint.PrettyPrinter(indent=2)
 print = partial(print, flush=True)
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from common.contingency_tables import contingency_table_columns
 from df_builds.build_row_masks import build_row_masks_qi, get_required_num_distinct
 from reconstruct import reconstruct_by_row, measure_by_row, measure_by_aggregate, reconstruct_by_aggregate_and_known_qi
 
@@ -341,24 +341,6 @@ def convert_from_id_val_tuples(df: pd.DataFrame, reconstructed: List[Dict[str, A
 
     qi_val_rows = merged[qi_cols + ['val']].to_dict('records')
     return convert_from_qi_val_tuples(df, qi_val_rows)
-
-def contingency_table_columns(df: pd.DataFrame, num_contingency_tables: int) -> List[List[str]]:
-    """Return QI column groups ordered by distinct value-vector count."""
-    import itertools
-
-    if num_contingency_tables < 1:
-        return []
-
-    qi_cols = sorted([col for col in df.columns if col.startswith('qi')])
-    candidates = []
-    for subset_size in range(1, len(qi_cols) + 1):
-        for cols_tuple in itertools.combinations(qi_cols, subset_size):
-            cols = list(cols_tuple)
-            num_distinct_vectors = int(df[cols].drop_duplicates().shape[0])
-            candidates.append((num_distinct_vectors, subset_size, cols))
-
-    candidates.sort(key=lambda item: (item[0], item[1], item[2]))
-    return [cols for _, _, cols in candidates[:num_contingency_tables]]
 
 def get_qi_subset_list(
     df: pd.DataFrame,
