@@ -94,6 +94,18 @@ def load_source_dataframe(input_path: str, contingency_table: list[str]) -> pd.D
     return df_source[contingency_table].copy()
 
 
+def parse_contingency_table(value: object) -> list[str]:
+    if isinstance(value, list) and all(isinstance(column, str) for column in value):
+        return value
+
+    if isinstance(value, str):
+        parsed = json.loads(value)
+        if isinstance(parsed, list) and all(isinstance(column, str) for column in parsed):
+            return parsed
+
+    raise ValueError("contingency_table must encode a list of column names.")
+
+
 def build_synthesizer_kwargs(
     ctgan_config: dict[str, Any],
     constructor_parameters: set[str],
@@ -194,12 +206,7 @@ def run_experiment(parameters: dict[str, object], seed: int) -> dict[str, object
     input_path = str(parameters["input_path"])
     output_path = str(parameters["output_path"])
     ctgan_config_path = str(parameters["ctgan_config_path"])
-    contingency_table = parameters["contingency_table"]
-
-    if not isinstance(contingency_table, list) or not all(
-        isinstance(column, str) for column in contingency_table
-    ):
-        raise ValueError("contingency_table must be a list of column names.")
+    contingency_table = parse_contingency_table(parameters["contingency_table"])
 
     set_random_seed(seed)
     ctgan_config = load_ctgan_config(ctgan_config_path)
