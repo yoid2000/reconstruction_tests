@@ -1,0 +1,12 @@
+{
+    "config_file": "/INS/syndiffix/work/paul/github/reconstruction_tests/ctgan_builds/config.json",
+    "jobs_file": "/INS/syndiffix/work/paul/github/testing/ctgan_builds/jobs.json",
+    "venv_target": "/INS/syndiffix/work/paul/github/reconstruction_tests/.venv",
+    "exp_target": "/INS/syndiffix/work/paul/github/reconstruction_tests/ctgan_builds/run_ctgan_build.py",
+    "jobs_dir": "/INS/syndiffix/work/paul/testing/ctgan_builds/tests/jobs",
+    "slurm_run_dir": "/INS/syndiffix/work/paul/testing/ctgan_builds/tests/slurm_run",
+    "slurm_out_dir": "/INS/syndiffix/work/paul/testing/ctgan_builds/tests/slurm_out",
+    "bookkeeping_dir": "/INS/syndiffix/work/paul/testing/ctgan_builds/tests/bookkeeping",
+    "results_dir": "/INS/syndiffix/work/paul/testing/ctgan_builds/tests/results",
+    "failed_runs_dir": "/INS/syndiffix/work/paul/testing/ctgan_builds/tests/failed_runs"
+}

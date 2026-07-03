@@ -90,7 +90,7 @@ def build_jobs(args: argparse.Namespace) -> list[dict[str, object]]:
                         args.ctgan_configs_dir,
                         f"{yaml_name}.yaml",
                     ),
-                    "contingency_table": qi_columns,
+                    "contingency_table": qi_columns + ['var'],
                 }
             )
 
