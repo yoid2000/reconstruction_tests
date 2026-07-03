@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import inspect
 import json
+import math
 import random
 import sys
 import time
@@ -15,6 +16,7 @@ from slurm_manager.core import RunManifestBuilder, init_payload, clean_payload
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+SINGLE_TABLE_NAME = "table"
 CTGAN_CONFIG_FIELDS = (
     "generator_dim",
     "discriminator_dim",
@@ -106,9 +108,14 @@ def parse_contingency_table(value: object) -> list[str]:
     raise ValueError("contingency_table must encode a list of column names.")
 
 
+def get_metadata_output_path(output_path: str) -> Path:
+    return resolve_local_path(output_path).with_suffix(".json")
+
+
 def build_synthesizer_kwargs(
     ctgan_config: dict[str, Any],
     constructor_parameters: set[str],
+    constructor_signature: inspect.Signature,
 ) -> dict[str, Any]:
     kwargs: dict[str, Any] = {}
 
@@ -128,6 +135,26 @@ def build_synthesizer_kwargs(
             if field in {"generator_dim", "discriminator_dim"}:
                 value = tuple(value)
             kwargs[field] = value
+
+    pac = 1
+    if "pac" in constructor_parameters:
+        pac_param = constructor_signature.parameters.get("pac")
+        if pac_param is not None and pac_param.default is not inspect._empty:
+            pac = int(pac_param.default)
+
+    if "batch_size" in kwargs:
+        batch_size = int(kwargs["batch_size"])
+        required_multiple = math.lcm(2, max(1, pac))
+        adjusted_batch_size = batch_size
+        if batch_size % required_multiple != 0:
+            adjusted_batch_size = batch_size - (batch_size % required_multiple)
+            if adjusted_batch_size < required_multiple:
+                adjusted_batch_size = required_multiple
+            print(
+                "Adjusting CTGAN batch_size for pac compatibility: "
+                f"{batch_size} -> {adjusted_batch_size} (pac={pac})"
+            )
+            kwargs["batch_size"] = adjusted_batch_size
 
     learning_rate = ctgan_config["learning_rate"]
     if "learning_rate" in constructor_parameters:
@@ -149,31 +176,46 @@ def build_synthesizer_kwargs(
     return kwargs
 
 
+def build_metadata(df_source: pd.DataFrame):
+    from sdv.metadata import Metadata
+
+    metadata = Metadata.detect_from_dataframes(
+        data={SINGLE_TABLE_NAME: df_source},
+        infer_keys=None,
+    )
+    metadata.update_columns(
+        column_names=list(df_source.columns),
+        sdtype="categorical",
+        table_name=SINGLE_TABLE_NAME,
+    )
+    metadata.validate()
+    metadata.validate_table(data=df_source, table_name=SINGLE_TABLE_NAME)
+    return metadata
+
+
 def generate_synthetic_dataframe(
     df_source: pd.DataFrame,
     ctgan_config: dict[str, Any],
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, object]:
     try:
-        from sdv.metadata import SingleTableMetadata
         from sdv.single_table import CTGANSynthesizer
     except ImportError as exc:
         raise ImportError(
             "SDV is required to run CTGAN builds. Install the 'sdv' package in the runtime environment."
         ) from exc
 
-    metadata = SingleTableMetadata()
-    metadata.detect_from_dataframe(data=df_source)
-
-    # These QI columns are finite coded categories, not continuous numerics.
-    for column in df_source.columns:
-        metadata.update_column(column_name=column, sdtype="categorical")
-
-    constructor_parameters = set(inspect.signature(CTGANSynthesizer.__init__).parameters)
+    metadata = build_metadata(df_source)
+    constructor_signature = inspect.signature(CTGANSynthesizer.__init__)
+    constructor_parameters = set(constructor_signature.parameters)
     constructor_parameters.discard("self")
-    synthesizer_kwargs = build_synthesizer_kwargs(ctgan_config, constructor_parameters)
+    synthesizer_kwargs = build_synthesizer_kwargs(
+        ctgan_config,
+        constructor_parameters,
+        constructor_signature,
+    )
     synthesizer = CTGANSynthesizer(metadata, **synthesizer_kwargs)
     synthesizer.fit(df_source)
-    return synthesizer.sample(num_rows=len(df_source))
+    return synthesizer.sample(num_rows=len(df_source)), metadata
 
 
 def write_synthetic_dataframe(df_synth: pd.DataFrame, output_path: str) -> Path:
@@ -181,6 +223,13 @@ def write_synthetic_dataframe(df_synth: pd.DataFrame, output_path: str) -> Path:
     resolved_path.parent.mkdir(parents=True, exist_ok=True)
     df_synth.to_parquet(resolved_path, index=False)
     return resolved_path
+
+
+def write_metadata_json(metadata: object, output_path: str) -> Path:
+    metadata_path = get_metadata_output_path(output_path)
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata.save_to_json(metadata_path, mode="overwrite")
+    return metadata_path
 
 
 def set_random_seed(seed: int) -> None:
@@ -213,8 +262,9 @@ def run_experiment(parameters: dict[str, object], seed: int) -> dict[str, object
     df_source = load_source_dataframe(input_path, contingency_table)
 
     start_time = time.time()
-    df_synth = generate_synthetic_dataframe(df_source, ctgan_config)
+    df_synth, metadata = generate_synthetic_dataframe(df_source, ctgan_config)
     write_synthetic_dataframe(df_synth, output_path)
+    write_metadata_json(metadata, output_path)
     elapsed_time = time.time() - start_time
 
     result: dict[str, object] = {
