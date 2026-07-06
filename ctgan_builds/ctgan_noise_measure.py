@@ -245,6 +245,83 @@ def print_run_level_summary(run_summary_df: pd.DataFrame) -> None:
     print("")
 
 
+def build_summary_frames(
+    combo_stats: dict[tuple[str, int], NoiseAccumulator],
+    run_summaries: list[dict[str, object]],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    group_summary_rows: list[dict[str, object]] = []
+    for (config_name, num_columns), stats in sorted(combo_stats.items()):
+        group_summary_rows.append(
+            {
+                "config_name": config_name,
+                "num_columns": num_columns,
+                "group_count": stats.count,
+                "synthetic_datasets": stats.run_count,
+                "tables_processed": stats.table_count,
+                "input_files": stats.input_file_count,
+                "mean_noise": stats.mean_noise(),
+                "std_noise": stats.std_noise(),
+                "mean_abs_noise": stats.mean_abs_noise(),
+                "rmse_noise": stats.rmse_noise(),
+                "min_noise": stats.min_noise if stats.count else 0.0,
+                "max_noise": stats.max_noise if stats.count else 0.0,
+                "exact_match_fraction": stats.exact_match_fraction(),
+                "source_only_groups": stats.source_only_count,
+                "synth_only_groups": stats.synth_only_count,
+                "shared_groups": stats.both_count,
+            }
+        )
+
+    group_summary_df = pd.DataFrame(group_summary_rows)
+    if not group_summary_df.empty:
+        group_summary_df = group_summary_df.sort_values(["config_name", "num_columns"])
+
+    run_summary_df = pd.DataFrame(run_summaries)
+    if not run_summary_df.empty:
+        run_summary_df = (
+            run_summary_df.groupby(["config_name", "num_columns"], as_index=False)
+            .agg(
+                synthetic_datasets=("seed", "count"),
+                input_files=("input_file", "nunique"),
+                tables_processed=("table_signature", "nunique"),
+                mean_groups=("num_groups", "mean"),
+                mean_noise=("mean_noise", "mean"),
+                mean_std_noise=("std_noise", "mean"),
+                mean_abs_noise=("mean_abs_noise", "mean"),
+                median_abs_noise=("median_abs_noise", "mean"),
+                p95_abs_noise=("p95_abs_noise", "mean"),
+                max_abs_noise=("max_abs_noise", "mean"),
+                mean_exact_match_fraction=("exact_match_fraction", "mean"),
+                mean_source_only_groups=("num_source_only_groups", "mean"),
+                mean_synth_only_groups=("num_synth_only_groups", "mean"),
+                mean_l1_count_shift=("l1_count_shift", "mean"),
+                mean_elapsed_seconds=("elapsed_seconds", "mean"),
+            )
+            .sort_values(["config_name", "num_columns"])
+        )
+
+    return group_summary_df, run_summary_df
+
+
+def print_progress_summary(
+    *,
+    sample_index: int,
+    total_samples: int,
+    combo_stats: dict[tuple[str, int], NoiseAccumulator],
+    run_summaries: list[dict[str, object]],
+) -> None:
+    group_summary_df, run_summary_df = build_summary_frames(combo_stats, run_summaries)
+    print("")
+    print(
+        f"Completed repeat {sample_index + 1} of {total_samples}. "
+        "Statistics so far:",
+        flush=True,
+    )
+    print_group_level_summary(group_summary_df)
+    print_run_level_summary(run_summary_df)
+    sys.stdout.flush()
+
+
 def main() -> None:
     args = parse_args()
     input_paths = list_input_files(args.input_dir)
@@ -255,6 +332,7 @@ def main() -> None:
 
     combo_stats: dict[tuple[str, int], NoiseAccumulator] = {}
     run_summaries: list[dict[str, object]] = []
+    input_specs: list[tuple[int, Path, list[list[str]], pd.DataFrame]] = []
 
     for input_index, input_path in enumerate(input_paths):
         df_input = pd.read_parquet(input_path)
@@ -266,22 +344,27 @@ def main() -> None:
             f"Processing {input_path.name}: {len(contingency_tables)} contingency tables, "
             f"{len(df_input)} rows"
         )
+        input_specs.append((input_index, input_path, contingency_tables, df_input))
 
-        tables_seen_for_input: set[tuple[str, int]] = set()
-        for table_index, contingency_table in enumerate(contingency_tables):
+    for input_index, _input_path, contingency_tables, _df_input in input_specs:
+        combos_seen_for_input: set[tuple[str, int]] = set()
+        for contingency_table in contingency_tables:
             num_columns = len(contingency_table)
-            df_source = df_input[contingency_table].copy()
-
-            for config_index, (config_name, ctgan_config) in enumerate(loaded_configs):
+            for config_name, _ctgan_config in loaded_configs:
                 combo_key = (config_name, num_columns)
                 stats = combo_stats.setdefault(combo_key, NoiseAccumulator())
-
-                if combo_key not in tables_seen_for_input:
+                if combo_key not in combos_seen_for_input:
                     stats.input_file_count += 1
-                    tables_seen_for_input.add(combo_key)
+                    combos_seen_for_input.add(combo_key)
                 stats.table_count += 1
 
-                for sample_index in range(args.synthetic_datasets):
+    for sample_index in range(args.synthetic_datasets):
+        for input_index, input_path, contingency_tables, df_input in input_specs:
+            for table_index, contingency_table in enumerate(contingency_tables):
+                num_columns = len(contingency_table)
+                df_source = df_input[contingency_table].copy()
+
+                for config_index, (config_name, ctgan_config) in enumerate(loaded_configs):
                     seed = seed_for_run(
                         seed_base=args.seed_base,
                         input_index=input_index,
@@ -319,59 +402,15 @@ def main() -> None:
                         synth_only_count=run_summary["num_synth_only_groups"],
                         both_count=run_summary["num_shared_groups"],
                     )
-
-    group_summary_rows: list[dict[str, object]] = []
-    for (config_name, num_columns), stats in sorted(combo_stats.items()):
-        group_summary_rows.append(
-            {
-                "config_name": config_name,
-                "num_columns": num_columns,
-                "group_count": stats.count,
-                "synthetic_datasets": stats.run_count,
-                "tables_processed": stats.table_count,
-                "input_files": stats.input_file_count,
-                "mean_noise": stats.mean_noise(),
-                "std_noise": stats.std_noise(),
-                "mean_abs_noise": stats.mean_abs_noise(),
-                "rmse_noise": stats.rmse_noise(),
-                "min_noise": stats.min_noise if stats.count else 0.0,
-                "max_noise": stats.max_noise if stats.count else 0.0,
-                "exact_match_fraction": stats.exact_match_fraction(),
-                "source_only_groups": stats.source_only_count,
-                "synth_only_groups": stats.synth_only_count,
-                "shared_groups": stats.both_count,
-            }
+        print_progress_summary(
+            sample_index=sample_index,
+            total_samples=args.synthetic_datasets,
+            combo_stats=combo_stats,
+            run_summaries=run_summaries,
         )
 
-    group_summary_df = pd.DataFrame(group_summary_rows)
-
-    run_summary_df = pd.DataFrame(run_summaries)
-    if not run_summary_df.empty:
-        run_summary_df = (
-            run_summary_df.groupby(["config_name", "num_columns"], as_index=False)
-            .agg(
-                synthetic_datasets=("seed", "count"),
-                input_files=("input_file", "nunique"),
-                tables_processed=("table_signature", "nunique"),
-                mean_groups=("num_groups", "mean"),
-                mean_noise=("mean_noise", "mean"),
-                mean_std_noise=("std_noise", "mean"),
-                mean_abs_noise=("mean_abs_noise", "mean"),
-                median_abs_noise=("median_abs_noise", "mean"),
-                p95_abs_noise=("p95_abs_noise", "mean"),
-                max_abs_noise=("max_abs_noise", "mean"),
-                mean_exact_match_fraction=("exact_match_fraction", "mean"),
-                mean_source_only_groups=("num_source_only_groups", "mean"),
-                mean_synth_only_groups=("num_synth_only_groups", "mean"),
-                mean_l1_count_shift=("l1_count_shift", "mean"),
-                mean_elapsed_seconds=("elapsed_seconds", "mean"),
-            )
-            .sort_values(["config_name", "num_columns"])
-        )
-
-    print("")
-    if not group_summary_df.empty:
-        group_summary_df = group_summary_df.sort_values(["config_name", "num_columns"])
+    group_summary_df, run_summary_df = build_summary_frames(combo_stats, run_summaries)
+    print("", flush=True)
     print_group_level_summary(group_summary_df)
     print_run_level_summary(run_summary_df)
 
