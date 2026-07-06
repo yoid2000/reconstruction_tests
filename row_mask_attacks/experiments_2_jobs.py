@@ -27,6 +27,8 @@ def expand_experiments(experiments: list[dict[str, Any]]) -> list[dict[str, Any]
     seen = set()
 
     for experiment in experiments:
+        if experiment.get("not_params", {}).get("dont_run", False):
+            continue
         keys = [key for key in experiment.keys() if key not in NOT_JOB_KEYS]
         value_lists = [_as_values(experiment[key]) for key in keys]
         for values in product(*value_lists):

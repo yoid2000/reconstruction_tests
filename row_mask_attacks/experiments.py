@@ -10,7 +10,7 @@ DEFAULT_MAX_NUM_CONTINGENCY_TABLES = 100000
 experiments = [
     {   # Agg Dinur-style, test noise, no suppression
         'not_params': {
-            'dont_run': True,
+            'dont_run': False,
             'used_in_paper': True,
             'experiment_group': 'agg_dinur_noise_no_supp',
         },
@@ -36,7 +36,7 @@ experiments = [
     },
     {   # Agg Dinur-style, test suppression, no noise
         'not_params': {
-            'dont_run': True,
+            'dont_run': False,
             'used_in_paper': True,
             'experiment_group': 'agg_dinur_supp_no_noise',
         },
@@ -62,7 +62,7 @@ experiments = [
     },
     {   # Agg Dinur-style, test low suppression and noise
         'not_params': {
-            'dont_run': True,
+            'dont_run': False,
             'used_in_paper': True,
             'experiment_group': 'agg_dinur_low_supp_and_noise',
         },
@@ -75,6 +75,32 @@ experiments = [
         'noise': [1, 2, 4],
         'max_num_contingency_tables': [50, 75, 100, 150, 200],
         'min_num_rows': [2, 3, 5],
+        'corr_strength': [0.0],
+        'known_qi_fraction': [1.0],
+        'max_qi': [1000],
+        'max_samples': [20000],
+        'use_objective': [DEFAULT_USE_OBJECTIVE],
+        'time_limit_seconds': [DEFAULT_TIME_LIMIT_SECONDS],
+        'slack_limit_multiple': [DEFAULT_SLACK_LIMIT_MULTIPLE],
+        'slack_limit_min': [DEFAULT_SLACK_LIMIT_MIN],
+        'path_to_dataset': [''],
+        'target_column': [''],
+    },
+    {   # Agg Dinur-style, test nunique
+        'not_params': {
+            'dont_run': False,
+            'used_in_paper': True,
+            'experiment_group': 'agg_dinur_nunique',
+        },
+        'solve_type': 'agg_row',
+        'nrows': [150],
+        'nqi': [11],
+        'nunique': [2, 4, 6],
+        'vals_per_qi': [2],
+        'mask_size': [0],
+        'noise': [0, 1, 2, 4],
+        'max_num_contingency_tables': [200],
+        'min_num_rows': [1, 2, 3, 5],
         'corr_strength': [0.0],
         'known_qi_fraction': [1.0],
         'max_qi': [1000],
