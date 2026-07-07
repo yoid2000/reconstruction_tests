@@ -1,6 +1,8 @@
 import argparse
 from pathlib import Path
 
+import numpy as np
+
 from build_row_masks import build_row_masks_qi
 
 
@@ -22,17 +24,25 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Build a row-mask DataFrame and write it as parquet."
     )
-    parser.add_argument("--nrows", type=int, default=150)
+    parser.add_argument("--nrows", type=int, default=10000)
     parser.add_argument("--nunique", type=int, default=2)
     parser.add_argument("--nqi", type=int, default=11)
     parser.add_argument("--vals_per_qi", type=int, default=2)
     parser.add_argument("--corr_strength", type=float, default=0.0)
+    parser.add_argument("--num_rows_per_splitter", type=int, default=150)
     parser.add_argument("--output", type=Path)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    num_splitter_values = int(args.nrows / args.num_rows_per_splitter)
+    if num_splitter_values < 1:
+        raise ValueError(
+            "num_rows_per_splitter must be less than or equal to nrows so that "
+            "int(nrows / num_rows_per_splitter) is at least 1."
+        )
+
     df = build_row_masks_qi(
         nrows=args.nrows,
         nunique=args.nunique,
@@ -40,6 +50,7 @@ def main() -> None:
         vals_per_qi=args.vals_per_qi,
         corr_strength=args.corr_strength,
     )
+    df["splitter"] = np.random.randint(0, num_splitter_values, size=args.nrows)
     output = args.output or get_default_output_path(args)
     output.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(output, index=False)
