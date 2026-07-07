@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input_path",
         type=str,
-        default="input_files/nr_150_nu_2_nq_11_vq_2_cs_0p0.parquet",
+        default="input_files/nr_10000_nu_2_nq_11_vq_2_cs_0p0.parquet",
     )
     parser.add_argument("--output_dir", type=str, default="output_files")
     parser.add_argument("--ctgan_configs_dir", type=str, default="ctgan_configs")
@@ -76,6 +76,7 @@ def build_jobs(args: argparse.Namespace) -> list[dict[str, object]]:
     for config_path in config_paths:
         yaml_name = config_path.stem
         for qi_columns in contingency_tables:
+            contingency_table = [*qi_columns, "val", "splitter"]
             qi_file_name = qi_columns_filename(qi_columns)
             jobs.append(
                 {
@@ -90,7 +91,7 @@ def build_jobs(args: argparse.Namespace) -> list[dict[str, object]]:
                         args.ctgan_configs_dir,
                         f"{yaml_name}.yaml",
                     ),
-                    "contingency_table": json.dumps(qi_columns),
+                    "contingency_table": json.dumps(contingency_table),
                 }
             )
 
