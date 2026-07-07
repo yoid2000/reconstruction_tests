@@ -82,6 +82,22 @@ def summarize_noise_by_num_columns(rows: list[dict[str, object]]) -> pd.DataFram
     return pd.DataFrame(summary_rows).sort_values("num_columns")
 
 
+def format_float(value: float) -> str:
+    if not math.isfinite(value):
+        return str(value)
+    if value == 0:
+        return "0.0000"
+
+    abs_value = abs(value)
+    fixed_precision = f"{abs_value:.16f}".split(".", maxsplit=1)[1]
+    first_nonzero_index = next(
+        (index for index, digit in enumerate(fixed_precision, start=1) if digit != "0"),
+        None,
+    )
+    precision = 4 if first_nonzero_index is None else max(4, first_nonzero_index + 4)
+    return f"{value:.{precision}f}"
+
+
 def main() -> None:
     args = parse_args()
     source_path = resolve_local_path(args.source_path)
@@ -117,7 +133,7 @@ def main() -> None:
     print(f"Synthetic files processed: {len(synth_paths)}")
     print("")
     print("Noise summary by group-by column count")
-    print(summary_df.to_string(index=False, float_format=lambda value: f"{value:0.4f}"))
+    print(summary_df.to_string(index=False, float_format=format_float))
 
 
 if __name__ == "__main__":
