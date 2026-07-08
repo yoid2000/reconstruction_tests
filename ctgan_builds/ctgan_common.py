@@ -87,6 +87,11 @@ def get_metadata_output_path(output_path: str) -> Path:
     return resolve_local_path(output_path).with_suffix(".json")
 
 
+def get_seeded_output_path(output_path: str, seed: int) -> str:
+    output_file = Path(output_path)
+    return str(output_file.with_name(f"{output_file.stem}_{seed}{output_file.suffix}"))
+
+
 def build_synthesizer_kwargs(
     ctgan_config: dict[str, Any],
     constructor_parameters: set[str],
@@ -228,7 +233,7 @@ def set_random_seed(seed: int) -> None:
 
 def run_experiment(parameters: dict[str, object], seed: int) -> dict[str, object]:
     input_path = str(parameters["input_path"])
-    output_path = str(parameters["output_path"])
+    output_path = get_seeded_output_path(str(parameters["output_path"]), seed)
     ctgan_config_path = str(parameters["ctgan_config_path"])
     contingency_table = parse_contingency_table(parameters["contingency_table"])
 
