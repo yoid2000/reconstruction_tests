@@ -119,6 +119,44 @@ def flatten_dict(data: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
             flattened[flat_key] = value
     return flattened
 
+
+def _coerce_parameter_value(value: Any, default_value: Any) -> Any:
+    """Coerce manifest/job parameter values to the expected scalar type."""
+    if value is None or isinstance(value, type(default_value)):
+        return value
+
+    if isinstance(default_value, bool):
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "1", "yes", "y", "on"}:
+                return True
+            if normalized in {"false", "0", "no", "n", "off"}:
+                return False
+        if isinstance(value, (int, float)):
+            return bool(value)
+        raise ValueError(f"Cannot coerce boolean parameter value {value!r}")
+
+    if isinstance(default_value, int) and not isinstance(default_value, bool):
+        if isinstance(value, str):
+            numeric_value = float(value.strip())
+            if not numeric_value.is_integer():
+                raise ValueError(f"Expected integer-compatible value, got {value!r}")
+            return int(numeric_value)
+        if isinstance(value, float):
+            if not value.is_integer():
+                raise ValueError(f"Expected integer-compatible value, got {value!r}")
+            return int(value)
+        return int(value)
+
+    if isinstance(default_value, float):
+        return float(value)
+
+    if isinstance(default_value, str):
+        return str(value)
+
+    return value
+
+
 def _resolve_dataset_path(path_to_dataset: str) -> Path:
     dataset_path = Path(path_to_dataset)
     if dataset_path.suffix.lower() != '.parquet':
@@ -851,7 +889,7 @@ def run_experiment(parameters: dict[str, object], seed: int) -> dict[str, object
     }
 
     attack_parameters = {
-        key: parameters.get(key, default_value)
+        key: _coerce_parameter_value(parameters.get(key, default_value), default_value)
         for key, default_value in defaults.items()
     }
     attack_parameters['seed'] = seed
