@@ -616,12 +616,84 @@ def write_results(results: list[dict[str, Any]], results_path: Path) -> None:
     pd.DataFrame(results).to_parquet(results_path, index=False)
 
 
+def _normalize_path_for_key(path: Path | str) -> str:
+    return str(Path(path).resolve())
+
+
+def _normalize_value_for_key(value: Any) -> Any:
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def build_attack_key(
+    *,
+    info_path: Path | str,
+    max_num_contingency_tables: int,
+    known_qi_fraction: float,
+    seed: Any,
+    splitter: Any,
+) -> tuple[str, int, float, Any, str]:
+    normalized_splitter = json.dumps(_normalize_value_for_key(splitter), sort_keys=True)
+    return (
+        _normalize_path_for_key(info_path),
+        int(max_num_contingency_tables),
+        float(known_qi_fraction),
+        _normalize_value_for_key(seed),
+        normalized_splitter,
+    )
+
+
+def load_existing_results(
+    results_path: Path,
+    *,
+    info_path: Path,
+) -> tuple[list[dict[str, Any]], set[tuple[str, int, float, Any, str]]]:
+    if not results_path.exists():
+        print(f"No existing results parquet at {results_path}")
+        return [], set()
+
+    existing_df = pd.read_parquet(results_path)
+    existing_results = existing_df.to_dict("records")
+    existing_keys: set[tuple[str, int, float, Any, str]] = set()
+    current_info_path = _normalize_path_for_key(info_path)
+
+    for row in existing_results:
+        row_info_path = row.get("info_path")
+        if pd.isna(row_info_path):
+            row_info_path = current_info_path
+
+        max_num_contingency_tables = row.get("max_num_contingency_tables")
+        known_qi_fraction = row.get("known_qi_fraction")
+        seed = row.get("seed")
+        splitter = row.get("splitter")
+        if any(pd.isna(value) for value in [max_num_contingency_tables, known_qi_fraction, seed, splitter]):
+            continue
+
+        existing_keys.add(
+            build_attack_key(
+                info_path=row_info_path,
+                max_num_contingency_tables=int(max_num_contingency_tables),
+                known_qi_fraction=float(known_qi_fraction),
+                seed=seed,
+                splitter=splitter,
+            )
+        )
+
+    print(
+        f"Loaded {len(existing_results)} existing results from {results_path}; "
+        f"indexed {len(existing_keys)} resumable attack keys"
+    )
+    return existing_results, existing_keys
+
+
 def main() -> None:
     args = parse_args()
     info_path = resolve_existing_path(args.info)
     results_path = Path(args.results_path)
     if not results_path.is_absolute():
         results_path = Path.cwd() / results_path
+    results_path = results_path.resolve()
 
     df_info = prepare_info_dataframe(info_path)
     validate_seed_variation(df_info, info_path=info_path)
@@ -648,13 +720,37 @@ def main() -> None:
         }
     )
 
-    results: list[dict[str, Any]] = []
+    results, existing_attack_keys = load_existing_results(
+        results_path,
+        info_path=info_path,
+    )
+    total_completed = 0
+    total_skipped = 0
     for splitter_value in all_splitters:
         print(f"Starting splitter={splitter_value!r}")
+        splitter_completed = 0
+        splitter_skipped = 0
         for context in seed_contexts:
             source_path = context["source_path"]
             source_df = source_cache[source_path]
             if splitter_value not in splitters_by_source[source_path]:
+                continue
+
+            attack_key = build_attack_key(
+                info_path=info_path,
+                max_num_contingency_tables=args.max_num_contingency_tables,
+                known_qi_fraction=args.known_qi_fraction,
+                seed=context["seed"],
+                splitter=splitter_value,
+            )
+            if attack_key in existing_attack_keys:
+                splitter_skipped += 1
+                total_skipped += 1
+                print(
+                    f"Status: splitter={splitter_value!r}, seed={context['seed']} skipped "
+                    f"(already present). splitter_completed={splitter_completed}, "
+                    f"splitter_skipped={splitter_skipped}, total_results={len(results)}"
+                )
                 continue
 
             source_subset = get_source_subset(source_df, splitter_value)
@@ -668,6 +764,7 @@ def main() -> None:
             )
             row_result.update(
                 {
+                    "info_path": _normalize_path_for_key(info_path),
                     "seed": int(context["seed"]),
                     "splitter": splitter_value,
                     "p__input_path": source_path,
@@ -685,11 +782,24 @@ def main() -> None:
                 }
             )
             results.append(row_result)
+            existing_attack_keys.add(attack_key)
+            splitter_completed += 1
+            total_completed += 1
             write_results(results, results_path)
             _print_memory_usage(
                 f"After writing results for splitter={splitter_value!r}, seed={context['seed']}"
             )
+            print(
+                f"Status: splitter={splitter_value!r}, seed={context['seed']} completed. "
+                f"splitter_completed={splitter_completed}, splitter_skipped={splitter_skipped}, "
+                f"total_results={len(results)}"
+            )
             gc.collect()
+        print(
+            f"Finished splitter={splitter_value!r}: completed={splitter_completed}, "
+            f"skipped={splitter_skipped}, cumulative_completed={total_completed}, "
+            f"cumulative_skipped={total_skipped}, total_results={len(results)}"
+        )
 
     print(f"Wrote {len(results)} results to {results_path}")
 
