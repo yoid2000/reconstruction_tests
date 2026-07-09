@@ -40,6 +40,7 @@ DEFAULT_TIME_LIMIT_SECONDS = (3 * 24 * 60 * 60)  # 3 days in seconds
 DEFAULT_SLACK_LIMIT_MULTIPLE = 2
 DEFAULT_SLACK_LIMIT_MIN = 10
 DEFAULT_MAX_NUM_CONTINGENCY_TABLES = 200
+DEFAULT_NOISE = 2
 
 REQUIRED_INFO_COLUMNS = {
     "seed",
@@ -79,6 +80,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1.0,
         help="Fraction of rows whose full QI values are known to the attacker.",
+    )
+    parser.add_argument(
+        "--noise",
+        type=int,
+        default=DEFAULT_NOISE,
+        help="Noise bound for synthetic contingency-table counts.",
     )
     parser.add_argument(
         "--results_path",
@@ -568,11 +575,14 @@ def run_attack_for_splitter_seed(
     selected_seed_rows: pd.DataFrame,
     seed: int,
     splitter_value: Any,
+    noise: int,
     known_qi_fraction: float,
     info_path: Path,
 ) -> dict[str, Any]:
     if not 0.0 <= known_qi_fraction <= 1.0:
         raise ValueError("known_qi_fraction must be between 0.0 and 1.0.")
+    if noise < 0:
+        raise ValueError("noise must be >= 0.")
 
     np.random.seed(seed)
     all_qi_cols = [col for col in df_source_subset.columns if col.startswith("qi")]
@@ -587,7 +597,7 @@ def run_attack_for_splitter_seed(
 
     print(
         f"Running reconstruction for splitter={splitter_value!r}, seed={seed}, "
-        f"samples={len(samples)}, known_qi_fraction={known_qi_fraction}"
+        f"samples={len(samples)}, noise={noise}, known_qi_fraction={known_qi_fraction}"
     )
 
     start_time = time.time()
@@ -601,7 +611,7 @@ def run_attack_for_splitter_seed(
     if known_qi_fraction == 1.0:
         reconstructed, _, solver_metrics = reconstruct_by_row(
             samples,
-            0,
+            noise,
             seed,
             use_objective=DEFAULT_USE_OBJECTIVE,
             time_limit_seconds=DEFAULT_TIME_LIMIT_SECONDS,
@@ -622,7 +632,7 @@ def run_attack_for_splitter_seed(
             )
         reconstructed, _, solver_metrics = reconstruct_by_aggregate_and_known_qi(
             samples,
-            0,
+            noise,
             len(df_source_subset),
             all_qi_cols,
             complete_known_qi_rows,
@@ -647,6 +657,7 @@ def run_attack_for_splitter_seed(
         "solver_metrics": solver_metrics,
         "finished": True,
         "elapsed_time": elapsed_time,
+        "noise": noise,
         "num_samples": len(samples),
         "num_suppressed": 0,
         "num_known_qi_rows": len(complete_known_qi_rows),
@@ -675,14 +686,16 @@ def build_attack_key(
     info_path: Path | str,
     max_num_contingency_tables: int,
     known_qi_fraction: float,
+    noise: int,
     seed: Any,
     splitter: Any,
-) -> tuple[str, int, float, Any, str]:
+) -> tuple[str, int, float, int, Any, str]:
     normalized_splitter = json.dumps(_normalize_value_for_key(splitter), sort_keys=True)
     return (
         _normalize_path_for_key(info_path),
         int(max_num_contingency_tables),
         float(known_qi_fraction),
+        int(noise),
         _normalize_value_for_key(seed),
         normalized_splitter,
     )
@@ -692,14 +705,14 @@ def load_existing_results(
     results_path: Path,
     *,
     info_path: Path,
-) -> tuple[list[dict[str, Any]], set[tuple[str, int, float, Any, str]]]:
+) -> tuple[list[dict[str, Any]], set[tuple[str, int, float, int, Any, str]]]:
     if not results_path.exists():
         print(f"No existing results parquet at {results_path}")
         return [], set()
 
     existing_df = pd.read_parquet(results_path)
     existing_results = existing_df.to_dict("records")
-    existing_keys: set[tuple[str, int, float, Any, str]] = set()
+    existing_keys: set[tuple[str, int, float, int, Any, str]] = set()
     current_info_path = _normalize_path_for_key(info_path)
 
     for row in existing_results:
@@ -709,8 +722,11 @@ def load_existing_results(
 
         max_num_contingency_tables = row.get("max_num_contingency_tables")
         known_qi_fraction = row.get("known_qi_fraction")
+        noise = row.get("noise")
         seed = row.get("seed")
         splitter = row.get("splitter")
+        if pd.isna(noise):
+            noise = DEFAULT_NOISE
         if any(pd.isna(value) for value in [max_num_contingency_tables, known_qi_fraction, seed, splitter]):
             continue
 
@@ -719,6 +735,7 @@ def load_existing_results(
                 info_path=row_info_path,
                 max_num_contingency_tables=int(max_num_contingency_tables),
                 known_qi_fraction=float(known_qi_fraction),
+                noise=int(noise),
                 seed=seed,
                 splitter=splitter,
             )
@@ -784,6 +801,7 @@ def main() -> None:
                 info_path=info_path,
                 max_num_contingency_tables=args.max_num_contingency_tables,
                 known_qi_fraction=args.known_qi_fraction,
+                noise=args.noise,
                 seed=context["seed"],
                 splitter=splitter_value,
             )
@@ -803,6 +821,7 @@ def main() -> None:
                 selected_seed_rows=context["selected_rows"],
                 seed=int(context["seed"]),
                 splitter_value=splitter_value,
+                noise=args.noise,
                 known_qi_fraction=args.known_qi_fraction,
                 info_path=info_path,
             )
@@ -815,6 +834,7 @@ def main() -> None:
                     "p__output_paths_json": json.dumps(context["output_paths"]),
                     "p__contingency_tables_json": json.dumps(context["contingency_tables"]),
                     "known_qi_fraction": args.known_qi_fraction,
+                    "noise": args.noise,
                     "max_num_contingency_tables": args.max_num_contingency_tables,
                     "num_contingency_tables_available": context["num_contingency_tables_available"],
                     "num_contingency_tables_used": context["num_contingency_tables_used"],
