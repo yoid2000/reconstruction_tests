@@ -48,6 +48,16 @@ REQUIRED_INFO_COLUMNS = {
     "p__output_path",
 }
 
+ALC_RESULT_FIELDS = (
+    "alc",
+    "attack_precision",
+    "attack_recall",
+    "attack_prc",
+    "baseline_precision",
+    "baseline_recall",
+    "baseline_prc",
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -429,6 +439,13 @@ def run_brm_attack(
     }
 
 
+def flatten_alc_result(alc_result: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        f"alc_{field_name}": alc_result.get(field_name)
+        for field_name in ALC_RESULT_FIELDS
+    }
+
+
 def build_ids_for_qi_values(
     df_source_subset: pd.DataFrame,
     qi_cols: list[str],
@@ -626,7 +643,6 @@ def run_attack_for_splitter_seed(
     result = {
         "accuracy": accuracy,
         "qi_match_accuracy": qi_match_accuracy,
-        "alc": alc_result,
         "mean_cell_size": mean_cell_size,
         "solver_metrics": solver_metrics,
         "finished": True,
@@ -635,6 +651,7 @@ def run_attack_for_splitter_seed(
         "num_suppressed": 0,
         "num_known_qi_rows": len(complete_known_qi_rows),
     }
+    result.update(flatten_alc_result(alc_result))
     return flatten_dict(result)
 
 
