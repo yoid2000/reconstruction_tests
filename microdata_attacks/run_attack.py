@@ -119,13 +119,22 @@ def _print_memory_usage(label: str) -> None:
         print(f"{label}: memory usage {mem_mb:.2f} MB")
 
 
-def resolve_existing_path(path_str: str, *, info_path: Optional[Path] = None) -> Path:
+def _append_seed_to_filename(path: Path, seed: Any) -> Path:
+    return path.with_name(f"{path.stem}_{int(seed)}{path.suffix}")
+
+
+def resolve_existing_path(
+    path_str: str,
+    *,
+    info_path: Optional[Path] = None,
+    seed: Any = None,
+) -> Path:
     path = Path(path_str)
-    candidates: list[Path] = []
+    base_candidates: list[Path] = []
     if path.is_absolute():
-        candidates.append(path)
+        base_candidates.append(path)
     else:
-        candidates.extend(
+        base_candidates.extend(
             [
                 Path.cwd() / path,
                 PROJECT_ROOT / path,
@@ -133,11 +142,17 @@ def resolve_existing_path(path_str: str, *, info_path: Optional[Path] = None) ->
             ]
         )
         if info_path is not None:
-            candidates.append(info_path.parent / path)
+            base_candidates.append(info_path.parent / path)
 
-    for candidate in candidates:
+    for candidate in base_candidates:
         if candidate.exists():
             return candidate.resolve()
+
+    if seed is not None:
+        for candidate in base_candidates:
+            seeded_candidate = _append_seed_to_filename(candidate, seed)
+            if seeded_candidate.exists():
+                return seeded_candidate.resolve()
 
     raise FileNotFoundError(f"Path not found: {path_str}")
 
@@ -200,8 +215,16 @@ def validate_seed_variation(df_info: pd.DataFrame, *, info_path: Path) -> None:
                 continue
 
             contingency_table = tuple(left["contingency_table_list"])
-            left_path = resolve_existing_path(left["p__output_path"], info_path=info_path)
-            right_path = resolve_existing_path(right["p__output_path"], info_path=info_path)
+            left_path = resolve_existing_path(
+                left["p__output_path"],
+                info_path=info_path,
+                seed=left["seed"],
+            )
+            right_path = resolve_existing_path(
+                right["p__output_path"],
+                info_path=info_path,
+                seed=right["seed"],
+            )
             left_df = canonicalize_dataframe(load_microdata_dataframe(left_path, contingency_table))
             right_df = canonicalize_dataframe(load_microdata_dataframe(right_path, contingency_table))
             if not left_df.equals(right_df):
@@ -259,7 +282,7 @@ def build_seed_contexts(
 
         source_path = resolve_existing_path(input_paths[0], info_path=info_path)
         output_paths = [
-            str(resolve_existing_path(path_str, info_path=info_path))
+            str(resolve_existing_path(path_str, info_path=info_path, seed=seed))
             for path_str in selected_seed_df["p__output_path"].tolist()
         ]
         contingency_tables = [
@@ -430,7 +453,11 @@ def build_samples_for_splitter_seed(
     for _, info_row in selected_seed_rows.iterrows():
         contingency_table = tuple(info_row["contingency_table_list"])
         qi_cols = qi_columns_from_table(contingency_table)
-        output_path = resolve_existing_path(info_row["p__output_path"], info_path=info_path)
+        output_path = resolve_existing_path(
+            info_row["p__output_path"],
+            info_path=info_path,
+            seed=info_row["seed"],
+        )
         microdata_df = load_microdata_dataframe(output_path, contingency_table)
         microdata_subset = microdata_df[microdata_df["splitter"] == splitter_value].copy()
         if microdata_subset.empty:
