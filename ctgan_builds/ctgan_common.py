@@ -250,6 +250,9 @@ def run_experiment(parameters: dict[str, object], seed: int) -> dict[str, object
     result: dict[str, object] = {
         "experiment_finished": True,
         "ctgan_elapsed_time": elapsed_time,
+        # Override the manifest-derived p__output_path in the final payload so
+        # results.parquet points at the actual seeded output written for this run.
+        "p__output_path": output_path,
     }
     for field in CTGAN_CONFIG_FIELDS:
         result[field] = ctgan_config[field]

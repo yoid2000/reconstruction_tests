@@ -11,8 +11,8 @@
     },
     "defaults": {
         "seeds": {
-            "initial_count": 20,
-            "max_count": 20
+            "initial_count": 5,
+            "max_count": 5
         },
         "resources": {
             "time_ladder": [
