@@ -7,7 +7,7 @@
         ]
     },
     "remote_execution": {
-        "host": "sws-grid-submit1"
+        "host": "sws-grid-submit.mpi-sws.org"
     },
     "defaults": {
         "seeds": {
