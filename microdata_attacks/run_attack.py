@@ -60,6 +60,17 @@ ALC_RESULT_FIELDS = (
 )
 
 
+def parse_bool_arg(value: str | bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = value.strip().lower()
+    if normalized in {"true", "1", "yes", "y", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "n", "off"}:
+        return False
+    raise argparse.ArgumentTypeError(f"Expected True or False, got {value!r}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run the row-mask reconstruction attack from synthetic microdata tables."
@@ -86,6 +97,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_NOISE,
         help="Noise bound for synthetic contingency-table counts.",
+    )
+    parser.add_argument(
+        "--ascending",
+        type=parse_bool_arg,
+        default=True,
+        help="If True, prefer narrower contingency tables first; if False, prefer wider tables first.",
     )
     parser.add_argument(
         "--results_path",
@@ -268,6 +285,7 @@ def prepare_info_dataframe(info_path: Path) -> pd.DataFrame:
     df_info["_row_order"] = np.arange(len(df_info), dtype=int)
     df_info["contingency_table_list"] = df_info["p__contingency_table"].map(normalize_contingency_table)
     df_info["contingency_table_key"] = df_info["contingency_table_list"].map(json.dumps)
+    df_info["num_contingency_columns"] = df_info["contingency_table_list"].map(len)
     return df_info
 
 
@@ -275,6 +293,7 @@ def build_seed_contexts(
     df_info: pd.DataFrame,
     *,
     max_num_contingency_tables: int,
+    ascending: bool,
     info_path: Path,
 ) -> list[dict[str, Any]]:
     if max_num_contingency_tables < 1:
@@ -292,6 +311,11 @@ def build_seed_contexts(
         dedup_seed_df = seed_df.sort_values("_row_order", kind="stable").drop_duplicates(
             subset=["contingency_table_key"],
             keep="first",
+        )
+        dedup_seed_df = dedup_seed_df.sort_values(
+            ["num_contingency_columns", "_row_order"],
+            ascending=[ascending, True],
+            kind="stable",
         )
         selected_seed_df = dedup_seed_df.head(max_num_contingency_tables).copy()
         if len(selected_seed_df) == 0:
@@ -315,6 +339,7 @@ def build_seed_contexts(
                 "contingency_tables": contingency_tables,
                 "num_contingency_tables_available": int(len(dedup_seed_df)),
                 "num_contingency_tables_used": int(len(selected_seed_df)),
+                "sort": "ascending" if ascending else "descending",
             }
         )
 
@@ -687,15 +712,17 @@ def build_attack_key(
     max_num_contingency_tables: int,
     known_qi_fraction: float,
     noise: int,
+    ascending: bool,
     seed: Any,
     splitter: Any,
-) -> tuple[str, int, float, int, Any, str]:
+) -> tuple[str, int, float, int, bool, Any, str]:
     normalized_splitter = json.dumps(_normalize_value_for_key(splitter), sort_keys=True)
     return (
         _normalize_path_for_key(info_path),
         int(max_num_contingency_tables),
         float(known_qi_fraction),
         int(noise),
+        bool(ascending),
         _normalize_value_for_key(seed),
         normalized_splitter,
     )
@@ -705,14 +732,14 @@ def load_existing_results(
     results_path: Path,
     *,
     info_path: Path,
-) -> tuple[list[dict[str, Any]], set[tuple[str, int, float, int, Any, str]]]:
+) -> tuple[list[dict[str, Any]], set[tuple[str, int, float, int, bool, Any, str]]]:
     if not results_path.exists():
         print(f"No existing results parquet at {results_path}")
         return [], set()
 
     existing_df = pd.read_parquet(results_path)
     existing_results = existing_df.to_dict("records")
-    existing_keys: set[tuple[str, int, float, int, Any, str]] = set()
+    existing_keys: set[tuple[str, int, float, int, bool, Any, str]] = set()
     current_info_path = _normalize_path_for_key(info_path)
 
     for row in existing_results:
@@ -723,10 +750,15 @@ def load_existing_results(
         max_num_contingency_tables = row.get("max_num_contingency_tables")
         known_qi_fraction = row.get("known_qi_fraction")
         noise = row.get("noise")
+        ascending = row.get("ascending")
         seed = row.get("seed")
         splitter = row.get("splitter")
         if pd.isna(noise):
             noise = DEFAULT_NOISE
+        if pd.isna(ascending):
+            ascending = True
+        elif isinstance(ascending, str):
+            ascending = parse_bool_arg(ascending)
         if any(pd.isna(value) for value in [max_num_contingency_tables, known_qi_fraction, seed, splitter]):
             continue
 
@@ -736,6 +768,7 @@ def load_existing_results(
                 max_num_contingency_tables=int(max_num_contingency_tables),
                 known_qi_fraction=float(known_qi_fraction),
                 noise=int(noise),
+                ascending=bool(ascending),
                 seed=seed,
                 splitter=splitter,
             )
@@ -761,6 +794,7 @@ def main() -> None:
     seed_contexts = build_seed_contexts(
         df_info,
         max_num_contingency_tables=args.max_num_contingency_tables,
+        ascending=args.ascending,
         info_path=info_path,
     )
 
@@ -802,6 +836,7 @@ def main() -> None:
                 max_num_contingency_tables=args.max_num_contingency_tables,
                 known_qi_fraction=args.known_qi_fraction,
                 noise=args.noise,
+                ascending=args.ascending,
                 seed=context["seed"],
                 splitter=splitter_value,
             )
@@ -835,9 +870,11 @@ def main() -> None:
                     "p__contingency_tables_json": json.dumps(context["contingency_tables"]),
                     "known_qi_fraction": args.known_qi_fraction,
                     "noise": args.noise,
+                    "ascending": args.ascending,
                     "max_num_contingency_tables": args.max_num_contingency_tables,
                     "num_contingency_tables_available": context["num_contingency_tables_available"],
                     "num_contingency_tables_used": context["num_contingency_tables_used"],
+                    "sort": context["sort"],
                     "splitter_num_rows": int(len(source_subset)),
                     "source_num_rows": int(len(source_df)),
                     "source_nqi": int(len([col for col in source_subset.columns if col.startswith("qi")])),
