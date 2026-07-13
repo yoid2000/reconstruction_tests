@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -33,6 +34,13 @@ def get_seeded_output_path_str(output_path: str, seed: int) -> str:
     return get_seeded_output_path(output_path, seed)
 
 
+def get_contingency_table_width(raw_value: str) -> int:
+    parsed = json.loads(raw_value)
+    if not isinstance(parsed, list):
+        raise ValueError(f"Invalid p__contingency_table value: {raw_value!r}")
+    return len(parsed)
+
+
 def main() -> None:
     args = parse_args()
     info_path = resolve_local_path(args.info)
@@ -40,31 +48,51 @@ def main() -> None:
         raise FileNotFoundError(f"Results parquet not found: {info_path}")
 
     df_results = pd.read_parquet(info_path)
-    if "seed" not in df_results.columns or "p__output_path" not in df_results.columns:
-        raise ValueError("results.parquet must contain 'seed' and 'p__output_path' columns.")
+    required_columns = {"seed", "p__output_path", "p__contingency_table"}
+    missing_columns = required_columns - set(df_results.columns)
+    if missing_columns:
+        raise ValueError(
+            "results.parquet must contain columns: "
+            f"{sorted(required_columns)}; missing {sorted(missing_columns)}"
+        )
 
-    rows_to_remove = df_results[df_results["seed"] > 4].copy()
-    print(f"Found {len(rows_to_remove)} rows with seed > 4")
+    df_results = df_results.copy()
+    df_results["contingency_table_width"] = df_results["p__contingency_table"].map(
+        lambda raw_value: get_contingency_table_width(str(raw_value))
+    )
+
+    seed_mask = df_results["seed"] > 4
+    width_mask = df_results["contingency_table_width"] >= 6
+    rows_to_remove = df_results[seed_mask | width_mask].copy()
+    print(
+        f"Found {len(rows_to_remove)} rows to remove "
+        f"(seed_gt_4={int(seed_mask.sum())}, width_ge_6={int(width_mask.sum())})"
+    )
 
     deleted_count = 0
     missing_count = 0
+    deleted_paths: set[Path] = set()
     for _, row in rows_to_remove.iterrows():
         seed = int(row["seed"])
         output_path = str(row["p__output_path"])
         seeded_output_path = resolve_seeded_output_path(output_path, seed)
+        if seeded_output_path in deleted_paths:
+            continue
         if seeded_output_path.exists():
             seeded_output_path.unlink()
+            deleted_paths.add(seeded_output_path)
             deleted_count += 1
             print(f"Deleted {seeded_output_path}")
         else:
             missing_count += 1
             print(f"Missing file, skipped delete: {seeded_output_path}")
 
-    cleaned_df = df_results[df_results["seed"] <= 4].copy()
+    cleaned_df = df_results[~(seed_mask | width_mask)].copy()
     cleaned_df["p__output_path"] = cleaned_df.apply(
         lambda row: get_seeded_output_path_str(str(row["p__output_path"]), int(row["seed"])),
         axis=1,
     )
+    cleaned_df = cleaned_df.drop(columns=["contingency_table_width"])
     cleaned_df.to_parquet(info_path, index=False)
     print(
         f"Wrote cleaned results to {info_path} "
