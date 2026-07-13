@@ -37,7 +37,7 @@ def measure_group_noise(
     df_source: pd.DataFrame,
     df_synth: pd.DataFrame,
     group_columns: Iterable[str],
-) -> pd.Series:
+) -> pd.DataFrame:
     group_columns = list(group_columns)
     if not set(group_columns).issubset(df_source.columns):
         missing = [column for column in group_columns if column not in df_source.columns]
@@ -60,7 +60,9 @@ def measure_group_noise(
     merged = source_counts.merge(synth_counts, on=group_columns, how="outer")
     merged["source_count"] = merged["source_count"].fillna(0).astype(int)
     merged["synth_count"] = merged["synth_count"].fillna(0).astype(int)
-    return merged["synth_count"] - merged["source_count"]
+    merged["absolute_error"] = merged["synth_count"] - merged["source_count"]
+    merged["relative_error"] = merged["absolute_error"] / merged["source_count"].replace(0, pd.NA)
+    return merged
 
 
 def summarize_noise_by_num_columns(rows: list[dict[str, object]]) -> pd.DataFrame:
@@ -76,7 +78,9 @@ def summarize_noise_by_num_columns(rows: list[dict[str, object]]) -> pd.DataFram
             if len(group) > MAX_SAMPLES_PER_MEASURE
             else group
         )
-        noise = sampled_group["noise"].astype(float)
+        absolute_error = sampled_group["absolute_error"].astype(float)
+        relative_error = pd.to_numeric(sampled_group["relative_error"], errors="coerce")
+        valid_relative_error = relative_error.dropna()
         summary_rows.append(
             {
                 "table_width": int(table_width),
@@ -84,12 +88,26 @@ def summarize_noise_by_num_columns(rows: list[dict[str, object]]) -> pd.DataFram
                 "available_group_count": available_group_count,
                 "sampled_group_count": int(len(sampled_group)),
                 "synthetic_files": int(group["synth_file"].nunique()),
-                "mean_noise": float(noise.mean()),
-                "std_noise": float(noise.std(ddof=1)) if len(sampled_group) > 1 else 0.0,
-                "mean_abs_noise": float(noise.abs().mean()),
-                "rmse_noise": math.sqrt(float((noise**2).mean())),
-                "min_noise": float(noise.min()),
-                "max_noise": float(noise.max()),
+                "relative_group_count": int(len(valid_relative_error)),
+                "zero_source_group_count": int(sampled_group["source_count"].eq(0).sum()),
+                "mean_absolute_error": float(absolute_error.mean()),
+                "std_absolute_error": (
+                    float(absolute_error.std(ddof=1)) if len(sampled_group) > 1 else 0.0
+                ),
+                "mean_abs_absolute_error": float(absolute_error.abs().mean()),
+                "rmse_absolute_error": math.sqrt(float((absolute_error**2).mean())),
+                "min_absolute_error": float(absolute_error.min()),
+                "max_absolute_error": float(absolute_error.max()),
+                "mean_relative_error": float(valid_relative_error.mean()),
+                "std_relative_error": (
+                    float(valid_relative_error.std(ddof=1))
+                    if len(valid_relative_error) > 1
+                    else 0.0
+                ),
+                "mean_abs_relative_error": float(valid_relative_error.abs().mean()),
+                "rmse_relative_error": math.sqrt(float((valid_relative_error**2).mean())),
+                "min_relative_error": float(valid_relative_error.min()),
+                "max_relative_error": float(valid_relative_error.max()),
             }
         )
 
@@ -121,12 +139,26 @@ def print_summary_text(summary_df: pd.DataFrame) -> None:
                 f"available_groups={int(row['available_group_count'])}, "
                 f"sampled_groups={int(row['sampled_group_count'])}, "
                 f"synthetic_files={int(row['synthetic_files'])}, "
-                f"mean_noise={format_float(float(row['mean_noise']))}, "
-                f"std_noise={format_float(float(row['std_noise']))}, "
-                f"mean_abs_noise={format_float(float(row['mean_abs_noise']))}, "
-                f"rmse_noise={format_float(float(row['rmse_noise']))}, "
-                f"min_noise={format_float(float(row['min_noise']))}, "
-                f"max_noise={format_float(float(row['max_noise']))}"
+                f"relative_groups={int(row['relative_group_count'])}, "
+                f"zero_source_groups={int(row['zero_source_group_count'])}"
+            )
+            print(
+                "    absolute: "
+                f"mean={format_float(float(row['mean_absolute_error']))}, "
+                f"std={format_float(float(row['std_absolute_error']))}, "
+                f"mean_abs={format_float(float(row['mean_abs_absolute_error']))}, "
+                f"rmse={format_float(float(row['rmse_absolute_error']))}, "
+                f"min={format_float(float(row['min_absolute_error']))}, "
+                f"max={format_float(float(row['max_absolute_error']))}"
+            )
+            print(
+                "    relative: "
+                f"mean={format_float(float(row['mean_relative_error']))}, "
+                f"std={format_float(float(row['std_relative_error']))}, "
+                f"mean_abs={format_float(float(row['mean_abs_relative_error']))}, "
+                f"rmse={format_float(float(row['rmse_relative_error']))}, "
+                f"min={format_float(float(row['min_relative_error']))}, "
+                f"max={format_float(float(row['max_relative_error']))}"
             )
         print("")
 
@@ -164,14 +196,16 @@ def main() -> None:
         table_width = len(synth_columns)
         for num_columns in range(1, table_width + 1):
             group_columns = synth_columns[:num_columns]
-            noise = measure_group_noise(df_source, df_synth, group_columns)
-            for value in noise.tolist():
+            noise_df = measure_group_noise(df_source, df_synth, group_columns)
+            for _, row in noise_df.iterrows():
                 rows.append(
                     {
                         "synth_file": str(synth_path),
                         "table_width": table_width,
                         "num_columns": num_columns,
-                        "noise": int(value),
+                        "source_count": int(row["source_count"]),
+                        "absolute_error": int(row["absolute_error"]),
+                        "relative_error": row["relative_error"],
                     }
                 )
 
