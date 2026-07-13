@@ -81,6 +81,8 @@ def summarize_noise_by_num_columns(rows: list[dict[str, object]]) -> pd.DataFram
         absolute_error = sampled_group["absolute_error"].astype(float)
         relative_error = pd.to_numeric(sampled_group["relative_error"], errors="coerce")
         valid_relative_error = relative_error.dropna()
+        source_count = sampled_group["source_count"].astype(float)
+        synth_count = sampled_group["synth_count"].astype(float)
         summary_rows.append(
             {
                 "table_width": int(table_width),
@@ -108,6 +110,14 @@ def summarize_noise_by_num_columns(rows: list[dict[str, object]]) -> pd.DataFram
                 "rmse_relative_error": math.sqrt(float((valid_relative_error**2).mean())),
                 "min_relative_error": float(valid_relative_error.min()),
                 "max_relative_error": float(valid_relative_error.max()),
+                "mean_source_count": float(source_count.mean()),
+                "std_source_count": float(source_count.std(ddof=1)) if len(sampled_group) > 1 else 0.0,
+                "min_source_count": float(source_count.min()),
+                "max_source_count": float(source_count.max()),
+                "mean_synth_count": float(synth_count.mean()),
+                "std_synth_count": float(synth_count.std(ddof=1)) if len(sampled_group) > 1 else 0.0,
+                "min_synth_count": float(synth_count.min()),
+                "max_synth_count": float(synth_count.max()),
             }
         )
 
@@ -160,6 +170,17 @@ def print_summary_text(summary_df: pd.DataFrame) -> None:
                 f"min={format_float(float(row['min_relative_error']))}, "
                 f"max={format_float(float(row['max_relative_error']))}"
             )
+            print(
+                "    rows_per_group: "
+                f"source_mean={format_float(float(row['mean_source_count']))}, "
+                f"source_std={format_float(float(row['std_source_count']))}, "
+                f"source_min={format_float(float(row['min_source_count']))}, "
+                f"source_max={format_float(float(row['max_source_count']))}, "
+                f"synth_mean={format_float(float(row['mean_synth_count']))}, "
+                f"synth_std={format_float(float(row['std_synth_count']))}, "
+                f"synth_min={format_float(float(row['min_synth_count']))}, "
+                f"synth_max={format_float(float(row['max_synth_count']))}"
+            )
         print("")
 
 
@@ -204,6 +225,7 @@ def main() -> None:
                         "table_width": table_width,
                         "num_columns": num_columns,
                         "source_count": int(row["source_count"]),
+                        "synth_count": int(row["synth_count"]),
                         "absolute_error": int(row["absolute_error"]),
                         "relative_error": row["relative_error"],
                     }
