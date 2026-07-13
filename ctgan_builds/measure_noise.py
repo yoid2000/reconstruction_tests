@@ -131,6 +131,19 @@ def print_summary_text(summary_df: pd.DataFrame) -> None:
         print("")
 
 
+def print_table_width_counts(synth_paths: list[Path]) -> None:
+    width_counts: dict[int, int] = {}
+    for synth_path in synth_paths:
+        df_synth = pd.read_parquet(synth_path, columns=None)
+        table_width = len(df_synth.columns)
+        width_counts[table_width] = width_counts.get(table_width, 0) + 1
+
+    print("Synthetic table counts by width")
+    for table_width in sorted(width_counts):
+        print(f"  width={table_width}: tables={width_counts[table_width]}")
+    print("")
+
+
 def main() -> None:
     args = parse_args()
     source_path = resolve_local_path(args.source_path)
@@ -139,6 +152,7 @@ def main() -> None:
 
     df_source = pd.read_parquet(source_path)
     synth_paths = list_synth_paths(args.synth_dir)
+    print_table_width_counts(synth_paths)
 
     rows: list[dict[str, object]] = []
     for synth_path in synth_paths:
