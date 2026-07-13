@@ -16,6 +16,7 @@ def get_default_output_path(args: argparse.Namespace) -> Path:
         f"nu_{args.nunique}_"
         f"nq_{args.nqi}_"
         f"vq_{args.vals_per_qi}_"
+        f"rps_{args.num_rows_per_splitter}_"
         f"cs_{_format_float_for_filename(args.corr_strength)}.parquet"
     )
 
