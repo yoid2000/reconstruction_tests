@@ -1,4 +1,5 @@
 import itertools
+import random
 from typing import List
 
 import pandas as pd
@@ -17,5 +18,14 @@ def contingency_table_columns(df: pd.DataFrame, num_contingency_tables: int) -> 
             num_distinct_vectors = int(df[cols].drop_duplicates().shape[0])
             candidates.append((num_distinct_vectors, subset_size, cols))
 
-    candidates.sort(key=lambda item: (item[0], item[1], item[2]))
-    return [cols for _, _, cols in candidates[:num_contingency_tables]]
+    candidates_by_key: dict[tuple[int, int], list[list[str]]] = {}
+    for num_distinct_vectors, subset_size, cols in candidates:
+        candidates_by_key.setdefault((num_distinct_vectors, subset_size), []).append(cols)
+
+    ordered_candidates: list[list[str]] = []
+    for key in sorted(candidates_by_key):
+        tied_candidates = candidates_by_key[key]
+        random.shuffle(tied_candidates)
+        ordered_candidates.extend(tied_candidates)
+
+    return ordered_candidates[:num_contingency_tables]
