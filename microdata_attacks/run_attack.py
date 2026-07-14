@@ -71,6 +71,10 @@ def parse_args() -> argparse.Namespace:
         help="Path to the parquet file containing dataset metadata (df_info).",
     )
     parser.add_argument(
+        "--input_path",
+        help="If provided, only use df_info rows whose p__input_path exactly matches this value.",
+    )
+    parser.add_argument(
         "--max_num_contingency_tables",
         type=int,
         default=DEFAULT_MAX_NUM_CONTINGENCY_TABLES,
@@ -265,13 +269,20 @@ def validate_seed_variation(df_info: pd.DataFrame, *, info_path: Path) -> None:
     )
 
 
-def prepare_info_dataframe(info_path: Path) -> pd.DataFrame:
+def prepare_info_dataframe(info_path: Path, *, input_path_filter: Optional[str]) -> pd.DataFrame:
     df_info = pd.read_parquet(info_path)
     missing_columns = REQUIRED_INFO_COLUMNS - set(df_info.columns)
     if missing_columns:
         raise ValueError(f"df_info is missing required columns: {sorted(missing_columns)}")
 
     df_info = df_info.copy().reset_index(drop=True)
+    if input_path_filter is not None:
+        df_info = df_info[df_info["p__input_path"] == input_path_filter].copy()
+        if df_info.empty:
+            raise ValueError(
+                "No df_info rows matched the requested input_path filter: "
+                f"{input_path_filter!r}"
+            )
     df_info["_row_order"] = np.arange(len(df_info), dtype=int)
     df_info["contingency_table_list"] = df_info["p__contingency_table"].map(normalize_contingency_table)
     df_info["contingency_table_key"] = df_info["contingency_table_list"].map(json.dumps)
@@ -702,19 +713,27 @@ def _normalize_value_for_key(value: Any) -> Any:
     return value
 
 
+def _normalize_optional_str_for_key(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    return str(value)
+
+
 def build_attack_key(
     *,
     info_path: Path | str,
+    input_path_filter: Optional[str],
     max_num_contingency_tables: int,
     start_qi_num: int,
     known_qi_fraction: float,
     noise: int,
     seed: Any,
     splitter: Any,
-) -> tuple[str, int, int, float, int, Any, str]:
+) -> tuple[str, Optional[str], int, int, float, int, Any, str]:
     normalized_splitter = json.dumps(_normalize_value_for_key(splitter), sort_keys=True)
     return (
         _normalize_path_for_key(info_path),
+        _normalize_optional_str_for_key(input_path_filter),
         int(max_num_contingency_tables),
         int(start_qi_num),
         float(known_qi_fraction),
@@ -728,14 +747,14 @@ def load_existing_results(
     results_path: Path,
     *,
     info_path: Path,
-) -> tuple[list[dict[str, Any]], set[tuple[str, int, int, float, int, Any, str]]]:
+) -> tuple[list[dict[str, Any]], set[tuple[str, Optional[str], int, int, float, int, Any, str]]]:
     if not results_path.exists():
         print(f"No existing results parquet at {results_path}")
         return [], set()
 
     existing_df = pd.read_parquet(results_path)
     existing_results = existing_df.to_dict("records")
-    existing_keys: set[tuple[str, int, int, float, int, Any, str]] = set()
+    existing_keys: set[tuple[str, Optional[str], int, int, float, int, Any, str]] = set()
     current_info_path = _normalize_path_for_key(info_path)
 
     for row in existing_results:
@@ -743,12 +762,15 @@ def load_existing_results(
         if pd.isna(row_info_path):
             row_info_path = current_info_path
 
+        input_path_filter = row.get("input_path_filter")
         max_num_contingency_tables = row.get("max_num_contingency_tables")
         start_qi_num = row.get("start_qi_num")
         known_qi_fraction = row.get("known_qi_fraction")
         noise = row.get("noise")
         seed = row.get("seed")
         splitter = row.get("splitter")
+        if pd.isna(input_path_filter):
+            input_path_filter = None
         if pd.isna(noise):
             noise = DEFAULT_NOISE
         if pd.isna(start_qi_num):
@@ -762,6 +784,7 @@ def load_existing_results(
         existing_keys.add(
             build_attack_key(
                 info_path=row_info_path,
+                input_path_filter=input_path_filter,
                 max_num_contingency_tables=int(max_num_contingency_tables),
                 start_qi_num=int(start_qi_num),
                 known_qi_fraction=float(known_qi_fraction),
@@ -786,7 +809,7 @@ def main() -> None:
         results_path = Path.cwd() / results_path
     results_path = results_path.resolve()
 
-    df_info = prepare_info_dataframe(info_path)
+    df_info = prepare_info_dataframe(info_path, input_path_filter=args.input_path)
     validate_seed_variation(df_info, info_path=info_path)
     seed_contexts = build_seed_contexts(
         df_info,
@@ -830,6 +853,7 @@ def main() -> None:
 
             attack_key = build_attack_key(
                 info_path=info_path,
+                input_path_filter=args.input_path,
                 max_num_contingency_tables=args.max_num_contingency_tables,
                 start_qi_num=args.start_qi_num,
                 known_qi_fraction=args.known_qi_fraction,
@@ -860,6 +884,7 @@ def main() -> None:
             row_result.update(
                 {
                     "info_path": _normalize_path_for_key(info_path),
+                    "input_path_filter": args.input_path,
                     "seed": int(context["seed"]),
                     "splitter": splitter_value,
                     "p__input_path": source_path,
